@@ -1,0 +1,70 @@
+name: Lint and Build
+
+on:
+  push:
+    branches:
+      - feature/*
+      - feat/*
+      - bugfix/*
+      - hotfix/*
+      - fix/*
+  pull_request:
+    branches:
+      - main
+      - feature/*
+      - release-*
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.11"
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    - name: Run Autoformatter
+      run: |
+        uv run ruff format
+        statusResult=$(git status -u --porcelain)
+        if [ -z "$statusResult" ]
+        then
+            exit 0
+        else
+            echo "Source files are not formatted correctly. Run 'uv run ruff format' to autoformat."
+            exit 1
+        fi
+    - name: Run Linter
+      run: |
+        uv run flake8 dapr_agents tests --ignore=E501,F401,W503,E203,E704
+  build:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python_ver: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python ${{ matrix.python_ver }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python_ver }}
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    - name: Install dependencies
+      run: |
+        uv sync --group test
+    - name: Check Typing
+      run: |
+        uv run mypy --config-file mypy.ini
+    - name: Run Tests
+      run: |
+        uv run pytest tests -m "not integration"
