@@ -42,17 +42,6 @@ class DetectFrameworkTest(unittest.TestCase):
         result = detect_framework(agent)
         self.assertEqual(result, "langgraph")
 
-    def test_detect_dapr_agents_by_module(self):
-        """Test detection of dapr-agents by module path."""
-
-        class MockAgent:
-            pass
-
-        MockAgent.__module__ = "dapr_agents.agents.base"
-        agent = MockAgent()
-        result = detect_framework(agent)
-        self.assertEqual(result, "dapr_agents")
-
     def test_detect_strands_by_class_name(self):
         """Test detection of Strands by DaprSessionManager class name."""
 

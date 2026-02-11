@@ -51,7 +51,7 @@ class LangGraphMapperTest(unittest.TestCase):
         mapper = LangGraphMapper()
         self.assertIsNotNone(mapper)
 
-    @mock.patch("dapr.ext.agent_core.mapping.langgraph.PregelNode")
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_basic_metadata_extraction(self, mock_pregel_node):
         """Test basic metadata extraction from a mock graph."""
         checkpointer = MockCheckpointer(state_store_name="my-store")
@@ -67,10 +67,11 @@ class LangGraphMapperTest(unittest.TestCase):
         self.assertEqual(metadata.schema_version, "1.0.0")
         self.assertEqual(metadata.agent.type, "MockCompiledStateGraph")
         self.assertEqual(metadata.name, "my-graph")
+        assert metadata.memory is not None
         self.assertEqual(metadata.memory.type, "DaprCheckpointer")
         self.assertEqual(metadata.memory.statestore, "my-store")
 
-    @mock.patch("dapr.ext.agent_core.mapping.langgraph.PregelNode")
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_metadata_without_checkpointer(self, mock_pregel_node):
         """Test metadata extraction without a checkpointer."""
         graph = MockCompiledStateGraph(
@@ -82,10 +83,11 @@ class LangGraphMapperTest(unittest.TestCase):
         mapper = LangGraphMapper()
         metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
 
+        assert metadata.memory is not None
         self.assertIsNone(metadata.memory.statestore)
         self.assertIsNone(metadata.agent.statestore)
 
-    @mock.patch("dapr.ext.agent_core.mapping.langgraph.PregelNode")
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_metadata_agent_role_defaults(self, mock_pregel_node):
         """Test agent metadata default values."""
         graph = MockCompiledStateGraph(name="test")
@@ -97,7 +99,7 @@ class LangGraphMapperTest(unittest.TestCase):
         self.assertFalse(metadata.agent.orchestrator)
         self.assertEqual(metadata.agent.appid, "")
 
-    @mock.patch("dapr.ext.agent_core.mapping.langgraph.PregelNode")
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_metadata_llm_defaults(self, mock_pregel_node):
         """Test LLM metadata defaults when no LLM is detected."""
         graph = MockCompiledStateGraph(name="test")
@@ -105,11 +107,12 @@ class LangGraphMapperTest(unittest.TestCase):
         mapper = LangGraphMapper()
         metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
 
+        assert metadata.llm is not None
         self.assertEqual(metadata.llm.client, "")
         self.assertEqual(metadata.llm.provider, "unknown")
         self.assertEqual(metadata.llm.model, "unknown")
 
-    @mock.patch("dapr.ext.agent_core.mapping.langgraph.PregelNode")
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_metadata_pubsub_defaults(self, mock_pregel_node):
         """Test PubSub metadata defaults."""
         graph = MockCompiledStateGraph(name="test")
@@ -117,11 +120,12 @@ class LangGraphMapperTest(unittest.TestCase):
         mapper = LangGraphMapper()
         metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
 
+        assert metadata.pubsub is not None
         self.assertEqual(metadata.pubsub.name, "")
         self.assertIsNone(metadata.pubsub.broadcast_topic)
         self.assertIsNone(metadata.pubsub.agent_topic)
 
-    @mock.patch("dapr.ext.agent_core.mapping.langgraph.PregelNode")
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_metadata_registered_at_is_set(self, mock_pregel_node):
         """Test registered_at timestamp is set."""
         graph = MockCompiledStateGraph(name="test")

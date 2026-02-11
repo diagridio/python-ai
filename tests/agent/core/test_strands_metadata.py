@@ -66,8 +66,8 @@ class StrandsMapperTest(unittest.TestCase):
 
         metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
 
+        assert metadata.memory is not None
         self.assertEqual(metadata.memory.type, "DaprSessionManager")
-        self.assertEqual(metadata.memory.session_id, "session-456")
         self.assertEqual(metadata.memory.statestore, "custom-store")
 
     def test_metadata_name_generation(self):
@@ -96,6 +96,7 @@ class StrandsMapperTest(unittest.TestCase):
 
         metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
 
+        assert metadata.agent_metadata is not None
         self.assertEqual(metadata.agent_metadata["framework"], "strands")
         self.assertEqual(metadata.agent_metadata["session_id"], "sess1")
         self.assertEqual(metadata.agent_metadata["state_store"], "store1")
@@ -109,7 +110,7 @@ class StrandsMapperTest(unittest.TestCase):
 
         metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
 
-        self.assertIsNotNone(metadata.registry)
+        assert metadata.registry is not None
         self.assertIsNone(metadata.registry.statestore)
         self.assertIsNone(metadata.registry.name)
 

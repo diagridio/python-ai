@@ -153,18 +153,15 @@ class MemoryMetadataTest(unittest.TestCase):
         memory = MemoryMetadata(type="DaprCheckpointer")
         self.assertEqual(memory.type, "DaprCheckpointer")
         self.assertIsNone(memory.statestore)
-        self.assertIsNone(memory.session_id)
 
     def test_full_memory_metadata(self):
         """Test MemoryMetadata with all fields."""
         memory = MemoryMetadata(
             type="DaprSessionManager",
             statestore="session-store",
-            session_id="session-123",
         )
         self.assertEqual(memory.type, "DaprSessionManager")
         self.assertEqual(memory.statestore, "session-store")
-        self.assertEqual(memory.session_id, "session-123")
 
 
 class RegistryMetadataTest(unittest.TestCase):
@@ -222,11 +219,16 @@ class AgentMetadataSchemaTest(unittest.TestCase):
             agent_metadata={"custom": "data"},
         )
         self.assertEqual(schema.name, "full-agent")
+        assert schema.pubsub is not None
         self.assertEqual(schema.pubsub.name, "pubsub")
+        assert schema.memory is not None
         self.assertEqual(schema.memory.type, "DaprCheckpointer")
+        assert schema.llm is not None
         self.assertEqual(schema.llm.client, "OpenAI")
+        assert schema.tools is not None
         self.assertEqual(len(schema.tools), 1)
         self.assertEqual(schema.max_iterations, 10)
+        assert schema.agent_metadata is not None
         self.assertEqual(schema.agent_metadata["custom"], "data")
 
     def test_export_json_schema(self):

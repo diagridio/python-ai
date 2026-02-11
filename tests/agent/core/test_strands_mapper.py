@@ -81,6 +81,7 @@ class TestStrandsMapper(unittest.TestCase):
         self.assertEqual(result.agent.goal, "Help users")
         self.assertEqual(result.agent.system_prompt, "You are a helpful assistant")
         self.assertEqual(result.name, "strands-test-session-assistant")
+        assert result.agent_metadata is not None
         self.assertEqual(result.agent_metadata["agent_id"], "assistant")
 
     def test_map_agent_metadata_with_llm_config(self):
@@ -102,7 +103,7 @@ class TestStrandsMapper(unittest.TestCase):
         result = self.mapper.map_agent_metadata(session_manager, "edge")
 
         # Should extract LLM metadata
-        self.assertIsNotNone(result.llm)
+        assert result.llm is not None
         self.assertEqual(result.llm.client, "dapr_conversation")
         self.assertEqual(result.llm.provider, "openai")
         self.assertEqual(result.llm.model, "gpt-4")
@@ -134,7 +135,7 @@ class TestStrandsMapper(unittest.TestCase):
         result = self.mapper.map_agent_metadata(session_manager, "edge")
 
         # Should extract tools metadata
-        self.assertIsNotNone(result.tools)
+        assert result.tools is not None
         self.assertEqual(len(result.tools), 2)
         self.assertEqual(result.tools[0].tool_name, "calculator")
         self.assertEqual(result.tools[0].tool_description, "Calculate math")
@@ -156,7 +157,7 @@ class TestStrandsMapper(unittest.TestCase):
         result = self.mapper.map_agent_metadata(session_manager, "edge")
 
         # Should extract instructions and max_iterations
-        self.assertIsNotNone(result.agent.instructions)
+        assert result.agent.instructions is not None
         self.assertEqual(len(result.agent.instructions), 3)
         self.assertEqual(result.agent.instructions[0], "Be concise")
         self.assertEqual(result.max_iterations, 10)
