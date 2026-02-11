@@ -2,14 +2,14 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from dapr.ext.agent_core.types import SupportedFrameworks
-from dapr.ext.agent_core.metadata.mapping.base import BaseAgentMapper
-from dapr.ext.agent_core.types import (
+from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
+from diagrid.agent.core.types import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     RegistryMetadata,
+    SupportedFrameworks,
     ToolMetadata,
 )
 

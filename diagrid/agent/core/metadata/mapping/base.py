@@ -12,9 +12,9 @@ limitations under the License.
 """
 
 from abc import ABC, abstractmethod
-from dapr_agents import AgentRegistryAdapter
-from diagrid.agent.core.types.type import AgentMetadataSchema
 from typing import Any
+
+from diagrid.agent.core.types.type import AgentMetadataSchema
 
 
 class BaseAgentMapper(ABC):

@@ -4,7 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Optional
 
-from dapr.ext.agent_core import AgentMetadataSchema
+from diagrid.agent.core.types import AgentMetadataSchema
 
 
 def get_auto_version() -> str:

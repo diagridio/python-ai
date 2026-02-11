@@ -324,6 +324,7 @@ source = { virtual = "diagrid/agent/core" }
 dependencies = [
     { name = "dapr-ext-langgraph" },
     { name = "dapr-ext-strands" },
+    { name = "langgraph" },
     { name = "pydantic" },
 ]
 
@@ -331,6 +332,7 @@ dependencies = [
 requires-dist = [
     { name = "dapr-ext-langgraph", specifier = ">=1.17.0rc3" },
     { name = "dapr-ext-strands", specifier = ">=1.17.0rc3" },
+    { name = "langgraph", specifier = ">=0.3.6" },
     { name = "pydantic", specifier = ">=2.12.5" },
 ]
 
