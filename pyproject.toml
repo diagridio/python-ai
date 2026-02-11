@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diagrid"
+dynamic = ["version"]
+description = "Diagrid Catalyst AI packages"
+readme = "README.md"
+requires-python = ">=3.11,>=3.14"
+dependencies = [
+    "dapr-agents>=0.10.6",
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0,<2.0.0",
+    "pip-tools>=7.4.1,<8.0.0",
+    "cachetools>=6.1.0,<7.0.0",
+    "flake8>=7.3.0",
+    "ruff>=0.14.11",
+]
+
+[tool.setuptools.package-data]
+diagrid = ["py.typed"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+fallback_version = "0.0.0.dev0"
