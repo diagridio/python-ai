@@ -15,15 +15,15 @@ from .types import (
 )
 
 __all__ = [
-    'SupportedFrameworks',
-    'AgentMetadataSchema',
-    'AgentMetadata',
-    'LLMMetadata',
-    'PubSubMetadata',
-    'ToolMetadata',
-    'RegistryMetadata',
-    'MemoryMetadata',
-    'AgentRegistryAdapter',
-    'find_agent_in_stack',
-    'detect_framework',
+    "SupportedFrameworks",
+    "AgentMetadataSchema",
+    "AgentMetadata",
+    "LLMMetadata",
+    "PubSubMetadata",
+    "ToolMetadata",
+    "RegistryMetadata",
+    "MemoryMetadata",
+    "AgentRegistryAdapter",
+    "find_agent_in_stack",
+    "detect_framework",
 ]

@@ -3,7 +3,7 @@ from .metadata import AgentRegistryAdapter
 
 
 __all__ = [
-    'AgentRegistryAdapter',
-    'find_agent_in_stack',
-    'detect_framework',
+    "AgentRegistryAdapter",
+    "find_agent_in_stack",
+    "detect_framework",
 ]

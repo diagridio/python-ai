@@ -13,6 +13,8 @@ limitations under the License.
 
 from abc import ABC, abstractmethod
 from dapr_agents import AgentRegistryAdapter
+from diagrid.agent.core.types.type import AgentMetadataSchema
+from typing import Any
 
 
 class BaseAgentMapper(ABC):
@@ -35,27 +37,29 @@ class BaseAgentMapper(ABC):
         module_lower = module_name.lower()
 
         # Check more specific providers first
-        if 'vertexai' in module_lower:
-            return 'vertexai'
-        elif 'bedrock' in module_lower:
-            return 'bedrock'
-        elif 'azure' in module_lower:
-            return 'azure_openai'
-        elif 'openai' in module_lower:
-            return 'openai'
-        elif 'anthropic' in module_lower:
-            return 'anthropic'
-        elif 'ollama' in module_lower:
-            return 'ollama'
-        elif 'google' in module_lower or 'gemini' in module_lower:
-            return 'google'
-        elif 'cohere' in module_lower:
-            return 'cohere'
+        if "vertexai" in module_lower:
+            return "vertexai"
+        elif "bedrock" in module_lower:
+            return "bedrock"
+        elif "azure" in module_lower:
+            return "azure_openai"
+        elif "openai" in module_lower:
+            return "openai"
+        elif "anthropic" in module_lower:
+            return "anthropic"
+        elif "ollama" in module_lower:
+            return "ollama"
+        elif "google" in module_lower or "gemini" in module_lower:
+            return "google"
+        elif "cohere" in module_lower:
+            return "cohere"
 
-        return 'unknown'
+        return "unknown"
 
     @abstractmethod
-    def map_agent_metadata(self, agent: Any, schema_version: str) -> AgentMetadataSchema:
+    def map_agent_metadata(
+        self, agent: Any, schema_version: str
+    ) -> AgentMetadataSchema:
         """Map agent to standardized metadata schema.
 
         Args:

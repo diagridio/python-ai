@@ -36,34 +36,34 @@ def find_agent_in_stack() -> Optional[Any]:
         frame_locals = frame_info.frame.f_locals
 
         # Look for 'self' in frame locals
-        if 'self' in frame_locals:
-            obj = frame_locals['self']
+        if "self" in frame_locals:
+            obj = frame_locals["self"]
             obj_type = type(obj).__name__
 
             # LangGraph support - CompiledStateGraph
-            if obj_type == 'CompiledStateGraph':
+            if obj_type == "CompiledStateGraph":
                 return obj
 
             # Strands support - DaprSessionManager
             # Use gc to find the Agent that owns this session manager (similar to LangGraph checkpointer)
-            if obj_type == 'DaprSessionManager':
+            if obj_type == "DaprSessionManager":
                 referrers = gc.get_referrers(obj)
                 for ref in referrers:
                     ref_type = type(ref).__name__
                     ref_module = type(ref).__module__
                     # Look for Strands Agent that owns this session manager
-                    if ref_type == 'Agent' and 'strands' in ref_module:
+                    if ref_type == "Agent" and "strands" in ref_module:
                         return ref
                 # Don't register bare DaprSessionManager - only register when Agent exists
                 return None
 
             # If we found a checkpointer, use gc to find the graph that references it
-            if obj_type == 'DaprCheckpointer':
+            if obj_type == "DaprCheckpointer":
                 # Use garbage collector to find objects referencing this checkpointer
                 referrers = gc.get_referrers(obj)
                 for ref in referrers:
                     ref_type = type(ref).__name__
-                    if ref_type == 'CompiledStateGraph':
+                    if ref_type == "CompiledStateGraph":
                         return ref
 
     return None
@@ -83,13 +83,13 @@ def detect_framework(agent: Any) -> Optional[str]:
     agent_module = type(agent).__module__
 
     # LangGraph
-    if agent_type == 'CompiledStateGraph' or 'langgraph' in agent_module:
-        return 'langgraph'
+    if agent_type == "CompiledStateGraph" or "langgraph" in agent_module:
+        return "langgraph"
 
     # Strands - detect both Agent class and DaprSessionManager
-    if agent_type == 'Agent' and 'strands' in agent_module:
-        return 'strands'
-    if agent_type == 'DaprSessionManager':
-        return 'strands'
+    if agent_type == "Agent" and "strands" in agent_module:
+        return "strands"
+    if agent_type == "DaprSessionManager":
+        return "strands"
 
     return None

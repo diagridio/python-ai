@@ -29,7 +29,7 @@ class DetectFrameworkTest(unittest.TestCase):
 
         agent = CompiledStateGraph()
         result = detect_framework(agent)
-        self.assertEqual(result, 'langgraph')
+        self.assertEqual(result, "langgraph")
 
     def test_detect_langgraph_by_module(self):
         """Test detection of LangGraph by module path."""
@@ -37,10 +37,10 @@ class DetectFrameworkTest(unittest.TestCase):
         class MockGraph:
             pass
 
-        MockGraph.__module__ = 'langgraph.graph.state'
+        MockGraph.__module__ = "langgraph.graph.state"
         agent = MockGraph()
         result = detect_framework(agent)
-        self.assertEqual(result, 'langgraph')
+        self.assertEqual(result, "langgraph")
 
     def test_detect_dapr_agents_by_module(self):
         """Test detection of dapr-agents by module path."""
@@ -48,10 +48,10 @@ class DetectFrameworkTest(unittest.TestCase):
         class MockAgent:
             pass
 
-        MockAgent.__module__ = 'dapr_agents.agents.base'
+        MockAgent.__module__ = "dapr_agents.agents.base"
         agent = MockAgent()
         result = detect_framework(agent)
-        self.assertEqual(result, 'dapr_agents')
+        self.assertEqual(result, "dapr_agents")
 
     def test_detect_strands_by_class_name(self):
         """Test detection of Strands by DaprSessionManager class name."""
@@ -61,7 +61,7 @@ class DetectFrameworkTest(unittest.TestCase):
 
         agent = DaprSessionManager()
         result = detect_framework(agent)
-        self.assertEqual(result, 'strands')
+        self.assertEqual(result, "strands")
 
     def test_detect_strands_by_module(self):
         """Test detection of Strands by module path."""
@@ -70,11 +70,11 @@ class DetectFrameworkTest(unittest.TestCase):
             pass
 
         # Use actual type name that detection looks for
-        MockSessionManager.__module__ = 'dapr.ext.strands'
-        MockSessionManager.__name__ = 'DaprSessionManager'
+        MockSessionManager.__module__ = "dapr.ext.strands"
+        MockSessionManager.__name__ = "DaprSessionManager"
         agent = MockSessionManager()
         result = detect_framework(agent)
-        self.assertEqual(result, 'strands')
+        self.assertEqual(result, "strands")
 
     def test_detect_unknown_framework(self):
         """Test detection returns None for unknown frameworks."""
@@ -82,14 +82,14 @@ class DetectFrameworkTest(unittest.TestCase):
         class UnknownAgent:
             pass
 
-        UnknownAgent.__module__ = 'some.unknown.module'
+        UnknownAgent.__module__ = "some.unknown.module"
         agent = UnknownAgent()
         result = detect_framework(agent)
         self.assertIsNone(result)
 
     def test_detect_builtin_object(self):
         """Test detection returns None for builtin objects."""
-        result = detect_framework('string')
+        result = detect_framework("string")
         self.assertIsNone(result)
 
         result = detect_framework(42)
@@ -99,5 +99,5 @@ class DetectFrameworkTest(unittest.TestCase):
         self.assertIsNone(result)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
