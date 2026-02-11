@@ -31,6 +31,9 @@ dev = [
     "flake8>=7.3.0",
     "ruff>=0.14.11",
 ]
+test = [
+    "pytest>=7.0.0,<8.0.0",
+]
 
 [tool.setuptools.package-data]
 diagrid = ["py.typed"]
