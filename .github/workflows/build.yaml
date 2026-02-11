@@ -1,13 +1,6 @@
 name: Lint and Build
 
 on:
-  push:
-    branches:
-      - feature/*
-      - feat/*
-      - bugfix/*
-      - hotfix/*
-      - fix/*
   pull_request:
     branches:
       - main
