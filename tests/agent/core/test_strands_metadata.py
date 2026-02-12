@@ -112,7 +112,7 @@ class StrandsMapperTest(unittest.TestCase):
 
         assert metadata.registry is not None
         self.assertIsNone(metadata.registry.statestore)
-        self.assertIsNone(metadata.registry.name)
+        assert metadata.registry.name == "default"
 
     def test_metadata_optional_fields_are_none(self):
         """Test optional fields are None when not applicable."""

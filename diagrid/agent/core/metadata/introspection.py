@@ -26,7 +26,6 @@ def find_agent_in_stack() -> Optional[Any]:
     Currently supports:
     - LangGraph: CompiledStateGraph or SyncPregelLoop
     - Strands: DaprSessionManager
-    - Dapr Agents: Any object from dapr_agents module
 
     Returns:
         The agent/graph object if found, None otherwise.

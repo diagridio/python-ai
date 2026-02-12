@@ -371,8 +371,8 @@ class StrandsMapper(BaseAgentMapper):
                 else None,  # Set tool_choice based on whether tools exist
                 max_iterations=extracted.get("max_iterations"),
                 registry=RegistryMetadata(
-                    name=None,
-                    team="default",
+                    statestore=None,
+                    name="default",
                 ),
                 agent_metadata={
                     "framework": "strands",
@@ -458,8 +458,8 @@ class StrandsMapper(BaseAgentMapper):
             tool_choice=tool_choice,
             max_iterations=max_iterations,
             registry=RegistryMetadata(
-                name=None,
-                team="default",
+                statestore=None,
+                name="default",
             ),
             agent_metadata={
                 "framework": "strands",

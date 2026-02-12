@@ -567,11 +567,8 @@ wheels = [
 
 [[package]]
 name = "diagrid"
+version = "0.1.0"
 source = { editable = "." }
-dependencies = [
-    { name = "dapr-agents" },
-    { name = "diagrid-agent-core" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -588,10 +585,6 @@ test = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "dapr-agents", specifier = ">=0.10.6" },
-    { name = "diagrid-agent-core", editable = "diagrid/agent/core" },
-]
 
 [package.metadata.requires-dev]
 dev = [
@@ -612,6 +605,8 @@ name = "diagrid-agent-core"
 version = "0.1.0"
 source = { editable = "diagrid/agent/core" }
 dependencies = [
+    { name = "dapr" },
+    { name = "dapr-agents" },
     { name = "dapr-ext-langgraph" },
     { name = "dapr-ext-strands" },
     { name = "langgraph" },
@@ -620,6 +615,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dapr", specifier = ">=1.17.0rc3" },
+    { name = "dapr-agents", specifier = ">=0.10.6" },
     { name = "dapr-ext-langgraph", specifier = ">=1.17.0rc3" },
     { name = "dapr-ext-strands", specifier = ">=1.17.0rc3" },
     { name = "langgraph", specifier = ">=0.3.6" },
