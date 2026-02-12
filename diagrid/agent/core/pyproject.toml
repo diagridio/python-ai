@@ -1,7 +1,11 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "core"
+name = "diagrid-agent-core"
 version = "0.1.0"
-description = "Add your description here"
+description = "Diagrid Agent Core - Metadata and introspection for AI agents"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -11,5 +15,11 @@ dependencies = [
     "langgraph>=0.3.6",
 ]
 
+[tool.setuptools]
+packages = ["diagrid.agent.core"]
+
+[tool.setuptools.package-dir]
+"diagrid.agent.core" = "."
+
 [tool.setuptools.package-data]
-core = ["py.typed"]
+"diagrid.agent.core" = ["py.typed"]
