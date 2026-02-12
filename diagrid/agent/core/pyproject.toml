@@ -23,7 +23,6 @@ packages = [
     "diagrid.agent.core.metadata",
     "diagrid.agent.core.metadata.mapping",
     "diagrid.agent.core.types",
-    "diagrid.agent.core.scripts",
 ]
 package-dir = {"diagrid.agent.core" = "."}
 

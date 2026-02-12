@@ -15,16 +15,17 @@ limitations under the License.
 
 import unittest
 
-from diagrid.agent.core.types import (
+from dapr_agents import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     PubSubMetadata,
     RegistryMetadata,
-    SupportedFrameworks,
     ToolMetadata,
 )
+
+from diagrid.agent.core.types import SupportedFrameworks
 
 
 class SupportedFrameworksTest(unittest.TestCase):

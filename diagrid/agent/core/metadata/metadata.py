@@ -12,7 +12,6 @@ from diagrid.agent.core.metadata import (
     find_agent_in_stack,
 )
 from diagrid.agent.core.types import (
-    AgentMetadataSchema,
     SupportedFrameworks,
 )
 
@@ -21,6 +20,7 @@ from dapr_agents.storage.daprstores.stateservice import (
     StateStoreError,
 )
 from dapr_agents.agents.configs import (
+    AgentMetadataSchema,
     AgentRegistryConfig,
 )
 

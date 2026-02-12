@@ -3,14 +3,14 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
-from diagrid.agent.core.types import (
+from diagrid.agent.core.types import SupportedFrameworks
+from dapr_agents import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     PubSubMetadata,
     RegistryMetadata,
-    SupportedFrameworks,
     ToolMetadata,
 )
 from langgraph.pregel._read import PregelNode
