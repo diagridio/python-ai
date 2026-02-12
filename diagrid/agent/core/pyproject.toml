@@ -15,11 +15,9 @@ dependencies = [
     "langgraph>=0.3.6",
 ]
 
-[tool.setuptools]
-packages = ["diagrid.agent.core"]
-
-[tool.setuptools.package-dir]
-"diagrid.agent.core" = "."
+[tool.setuptools.packages.find]
+where = ["."]
+namespaces = true
 
 [tool.setuptools.package-data]
 "diagrid.agent.core" = ["py.typed"]
