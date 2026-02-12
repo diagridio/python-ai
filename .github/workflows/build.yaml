@@ -21,6 +21,9 @@ jobs:
       uses: astral-sh/setup-uv@v3
       with:
         version: "latest"
+    - name: Install dependencies
+      run: |
+        uv sync --all-packages
     - name: Run Autoformatter
       run: |
         uv run ruff format
@@ -54,7 +57,7 @@ jobs:
         version: "latest"
     - name: Install dependencies
       run: |
-        uv sync --group test
+        uv sync --all-packages --group test
     - name: Check Typing
       run: |
         uv run mypy --config-file mypy.ini

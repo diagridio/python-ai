@@ -1,27 +1,12 @@
 [build-system]
-requires = ["setuptools>=61.0", "setuptools_scm"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid"
-dynamic = ["version"]
-description = "Diagrid Catalyst AI packages"
-readme = "README.md"
-requires-python = ">=3.11,>=3.14"
-dependencies = [
-    "dapr-agents>=0.10.6",
-]
-
-classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
-    "Intended Audience :: Developers",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-]
+version = "0.1.0"
+description = "Diagrid namespace package"
+requires-python = ">=3.11"
 
 [dependency-groups]
 dev = [
@@ -30,15 +15,25 @@ dev = [
     "cachetools>=6.1.0,<8.0.0",
     "flake8>=7.3.0",
     "ruff>=0.14.11",
+    "pre-commit>=4.0.0,<5.0.0",
 ]
 test = [
     "pytest>=7.0.0,<10.0.0",
+    "pytest-cov>=4.0.0,<7.0.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["diagrid*"]
+exclude = ["diagrid.agent.core*"]
 
 [tool.setuptools.package-data]
 diagrid = ["py.typed"]
 
-[tool.setuptools_scm]
-version_scheme = "guess-next-dev"
-local_scheme = "node-and-date"
-fallback_version = "0.0.0.dev0"
+[tool.uv.workspace]
+members = [
+    "diagrid/agent/core",
+]
+
+[tool.uv.sources]
+diagrid-agent-core = { workspace = true }
