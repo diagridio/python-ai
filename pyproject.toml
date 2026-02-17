@@ -24,8 +24,11 @@ crewai = [
 adk = [
     "google-adk>=1.0.0",
 ]
+strands = [
+    "strands-agents>=1.26.0",
+]
 all = [
-    "diagrid[langgraph,crewai,adk]",
+    "diagrid[langgraph,crewai,adk,strands]",
 ]
 
 [dependency-groups]
