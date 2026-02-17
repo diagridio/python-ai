@@ -6,7 +6,6 @@ import time
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Callable, Dict, Optional, Sequence
 
-from diagrid.agent.core.metadata.mapping import LangGraphMapper, StrandsMapper
 from diagrid.agent.core.metadata import (
     detect_framework,
     find_agent_in_stack,
@@ -130,6 +129,8 @@ class AgentRegistryAdapter:
             schema_version = version("dapr-ext-agent_core")
         except PackageNotFoundError:
             schema_version = "edge"
+
+        from diagrid.agent.core.metadata.mapping import LangGraphMapper, StrandsMapper
 
         framework_mappers = {
             SupportedFrameworks.LANGGRAPH: LangGraphMapper().map_agent_metadata,

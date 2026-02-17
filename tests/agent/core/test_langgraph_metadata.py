@@ -16,6 +16,10 @@ limitations under the License.
 import unittest
 from unittest import mock
 
+import pytest
+
+pytest.importorskip("langgraph.pregel", reason="langgraph not installed")
+
 from diagrid.agent.core.metadata.mapping.langgraph import LangGraphMapper
 
 

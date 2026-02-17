@@ -71,11 +71,19 @@ from diagrid.agent.adk.workflow import (
     get_registered_tool,
     clear_tool_registry,
 )
-from diagrid.agent.adk.plugin import (
-    DaprWorkflowPlugin,
-    PendingToolExecution,
-)
 from diagrid.agent.adk.version import __version__
+
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    if name == "DaprWorkflowPlugin":
+        from diagrid.agent.adk.plugin import DaprWorkflowPlugin
+
+        return DaprWorkflowPlugin
+    if name == "PendingToolExecution":
+        from diagrid.agent.adk.plugin import PendingToolExecution
+
+        return PendingToolExecution
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     # Main runner class
