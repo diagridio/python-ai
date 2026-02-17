@@ -15,7 +15,7 @@ Installation
 
 .. code-block:: bash
 
-   pip install diagrid-agent-langgraph
+   pip install diagrid
 
 Quick Start
 -----------

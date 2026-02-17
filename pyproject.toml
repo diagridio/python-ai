@@ -38,4 +38,4 @@ members = [
 
 [tool.uv.sources]
 diagrid-agent-core = { workspace = true }
-diagrid-agent-langgraph = { workspace = true }
+diagrid = { workspace = true }

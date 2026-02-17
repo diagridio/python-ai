@@ -9,9 +9,7 @@
 
 2. **Install dependencies**:
    ```bash
-   cd diagrid/agent/langgraph
-   pip install -e .
-   pip install langgraph langchain-core
+   pip install diagrid langgraph langchain-core
    ```
 
 ## Running the Examples

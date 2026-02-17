@@ -6,8 +6,7 @@ with durable execution using Dapr Workflows.
 
 Prerequisites:
     - Redis running on localhost:6379
-    - Install the extension: pip install -e /path/to/diagrid/agent/langgraph
-    - Install LangGraph: pip install langgraph
+    - Install dependencies: pip install diagrid langgraph
 
 Run with:
     cd diagrid/agent/langgraph/examples

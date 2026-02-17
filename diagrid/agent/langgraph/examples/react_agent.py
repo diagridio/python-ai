@@ -7,8 +7,7 @@ and iterates until it has enough information to respond.
 
 Prerequisites:
     - Redis running on localhost:6379
-    - Install the extension: pip install -e /path/to/diagrid/agent/langgraph
-    - Install LangGraph: pip install langgraph
+    - Install dependencies: pip install diagrid langgraph
 
 Run with:
     cd diagrid/agent/langgraph/examples
