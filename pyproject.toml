@@ -7,6 +7,10 @@ name = "diagrid"
 version = "0.1.0"
 description = "Diagrid namespace package"
 requires-python = ">=3.11"
+dependencies = ["diagrid-cli>=0.1.0"]
+
+[project.scripts]
+diagridpy = "diagrid.cli.main:cli"
 
 [dependency-groups]
 dev = [
@@ -25,7 +29,7 @@ test = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["diagrid*"]
-exclude = ["diagrid.agent.core*"]
+exclude = ["diagrid.agent.core*", "diagrid.core*", "diagrid.cli*"]
 
 [tool.setuptools.package-data]
 diagrid = ["py.typed"]
@@ -33,7 +37,11 @@ diagrid = ["py.typed"]
 [tool.uv.workspace]
 members = [
     "diagrid/agent/core",
+    "diagrid/core",
+    "diagrid/cli",
 ]
 
 [tool.uv.sources]
 diagrid-agent-core = { workspace = true }
+diagrid-core = { workspace = true }
+diagrid-cli = { workspace = true }

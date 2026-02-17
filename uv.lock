@@ -6,6 +6,8 @@ requires-python = ">=3.14"
 members = [
     "diagrid",
     "diagrid-agent-core",
+    "diagrid-cli",
+    "diagrid-core",
 ]
 
 [[package]]
@@ -569,6 +571,9 @@ wheels = [
 name = "diagrid"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "diagrid-cli" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -585,6 +590,7 @@ test = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "diagrid-cli", editable = "diagrid/cli" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -621,6 +627,40 @@ requires-dist = [
     { name = "dapr-ext-strands", specifier = ">=1.17.0rc3" },
     { name = "langgraph", specifier = ">=0.3.6" },
     { name = "pydantic", specifier = ">=2.12.5" },
+]
+
+[[package]]
+name = "diagrid-cli"
+version = "0.1.0"
+source = { editable = "diagrid/cli" }
+dependencies = [
+    { name = "click" },
+    { name = "diagrid-core" },
+    { name = "rich" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1.0" },
+    { name = "diagrid-core", editable = "diagrid/core" },
+    { name = "rich", specifier = ">=13.0.0" },
+]
+
+[[package]]
+name = "diagrid-core"
+version = "0.1.0"
+source = { editable = "diagrid/core" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pyjwt", extra = ["crypto"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8.0" },
 ]
 
 [[package]]
