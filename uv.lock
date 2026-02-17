@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.14"
 
 [manifest]
@@ -569,6 +569,12 @@ wheels = [
 name = "diagrid"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "dapr" },
+    { name = "dapr-ext-workflow" },
+    { name = "langchain-core" },
+    { name = "langgraph" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -585,6 +591,12 @@ test = [
 ]
 
 [package.metadata]
+requires-dist = [
+    { name = "dapr", specifier = ">=1.16.0" },
+    { name = "dapr-ext-workflow", specifier = ">=1.16.0" },
+    { name = "langchain-core", specifier = ">=0.3.0" },
+    { name = "langgraph", specifier = ">=1.0.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [

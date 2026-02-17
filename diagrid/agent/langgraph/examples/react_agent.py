@@ -92,7 +92,9 @@ def reasoning_node(state: AgentState) -> dict:
                 "current_step": step + 1,
                 "should_continue": True,
             }
-        elif "calculate" in question or any(op in question for op in ["+", "-", "*", "/"]):
+        elif "calculate" in question or any(
+            op in question for op in ["+", "-", "*", "/"]
+        ):
             thought = "User wants a calculation. I should use the calculator."
             # Extract expression (simplified)
             expr = "".join(c for c in question if c in "0123456789+-*/() ")
@@ -216,9 +218,9 @@ def build_agent_graph() -> StateGraph:
 
 async def run_agent(runner: DaprWorkflowGraphRunner, question: str, thread_id: str):
     """Run the agent with a question."""
-    print(f"\n{'='*60}", flush=True)
+    print(f"\n{'=' * 60}", flush=True)
     print(f"Question: {question}", flush=True)
-    print(f"{'='*60}", flush=True)
+    print(f"{'=' * 60}", flush=True)
 
     input_state = {
         "question": question,

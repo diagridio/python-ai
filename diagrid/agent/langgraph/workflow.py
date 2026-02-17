@@ -102,7 +102,9 @@ def clear_registries() -> None:
     _serializer = None
 
 
-def langgraph_workflow(ctx: DaprWorkflowContext, input_data: Dict[str, Any]) -> Dict[str, Any]:
+def langgraph_workflow(
+    ctx: DaprWorkflowContext, input_data: Dict[str, Any]
+) -> Dict[str, Any]:
     """Dapr Workflow that orchestrates LangGraph execution.
 
     This workflow implements the Pregel/BSP execution model:
@@ -140,7 +142,9 @@ def langgraph_workflow(ctx: DaprWorkflowContext, input_data: Dict[str, Any]) -> 
     while step < max_steps:
         # Log workflow step for debugging
         if not ctx.is_replaying:
-            print(f"  [WORKFLOW] Step {step}, pending_nodes={pending_nodes}", flush=True)
+            print(
+                f"  [WORKFLOW] Step {step}, pending_nodes={pending_nodes}", flush=True
+            )
 
         # Check if END is reached
         if END in pending_nodes or not pending_nodes:
@@ -223,7 +227,9 @@ def langgraph_workflow(ctx: DaprWorkflowContext, input_data: Dict[str, Any]) -> 
                         cond_output = EvaluateConditionOutput.from_dict(cond_result)
                         if cond_output.error:
                             return GraphWorkflowOutput(
-                                output=_extract_output(channel_state, graph_config.output_channels),
+                                output=_extract_output(
+                                    channel_state, graph_config.output_channels
+                                ),
                                 channel_state=channel_state,
                                 steps=step,
                                 status="error",
@@ -292,16 +298,18 @@ def execute_node_activity(
         # - (state) -> updates
         # - (state, config) -> updates
         import inspect
+
         sig = inspect.signature(node_func)
         params = list(sig.parameters.keys())
 
-        if len(params) >= 2 and 'config' in params:
+        if len(params) >= 2 and "config" in params:
             result = node_func(state, config=node_input.config or {})
         else:
             result = node_func(state)
 
         # Handle async functions
         import asyncio
+
         if asyncio.iscoroutine(result):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -321,6 +329,7 @@ def execute_node_activity(
     except Exception as e:
         logger.error(f"Error executing node '{node_name}': {e}")
         import traceback
+
         traceback.print_exc()
         return ExecuteNodeOutput(
             node_name=node_name,
@@ -358,6 +367,7 @@ def evaluate_condition_activity(
 
         # Handle async functions
         import asyncio
+
         if asyncio.iscoroutine(result):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -381,6 +391,7 @@ def evaluate_condition_activity(
     except Exception as e:
         logger.error(f"Error evaluating condition '{cond_input.condition_name}': {e}")
         import traceback
+
         traceback.print_exc()
         return EvaluateConditionOutput(
             error=str(e),
@@ -415,7 +426,9 @@ def _get_triggered_nodes(
     return []
 
 
-def _extract_output(channel_state: ChannelState, output_channels: List[str]) -> Dict[str, Any]:
+def _extract_output(
+    channel_state: ChannelState, output_channels: List[str]
+) -> Dict[str, Any]:
     """Extract output values from the specified channels.
 
     Args:
@@ -474,8 +487,9 @@ def _reconstruct_state(channel_state: ChannelState) -> Dict[str, Any]:
         # Try to deserialize if needed
         if serializer and isinstance(value, (str, bytes)):
             try:
-                if isinstance(value, str) and value.startswith(('{"', '[')):
+                if isinstance(value, str) and value.startswith(('{"', "[")):
                     import json
+
                     state[channel] = json.loads(value)
                 else:
                     state[channel] = value
@@ -534,18 +548,19 @@ def _serialize_value(value: Any) -> Any:
         return {k: _serialize_value(v) for k, v in value.items()}
 
     # Try common serialization methods
-    if hasattr(value, 'model_dump'):
+    if hasattr(value, "model_dump"):
         # Pydantic v2
         return value.model_dump()
-    if hasattr(value, 'dict'):
+    if hasattr(value, "dict"):
         # Pydantic v1
         return value.dict()
-    if hasattr(value, 'to_dict'):
+    if hasattr(value, "to_dict"):
         return value.to_dict()
 
     # Handle LangChain messages
     try:
         from langchain_core.messages import BaseMessage
+
         if isinstance(value, BaseMessage):
             return {
                 "type": value.type,

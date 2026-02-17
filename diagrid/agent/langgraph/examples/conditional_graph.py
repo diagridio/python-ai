@@ -48,13 +48,18 @@ def classifier_node(state: State) -> dict:
 
 def high_value_processor(state: State) -> dict:
     """Process high value inputs."""
-    print(f"  [high_processor] Processing high value: {state['input_value']}", flush=True)
+    print(
+        f"  [high_processor] Processing high value: {state['input_value']}", flush=True
+    )
     return {"result": f"High value processed: {state['input_value'] * 2}"}
 
 
 def medium_value_processor(state: State) -> dict:
     """Process medium value inputs."""
-    print(f"  [medium_processor] Processing medium value: {state['input_value']}", flush=True)
+    print(
+        f"  [medium_processor] Processing medium value: {state['input_value']}",
+        flush=True,
+    )
     return {"result": f"Medium value processed: {state['input_value'] * 1.5}"}
 
 
@@ -117,11 +122,13 @@ def build_graph() -> StateGraph:
     return graph
 
 
-async def run_with_value(runner: DaprWorkflowGraphRunner, value: int, thread_suffix: str):
+async def run_with_value(
+    runner: DaprWorkflowGraphRunner, value: int, thread_suffix: str
+):
     """Run the graph with a specific input value."""
-    print(f"\n{'='*60}", flush=True)
+    print(f"\n{'=' * 60}", flush=True)
     print(f"Testing with input_value = {value}", flush=True)
-    print(f"{'='*60}", flush=True)
+    print(f"{'=' * 60}", flush=True)
 
     input_state = {"input_value": value, "path_taken": "", "result": ""}
 

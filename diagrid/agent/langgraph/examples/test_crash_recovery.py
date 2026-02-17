@@ -77,14 +77,16 @@ state = load_state()
 state["run_count"] += 1
 save_state(state)
 
-log(f"\n{'='*60}")
+log(f"\n{'=' * 60}")
 log(f"RUN #{state['run_count']}")
-log(f"{'='*60}")
-log(f"Previous state: node1={state['node1_executed']}, "
-    f"node2={state['node2_executed']}, node3={state['node3_executed']}")
+log(f"{'=' * 60}")
+log(
+    f"Previous state: node1={state['node1_executed']}, "
+    f"node2={state['node2_executed']}, node3={state['node3_executed']}"
+)
 log(f"Workflow previously scheduled: {state['workflow_scheduled']}")
 log(f"Saved workflow_id: {state.get('workflow_id')}")
-log(f"{'='*60}\n")
+log(f"{'=' * 60}\n")
 
 
 # Define the graph state
@@ -190,7 +192,7 @@ async def main():
 
                 if event_type == "workflow_started":
                     # Save the actual workflow_id for polling on restart
-                    actual_workflow_id = event.get('workflow_id')
+                    actual_workflow_id = event.get("workflow_id")
                     state["workflow_scheduled"] = True
                     state["workflow_id"] = actual_workflow_id
                     save_state(state)
@@ -206,7 +208,9 @@ async def main():
         else:
             # Workflow was already scheduled - poll using the saved workflow_id
             saved_workflow_id = state.get("workflow_id")
-            log(f"Workflow already scheduled. Polling for completion: {saved_workflow_id}")
+            log(
+                f"Workflow already scheduled. Polling for completion: {saved_workflow_id}"
+            )
             await poll_for_completion(runner, saved_workflow_id)
 
     except KeyboardInterrupt:
@@ -227,7 +231,9 @@ async def poll_for_completion(runner: DaprWorkflowGraphRunner, workflow_id: str)
     previous_status = None
     while True:
         await asyncio.sleep(1.0)
-        workflow_state = runner._workflow_client.get_workflow_state(instance_id=workflow_id)
+        workflow_state = runner._workflow_client.get_workflow_state(
+            instance_id=workflow_id
+        )
 
         if workflow_state is None:
             log("Workflow state not found!")
@@ -240,13 +246,19 @@ async def poll_for_completion(runner: DaprWorkflowGraphRunner, workflow_id: str)
         if workflow_state.runtime_status == WorkflowStatus.COMPLETED:
             output_data = workflow_state.serialized_output
             if output_data:
-                output_dict = json.loads(output_data) if isinstance(output_data, str) else output_data
+                output_dict = (
+                    json.loads(output_data)
+                    if isinstance(output_data, str)
+                    else output_data
+                )
                 output = GraphWorkflowOutput.from_dict(output_dict)
-                print_completion({
-                    "output": output.output,
-                    "steps": output.steps,
-                    "status": output.status,
-                })
+                print_completion(
+                    {
+                        "output": output.output,
+                        "steps": output.steps,
+                        "status": output.status,
+                    }
+                )
             break
         elif workflow_state.runtime_status == WorkflowStatus.FAILED:
             log(f"\nWorkflow FAILED: {workflow_state.failure_details}")
@@ -258,27 +270,29 @@ async def poll_for_completion(runner: DaprWorkflowGraphRunner, workflow_id: str)
 
 def print_completion(event: dict):
     """Print completion summary and verification."""
-    log(f"\n{'='*60}")
+    log(f"\n{'=' * 60}")
     log("WORKFLOW COMPLETED!")
-    log(f"{'='*60}")
+    log(f"{'=' * 60}")
     log(f"Output: {event.get('output')}")
     log(f"Steps: {event.get('steps')}")
 
     # Reload state to get latest
     final_state = load_state()
-    log(f"\n{'='*60}")
+    log(f"\n{'=' * 60}")
     log("VERIFICATION:")
-    log(f"{'='*60}")
+    log(f"{'=' * 60}")
     log(f"Node 1 executed: {final_state['node1_executed']}")
     log(f"Node 2 executed: {final_state['node2_executed']}")
     log(f"Node 3 executed: {final_state['node3_executed']}")
     log(f"Total runs: {final_state['run_count']}")
 
-    if final_state['run_count'] >= 2 and all([
-        final_state['node1_executed'],
-        final_state['node2_executed'],
-        final_state['node3_executed']
-    ]):
+    if final_state["run_count"] >= 2 and all(
+        [
+            final_state["node1_executed"],
+            final_state["node2_executed"],
+            final_state["node3_executed"],
+        ]
+    ):
         log("\n>>> TEST PASSED: Crash recovery worked!")
         log(">>> Workflow resumed after crash and completed all nodes.")
 

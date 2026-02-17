@@ -146,9 +146,9 @@ class DaprWorkflowGraphRunner:
     def _infer_graph_name(self) -> str:
         """Infer a name for the graph."""
         # Try to get name from graph or builder
-        if hasattr(self._graph, 'name') and self._graph.name:
+        if hasattr(self._graph, "name") and self._graph.name:
             return self._graph.name
-        if hasattr(self._graph, 'builder') and hasattr(self._graph.builder, 'name'):
+        if hasattr(self._graph, "builder") and hasattr(self._graph.builder, "name"):
             return self._graph.builder.name or "langgraph"
         return "langgraph"
 
@@ -160,7 +160,7 @@ class DaprWorkflowGraphRunner:
         finish_points = []
 
         # Get nodes from the compiled graph
-        graph_nodes = getattr(self._graph, 'nodes', {})
+        graph_nodes = getattr(self._graph, "nodes", {})
         for node_name, node_spec in graph_nodes.items():
             if node_name in (START, END, "__start__", "__end__"):
                 continue
@@ -170,29 +170,31 @@ class DaprWorkflowGraphRunner:
             channels_read = []
             channels_write = []
 
-            if hasattr(node_spec, 'triggers'):
+            if hasattr(node_spec, "triggers"):
                 triggers = list(node_spec.triggers) if node_spec.triggers else []
-            if hasattr(node_spec, 'channels'):
+            if hasattr(node_spec, "channels"):
                 channels_read = (
                     [node_spec.channels]
                     if isinstance(node_spec.channels, str)
                     else list(node_spec.channels or [])
                 )
 
-            nodes.append(NodeConfig(
-                name=node_name,
-                triggers=triggers,
-                channels_read=channels_read,
-                channels_write=channels_write,
-            ))
+            nodes.append(
+                NodeConfig(
+                    name=node_name,
+                    triggers=triggers,
+                    channels_read=channels_read,
+                    channels_write=channels_write,
+                )
+            )
 
         # Get edges
         # Try to access edges from builder or graph
-        builder = getattr(self._graph, 'builder', None)
+        builder = getattr(self._graph, "builder", None)
 
         if builder:
             # Get regular edges
-            graph_edges = getattr(builder, 'edges', set())
+            graph_edges = getattr(builder, "edges", set())
             for source, target in graph_edges:
                 source_name = source if source != "__start__" else START
                 target_name = target if target != "__end__" else END
@@ -203,18 +205,20 @@ class DaprWorkflowGraphRunner:
                     if source_name not in finish_points:
                         finish_points.append(source_name)
 
-                edges.append(EdgeConfig(
-                    source=source_name,
-                    target=target_name,
-                ))
+                edges.append(
+                    EdgeConfig(
+                        source=source_name,
+                        target=target_name,
+                    )
+                )
 
             # Get conditional edges (branches)
-            branches = getattr(builder, 'branches', {})
+            branches = getattr(builder, "branches", {})
             for source, branch_dict in branches.items():
                 for branch_name, branch_spec in branch_dict.items():
                     # Branch spec has the path function and path_map
-                    path_func = getattr(branch_spec, 'path', None)
-                    path_map = getattr(branch_spec, 'path_map', None)
+                    path_func = getattr(branch_spec, "path", None)
+                    path_map = getattr(branch_spec, "path_map", None)
 
                     if path_func:
                         # Register the condition function
@@ -222,11 +226,13 @@ class DaprWorkflowGraphRunner:
                         register_condition(condition_name, path_func)
 
                         # Create edge for conditional routing
-                        edges.append(EdgeConfig(
-                            source=source if source != "__start__" else START,
-                            target="",  # Determined at runtime
-                            condition=condition_name,
-                        ))
+                        edges.append(
+                            EdgeConfig(
+                                source=source if source != "__start__" else START,
+                                target="",  # Determined at runtime
+                                condition=condition_name,
+                            )
+                        )
 
         # If no entry point found, use first node
         if not entry_point and nodes:
@@ -236,18 +242,18 @@ class DaprWorkflowGraphRunner:
         input_channels = []
         output_channels = []
 
-        if hasattr(self._graph, 'input_channels'):
+        if hasattr(self._graph, "input_channels"):
             ic = self._graph.input_channels
             input_channels = [ic] if isinstance(ic, str) else list(ic or [])
-        if hasattr(self._graph, 'output_channels'):
+        if hasattr(self._graph, "output_channels"):
             oc = self._graph.output_channels
             output_channels = [oc] if isinstance(oc, str) else list(oc or [])
 
         # Default to state channels if not specified
         if not input_channels:
-            input_channels = list(getattr(self._graph, 'channels', {}).keys())
+            input_channels = list(getattr(self._graph, "channels", {}).keys())
         if not output_channels:
-            output_channels = list(getattr(self._graph, 'channels', {}).keys())
+            output_channels = list(getattr(self._graph, "channels", {}).keys())
 
         return GraphConfig(
             name=self._name,
@@ -264,7 +270,7 @@ class DaprWorkflowGraphRunner:
         clear_registries()
 
         # Register nodes
-        graph_nodes = getattr(self._graph, 'nodes', {})
+        graph_nodes = getattr(self._graph, "nodes", {})
         for node_name, node_spec in graph_nodes.items():
             if node_name in (START, END, "__start__", "__end__"):
                 continue
@@ -272,16 +278,16 @@ class DaprWorkflowGraphRunner:
             # Get the actual callable from the node spec
             node_func = None
 
-            if hasattr(node_spec, 'bound'):
+            if hasattr(node_spec, "bound"):
                 # PregelNode has a 'bound' Runnable
                 bound = node_spec.bound
-                if hasattr(bound, 'func'):
+                if hasattr(bound, "func"):
                     node_func = bound.func
                 elif callable(bound):
                     node_func = bound
-            elif hasattr(node_spec, 'runnable'):
+            elif hasattr(node_spec, "runnable"):
                 runnable = node_spec.runnable
-                if hasattr(runnable, 'func'):
+                if hasattr(runnable, "func"):
                     node_func = runnable.func
                 elif callable(runnable):
                     node_func = runnable
@@ -295,19 +301,22 @@ class DaprWorkflowGraphRunner:
                 logger.warning(f"Could not extract callable for node: {node_name}")
 
         # Register channel reducers
-        channels = getattr(self._graph, 'channels', {})
+        channels = getattr(self._graph, "channels", {})
         for channel_name, channel in channels.items():
             # Check if channel has a reducer
-            if hasattr(channel, 'reducer') and channel.reducer:
+            if hasattr(channel, "reducer") and channel.reducer:
                 register_channel_reducer(channel_name, channel.reducer)
                 logger.info(f"Registered reducer for channel: {channel_name}")
 
         # Set up serializer if available
         try:
             from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
             set_serializer(JsonPlusSerializer())
         except ImportError:
-            logger.warning("JsonPlusSerializer not available, using basic serialization")
+            logger.warning(
+                "JsonPlusSerializer not available, using basic serialization"
+            )
 
     def start(self) -> None:
         """Start the workflow runtime.
@@ -430,7 +439,9 @@ class DaprWorkflowGraphRunner:
             elif state.runtime_status == WorkflowStatus.FAILED:
                 error_msg = "Workflow failed"
                 if state.failure_details:
-                    error_msg = getattr(state.failure_details, 'message', str(state.failure_details))
+                    error_msg = getattr(
+                        state.failure_details, "message", str(state.failure_details)
+                    )
                 raise RuntimeError(error_msg)
 
             elif state.runtime_status == WorkflowStatus.TERMINATED:
@@ -571,9 +582,9 @@ class DaprWorkflowGraphRunner:
                 if state.failure_details:
                     fd = state.failure_details
                     error_info = {
-                        "message": getattr(fd, 'message', str(fd)),
-                        "error_type": getattr(fd, 'error_type', None),
-                        "stack_trace": getattr(fd, 'stack_trace', None),
+                        "message": getattr(fd, "message", str(fd)),
+                        "error_type": getattr(fd, "error_type", None),
+                        "stack_trace": getattr(fd, "stack_trace", None),
                     }
                 yield {
                     "type": "workflow_failed",
@@ -599,6 +610,7 @@ class DaprWorkflowGraphRunner:
             Serialized input
         """
         from .workflow import _serialize_value
+
         return {k: _serialize_value(v) for k, v in input.items()}
 
     def get_workflow_status(self, workflow_id: str) -> Optional[Dict[str, Any]]:
@@ -622,7 +634,9 @@ class DaprWorkflowGraphRunner:
             "status": str(state.runtime_status),
             "custom_status": state.serialized_custom_status,
             "created_at": str(state.created_at) if state.created_at else None,
-            "last_updated_at": str(state.last_updated_at) if state.last_updated_at else None,
+            "last_updated_at": str(state.last_updated_at)
+            if state.last_updated_at
+            else None,
         }
 
     def terminate_workflow(self, workflow_id: str) -> None:

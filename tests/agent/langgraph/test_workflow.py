@@ -158,10 +158,12 @@ class TestSerializeValue(unittest.TestCase):
         self.assertEqual(result, {"a": 1, "b": "two"})
 
     def test_nested(self):
-        result = _serialize_value({
-            "list": [1, 2, {"nested": True}],
-            "dict": {"inner": [1, 2]},
-        })
+        result = _serialize_value(
+            {
+                "list": [1, 2, {"nested": True}],
+                "dict": {"inner": [1, 2]},
+            }
+        )
         self.assertEqual(result["list"][2]["nested"], True)
 
 

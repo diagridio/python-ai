@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Set
 
 class WorkflowStatus(str, Enum):
     """Status of a workflow execution."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -39,6 +40,7 @@ class NodeConfig:
         channels_read: Channels this node reads from
         channels_write: Channels this node writes to
     """
+
     name: str
     triggers: List[str] = field(default_factory=list)
     channels_read: List[str] = field(default_factory=list)
@@ -71,6 +73,7 @@ class EdgeConfig:
         target: Target node name (or list for conditional)
         condition: Optional condition function name for conditional edges
     """
+
     source: str
     target: str
     condition: Optional[str] = None
@@ -104,6 +107,7 @@ class GraphConfig:
         input_channels: Channels that accept input
         output_channels: Channels that produce output
     """
+
     name: str
     nodes: List[NodeConfig]
     edges: List[EdgeConfig]
@@ -145,6 +149,7 @@ class ChannelState:
         versions: Mapping of channel name to version number
         updated_channels: Set of channels updated in current step
     """
+
     values: Dict[str, Any] = field(default_factory=dict)
     versions: Dict[str, int] = field(default_factory=dict)
     updated_channels: List[str] = field(default_factory=list)
@@ -173,6 +178,7 @@ class NodeWrite:
         channel: The channel to write to
         value: The value to write
     """
+
     channel: str
     value: Any
 
@@ -199,6 +205,7 @@ class ExecuteNodeInput:
         channel_state: Current channel state
         config: Optional LangGraph config dict
     """
+
     node_name: str
     channel_state: ChannelState
     config: Optional[Dict[str, Any]] = None
@@ -228,6 +235,7 @@ class ExecuteNodeOutput:
         writes: List of writes produced by the node
         error: Optional error message
     """
+
     node_name: str
     writes: List[NodeWrite] = field(default_factory=list)
     error: Optional[str] = None
@@ -257,6 +265,7 @@ class EvaluateConditionInput:
         condition_name: Name of the condition function
         channel_state: Current channel state
     """
+
     source_node: str
     condition_name: str
     channel_state: ChannelState
@@ -285,6 +294,7 @@ class EvaluateConditionOutput:
         next_nodes: List of next node names to execute
         error: Optional error message
     """
+
     next_nodes: List[str] = field(default_factory=list)
     error: Optional[str] = None
 
@@ -315,6 +325,7 @@ class GraphWorkflowInput:
         config: Optional LangGraph config dict
         thread_id: Thread identifier for the execution
     """
+
     graph_config: GraphConfig
     channel_state: ChannelState
     step: int = 0
@@ -358,6 +369,7 @@ class GraphWorkflowOutput:
         status: Workflow status
         error: Optional error message
     """
+
     output: Dict[str, Any] = field(default_factory=dict)
     channel_state: Optional[ChannelState] = None
     steps: int = 0
@@ -367,7 +379,9 @@ class GraphWorkflowOutput:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "output": self.output,
-            "channel_state": self.channel_state.to_dict() if self.channel_state else None,
+            "channel_state": self.channel_state.to_dict()
+            if self.channel_state
+            else None,
             "steps": self.steps,
             "status": self.status,
             "error": self.error,
