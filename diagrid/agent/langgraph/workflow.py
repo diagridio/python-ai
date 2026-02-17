@@ -13,7 +13,7 @@
 
 import logging
 from datetime import timedelta
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from dapr.ext.workflow import (
     DaprWorkflowContext,
@@ -100,7 +100,7 @@ def clear_registries() -> None:
 
 def langgraph_workflow(
     ctx: DaprWorkflowContext, input_data: Dict[str, Any]
-) -> Dict[str, Any]:
+) -> Generator[Any, Any, Dict[str, Any]]:
     """Dapr Workflow that orchestrates LangGraph execution.
 
     This workflow implements the Pregel/BSP execution model:
@@ -506,7 +506,7 @@ def _result_to_writes(result: Any) -> List[NodeWrite]:
     Returns:
         List of NodeWrite objects
     """
-    writes = []
+    writes: List[NodeWrite] = []
 
     if result is None:
         return writes

@@ -14,7 +14,7 @@
 import json
 import logging
 import uuid
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, TYPE_CHECKING
+from typing import Any, AsyncIterator, Dict, List, Optional, TYPE_CHECKING
 
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
@@ -164,7 +164,7 @@ class DaprWorkflowGraphRunner:
             # Extract node triggers and channels
             triggers = []
             channels_read = []
-            channels_write = []
+            channels_write: List[str] = []
 
             if hasattr(node_spec, "triggers"):
                 triggers = list(node_spec.triggers) if node_spec.triggers else []
@@ -190,7 +190,7 @@ class DaprWorkflowGraphRunner:
 
         if builder:
             # Get regular edges
-            graph_edges = getattr(builder, "edges", set())
+            graph_edges: Any = getattr(builder, "edges", set())
             for source, target in graph_edges:
                 source_name = source if source != "__start__" else START
                 target_name = target if target != "__end__" else END
@@ -371,6 +371,7 @@ class DaprWorkflowGraphRunner:
 
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
+        assert self._workflow_client is not None
 
         # Generate IDs
         thread_id = thread_id or str(uuid.uuid4())
@@ -470,6 +471,7 @@ class DaprWorkflowGraphRunner:
 
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
+        assert self._workflow_client is not None
 
         # Generate IDs
         thread_id = thread_id or str(uuid.uuid4())
@@ -619,6 +621,7 @@ class DaprWorkflowGraphRunner:
         """
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
+        assert self._workflow_client is not None
 
         state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
         if state is None:
@@ -642,6 +645,7 @@ class DaprWorkflowGraphRunner:
         """
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
+        assert self._workflow_client is not None
 
         self._workflow_client.terminate_workflow(instance_id=workflow_id)
         logger.info(f"Terminated workflow: {workflow_id}")
@@ -656,6 +660,7 @@ class DaprWorkflowGraphRunner:
         """
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
+        assert self._workflow_client is not None
 
         self._workflow_client.purge_workflow(instance_id=workflow_id)
         logger.info(f"Purged workflow: {workflow_id}")
