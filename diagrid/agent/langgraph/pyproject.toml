@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diagrid-agent-langgraph"
+version = "0.1.0"
+description = "Diagrid Agent LangGraph - Durable execution of LangGraph graphs using Dapr Workflows"
+readme = "README.rst"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = [
+    "dapr>=1.16.0",
+    "dapr-ext-workflow>=1.16.0",
+    "langgraph>=1.0.0",
+    "langchain-core>=0.3.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[tool.setuptools]
+packages = [
+    "diagrid.agent.langgraph",
+]
+package-dir = {"diagrid.agent.langgraph" = "."}
+
+[tool.setuptools.package-data]
+"diagrid.agent.langgraph" = ["py.typed"]
