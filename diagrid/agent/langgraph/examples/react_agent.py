@@ -161,9 +161,8 @@ def tool_execution_node(state: AgentState) -> dict:
 
 def answer_node(state: AgentState) -> dict:
     """Generate the final answer."""
-    print(f"  [answer] Generating final answer", flush=True)
+    print("  [answer] Generating final answer", flush=True)
 
-    thoughts = state.get("thoughts", [])
     tool_results = state.get("tool_results", [])
 
     # Construct answer from gathered information
@@ -244,17 +243,17 @@ async def run_agent(runner: DaprWorkflowGraphRunner, question: str, thread_id: s
         elif event_type == "workflow_status_changed":
             status = event.get("status", "")
             if "RUNNING" in str(status):
-                print(f"[Workflow] Processing...", flush=True)
+                print("[Workflow] Processing...", flush=True)
 
         elif event_type == "workflow_completed":
-            print(f"\n[Workflow] Completed!", flush=True)
+            print("\n[Workflow] Completed!", flush=True)
             output = event.get("output", {})
 
-            print(f"\nThinking process:", flush=True)
+            print("\nThinking process:", flush=True)
             for i, thought in enumerate(output.get("thoughts", []), 1):
                 print(f"  {i}. {thought}", flush=True)
 
-            print(f"\nTool calls made:", flush=True)
+            print("\nTool calls made:", flush=True)
             for tc in output.get("tool_calls", []):
                 print(f"  - {tc.get('tool')}({tc.get('args')})", flush=True)
 

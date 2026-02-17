@@ -122,14 +122,14 @@ async def main():
                 print(f"[Workflow] Status: {event.get('status')}", flush=True)
 
             elif event_type == "workflow_completed":
-                print(f"\n[Workflow] Completed!", flush=True)
+                print("\n[Workflow] Completed!", flush=True)
                 print(f"  Steps: {event.get('steps')}", flush=True)
                 print(f"  Status: {event.get('status')}", flush=True)
                 print(f"\nOutput: {event.get('output')}", flush=True)
 
             elif event_type == "workflow_failed":
                 error = event.get("error")
-                print(f"\n[Workflow] Failed!", flush=True)
+                print("\n[Workflow] Failed!", flush=True)
                 if isinstance(error, dict):
                     print(f"  Message: {error.get('message')}", flush=True)
                 else:

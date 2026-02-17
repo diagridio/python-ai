@@ -142,7 +142,7 @@ async def run_with_value(
             print(f"[Workflow] Started: {event.get('workflow_id')}", flush=True)
 
         elif event_type == "workflow_completed":
-            print(f"[Workflow] Completed!", flush=True)
+            print("[Workflow] Completed!", flush=True)
             output = event.get("output", {})
             print(f"  Path taken: {output.get('path_taken', 'unknown')}", flush=True)
             print(f"  Result: {output.get('result', 'N/A')}", flush=True)
