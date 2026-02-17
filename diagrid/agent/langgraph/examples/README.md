@@ -7,12 +7,18 @@
    docker run -d --name redis -p 6379:6379 redis:latest
    ```
 
-2. **Install dependencies**:
+2. **Install dependencies** (from the repo root):
    ```bash
-   pip install diagrid langgraph langchain-core
+   pip3 install -e ".[langgraph]"
    ```
 
 ## Running the Examples
+
+Activate your virtual environment before running (so `dapr run` picks up the right Python):
+
+```bash
+source .venv/bin/activate
+```
 
 ### Simple Graph Example
 
@@ -20,7 +26,7 @@ A basic example demonstrating a linear graph with two nodes:
 
 ```bash
 cd examples
-dapr run --app-id langgraph-simple --resources-path ./components -- python simple_graph.py
+dapr run --app-id langgraph-simple --resources-path ./components -- python3 simple_graph.py
 ```
 
 ### Conditional Routing Example
@@ -29,7 +35,7 @@ Demonstrates conditional edges based on state:
 
 ```bash
 cd examples
-dapr run --app-id langgraph-conditional --resources-path ./components -- python conditional_graph.py
+dapr run --app-id langgraph-conditional --resources-path ./components -- python3 conditional_graph.py
 ```
 
 ### ReAct Agent Example
@@ -38,7 +44,7 @@ A more complex example showing a ReAct-style agent with tool execution:
 
 ```bash
 cd examples
-dapr run --app-id langgraph-react --resources-path ./components -- python react_agent.py
+dapr run --app-id langgraph-react --resources-path ./components -- python3 react_agent.py
 ```
 
 ### Crash Recovery Test
@@ -51,10 +57,10 @@ rm -f /tmp/langgraph_crash_test_state.json
 
 # First run (will crash during node 2):
 cd examples
-dapr run --app-id langgraph-crash-test --resources-path ./components -- python test_crash_recovery.py
+dapr run --app-id langgraph-crash-test --resources-path ./components -- python3 test_crash_recovery.py
 
 # Second run (Dapr auto-resumes and completes):
-dapr run --app-id langgraph-crash-test --resources-path ./components -- python test_crash_recovery.py
+dapr run --app-id langgraph-crash-test --resources-path ./components -- python3 test_crash_recovery.py
 ```
 
 On the second run you should see `TEST PASSED: Crash recovery worked!` confirming that the workflow resumed from where it left off.
