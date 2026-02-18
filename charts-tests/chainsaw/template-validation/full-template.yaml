@@ -225,7 +225,7 @@ apiVersion: v1
 kind: ServiceAccount
 automountServiceAccountToken: true
 metadata:
-  labels:    
+  labels:
     helm.sh/chart: kube-state-metrics-5.25.1
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: metrics
@@ -265,7 +265,7 @@ metadata:
     app: kube-prometheus-stack-alertmanager
     app.kubernetes.io/name: kube-prometheus-stack-alertmanager
     app.kubernetes.io/component: alertmanager
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -282,7 +282,7 @@ metadata:
   name: catalyst-agents-kube-prome-operator
   namespace: catalyst-agents
   labels:
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -305,7 +305,7 @@ metadata:
     app: kube-prometheus-stack-prometheus
     app.kubernetes.io/name: kube-prometheus-stack-prometheus
     app.kubernetes.io/component: prometheus
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -413,7 +413,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 type: Opaque
 data:
-  
+
   admin-user: "YWRtaW4="
   admin-password: "YWRtaW4="
   ldap-toml: ""
@@ -426,7 +426,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-alertmanager
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -694,7 +694,7 @@ metadata:
     app.kubernetes.io/version: "11.1.3"
     app.kubernetes.io/managed-by: Helm
 data:
-  
+
   grafana.ini: |
     [analytics]
     check_for_updates = true
@@ -725,7 +725,7 @@ metadata:
   labels:
     grafana_datasource: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -774,7 +774,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -797,7 +797,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -820,7 +820,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -843,7 +843,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -866,7 +866,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -889,7 +889,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -912,7 +912,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -935,7 +935,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -958,7 +958,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -981,7 +981,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1004,7 +1004,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1027,7 +1027,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1050,7 +1050,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1073,7 +1073,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1096,7 +1096,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1119,7 +1119,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1142,7 +1142,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1165,7 +1165,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1188,7 +1188,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1211,7 +1211,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1234,7 +1234,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1257,7 +1257,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1280,7 +1280,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1303,7 +1303,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1326,7 +1326,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1349,7 +1349,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1372,7 +1372,7 @@ metadata:
   labels:
     grafana_dashboard: "1"
     app: kube-prometheus-stack-grafana
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -1398,7 +1398,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 data:
   config.yaml: |
-    
+
     auth_enabled: false
     chunk_store_config:
       chunk_cache_config:
@@ -1504,51 +1504,51 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: gateway
 data:
-  nginx.conf: |    
+  nginx.conf: |
     worker_processes  5;  ## Default: 1
     error_log  /dev/stderr;
     pid        /tmp/nginx.pid;
     worker_rlimit_nofile 8192;
-    
+
     events {
       worker_connections  4096;  ## Default: 1024
     }
-    
+
     http {
       client_body_temp_path /tmp/client_temp;
       proxy_temp_path       /tmp/proxy_temp_path;
       fastcgi_temp_path     /tmp/fastcgi_temp;
       uwsgi_temp_path       /tmp/uwsgi_temp;
       scgi_temp_path        /tmp/scgi_temp;
-    
+
       client_max_body_size  4M;
-    
+
       proxy_read_timeout    600; ## 10 minutes
       proxy_send_timeout    600;
       proxy_connect_timeout 600;
-    
+
       proxy_http_version    1.1;
-    
+
       default_type application/octet-stream;
       log_format   main '$remote_addr - $remote_user [$time_local]  $status '
             '"$request" $body_bytes_sent "$http_referer" '
             '"$http_user_agent" "$http_x_forwarded_for"';
       access_log   /dev/stderr  main;
-    
+
       sendfile     on;
       tcp_nopush   on;
       resolver kube-dns.kube-system.svc.cluster.local.;
-      
-    
+
+
       server {
         listen             8080;
         listen             [::]:8080;
-    
+
         location = / {
           return 200 'OK';
           auth_basic off;
         }
-    
+
         ########################################################
         # Configure backend targets# Distributor
         location = /api/prom/push {
@@ -1563,7 +1563,7 @@ data:
         location = /otlp/v1/logs {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
+
         # Ingester
         location = /flush {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
@@ -1574,17 +1574,17 @@ data:
         location = /ingester {
           internal;        # to suppress 301
         }
-    
+
         # Ring
         location = /ring {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
+
         # MemberListKV
         location = /memberlist {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
+
         # Ruler
         location = /ruler/ring {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
@@ -1607,7 +1607,7 @@ data:
         location = /prometheus/api/v1/rules {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
+
         # Compactor
         location = /compactor/ring {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
@@ -1618,23 +1618,23 @@ data:
         location = /loki/api/v1/cache/generation_numbers {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
+
         # IndexGateway
         location = /indexgateway/ring {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
+
         # QueryScheduler
         location = /scheduler/ring {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
+
         # Config
         location = /config {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
         }
-    
-    
+
+
         # QueryFrontend, Querier
         location = /api/prom/tail {
           proxy_pass       http://catalyst-agents-loki.catalyst-agents.svc.cluster.local:3100$request_uri;
@@ -1689,7 +1689,7 @@ metadata:
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "0.104.0"
     app.kubernetes.io/managed-by: Helm
-    
+
 data:
   relay: |
     exporters:
@@ -1860,17 +1860,17 @@ metadata:
   namespace: catalyst-agents
 data:
   nginx.conf: |
-    
+
         events { worker_connections 1024; }
         http {
           log_format main '$remote_addr - $remote_user [$time_local] "$request" '
                           '$status $body_bytes_sent "$http_referer" '
                           '"$http_user_agent" "$upstream_addr"';
           access_log /var/log/nginx/access.log main;
-    
+
           # Default resolver for internal service names
           resolver 10.96.0.10;
-    
+
           server {
             listen 80;
             server_name kagent.localhost;
@@ -1887,7 +1887,7 @@ data:
               proxy_set_header Host $host;
             }
           }
-    
+
           server {
             listen 80;
             server_name grafana.localhost;
@@ -1899,7 +1899,7 @@ data:
               proxy_set_header X-Forwarded-Proto $scheme;
             }
           }
-    
+
           server {
             listen 80;
             server_name redis.localhost;
@@ -1911,7 +1911,7 @@ data:
               proxy_set_header X-Forwarded-Proto $scheme;
             }
           }
-    
+
           server {
             listen 80;
             server_name diagrid.localhost;
@@ -1923,7 +1923,7 @@ data:
               proxy_set_header X-Forwarded-Proto $scheme;
             }
           }
-    
+
           # Landing page for other requests
           server {
             listen 80 default_server;
@@ -2433,7 +2433,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:    
+  labels:
     helm.sh/chart: kube-state-metrics-5.25.1
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: metrics
@@ -2591,7 +2591,7 @@ kind: ClusterRole
 metadata:
   name: catalyst-agents-kube-prome-operator
   labels:
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -2701,7 +2701,7 @@ metadata:
   name: catalyst-agents-kube-prome-prometheus
   labels:
     app: kube-prometheus-stack-prometheus
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -2999,7 +2999,7 @@ roleRef:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  labels:    
+  labels:
     helm.sh/chart: kube-state-metrics-5.25.1
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: metrics
@@ -3024,7 +3024,7 @@ kind: ClusterRoleBinding
 metadata:
   name: catalyst-agents-kube-prome-operator
   labels:
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3051,7 +3051,7 @@ metadata:
   name: catalyst-agents-kube-prome-prometheus
   labels:
     app: kube-prometheus-stack-prometheus
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3755,7 +3755,7 @@ kind: Service
 metadata:
   name: catalyst-agents-kube-state-metrics
   namespace: catalyst-agents
-  labels:    
+  labels:
     helm.sh/chart: kube-state-metrics-5.25.1
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: metrics
@@ -3773,8 +3773,8 @@ spec:
     protocol: TCP
     port: 8080
     targetPort: 8080
-  
-  selector:    
+
+  selector:
     app.kubernetes.io/name: kube-state-metrics
     app.kubernetes.io/instance: catalyst-agents
 ---
@@ -3816,7 +3816,7 @@ metadata:
   labels:
     app: kube-prometheus-stack-alertmanager
     self-monitor: "true"
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3848,7 +3848,7 @@ metadata:
   labels:
     app: kube-prometheus-stack-coredns
     jobLabel: coredns
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3875,7 +3875,7 @@ metadata:
   labels:
     app: kube-prometheus-stack-kube-controller-manager
     jobLabel: kube-controller-manager
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3903,7 +3903,7 @@ metadata:
   labels:
     app: kube-prometheus-stack-kube-etcd
     jobLabel: kube-etcd
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3931,7 +3931,7 @@ metadata:
   labels:
     app: kube-prometheus-stack-kube-proxy
     jobLabel: kube-proxy
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3959,7 +3959,7 @@ metadata:
   labels:
     app: kube-prometheus-stack-kube-scheduler
     jobLabel: kube-scheduler
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -3986,7 +3986,7 @@ metadata:
   name: catalyst-agents-kube-prome-operator
   namespace: catalyst-agents
   labels:
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -4016,7 +4016,7 @@ metadata:
   labels:
     app: kube-prometheus-stack-prometheus
     self-monitor: "true"
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -4065,7 +4065,7 @@ spec:
     - name: http-metrics
       port: 9150
       targetPort: 9150
-    
+
   selector:
     app.kubernetes.io/name: loki
     app.kubernetes.io/instance: catalyst-agents
@@ -4148,7 +4148,7 @@ spec:
     - name: http-metrics
       port: 9150
       targetPort: 9150
-    
+
   selector:
     app.kubernetes.io/name: loki
     app.kubernetes.io/instance: catalyst-agents
@@ -4246,12 +4246,12 @@ metadata:
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "0.104.0"
     app.kubernetes.io/managed-by: Helm
-    
+
     component: standalone-collector
 spec:
   type: NodePort
   ports:
-    
+
     - name: jaeger-compact
       port: 6831
       targetPort: 6831
@@ -4607,7 +4607,7 @@ spec:
         app.kubernetes.io/component: canary
     spec:
       serviceAccountName: loki-canary
-      
+
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -4638,7 +4638,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            
+
           readinessProbe:
             httpGet:
               path: /metrics
@@ -5041,7 +5041,7 @@ spec:
         - name: grafana-mcp
           securityContext:
             {}
-          image: "mcp/grafana:latest" 
+          image: "mcp/grafana:latest"
           imagePullPolicy: Always
           args:
             - --transport
@@ -5456,7 +5456,7 @@ spec:
         checksum/secret: bed677784356b2af7fb0d87455db21f077853059b594101a4f6532bfbd962a7f
         kubectl.kubernetes.io/default-container: grafana
     spec:
-      
+
       serviceAccountName: catalyst-agents-grafana
       automountServiceAccountToken: true
       securityContext:
@@ -5633,7 +5633,7 @@ kind: Deployment
 metadata:
   name: catalyst-agents-kube-state-metrics
   namespace: catalyst-agents
-  labels:    
+  labels:
     helm.sh/chart: kube-state-metrics-5.25.1
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: metrics
@@ -5644,7 +5644,7 @@ metadata:
     release: catalyst-agents
 spec:
   selector:
-    matchLabels:      
+    matchLabels:
       app.kubernetes.io/name: kube-state-metrics
       app.kubernetes.io/instance: catalyst-agents
   replicas: 1
@@ -5653,7 +5653,7 @@ spec:
   revisionHistoryLimit: 10
   template:
     metadata:
-      labels:        
+      labels:
         helm.sh/chart: kube-state-metrics-5.25.1
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: metrics
@@ -5721,7 +5721,7 @@ metadata:
   name: catalyst-agents-kube-prome-operator
   namespace: catalyst-agents
   labels:
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -5742,7 +5742,7 @@ spec:
   template:
     metadata:
       labels:
-        
+
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/instance: catalyst-agents
         app.kubernetes.io/version: "61.9.0"
@@ -5860,7 +5860,7 @@ spec:
     spec:
       serviceAccountName: loki
       enableServiceLinks: true
-      
+
       securityContext:
         fsGroup: 101
         runAsGroup: 101
@@ -5924,7 +5924,7 @@ metadata:
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "0.104.0"
     app.kubernetes.io/managed-by: Helm
-    
+
 spec:
   replicas: 1
   revisionHistoryLimit: 10
@@ -5939,14 +5939,14 @@ spec:
     metadata:
       annotations:
         checksum/config: 7b432a60fdd0b20d98172cfa1349173c93b5d3ee1fa8c08e4236eaf046bc016d
-        
+
       labels:
         app.kubernetes.io/name: opentelemetry-collector
         app.kubernetes.io/instance: catalyst-agents
         component: standalone-collector
-        
+
     spec:
-      
+
       serviceAccountName: catalyst-agents-opentelemetry-collector
       securityContext:
         {}
@@ -5959,7 +5959,7 @@ spec:
           image: "otel/opentelemetry-collector-contrib:0.142.0"
           imagePullPolicy: IfNotPresent
           ports:
-            
+
             - name: jaeger-compact
               containerPort: 6831
               protocol: UDP
@@ -6687,7 +6687,7 @@ spec:
       partition: 0
   serviceName: catalyst-agents-loki-headless
   revisionHistoryLimit: 10
-  
+
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: Delete
     whenScaled: Delete
@@ -6709,7 +6709,7 @@ spec:
       serviceAccountName: loki
       automountServiceAccountToken: true
       enableServiceLinks: true
-      
+
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -6906,10 +6906,10 @@ kind: MutatingWebhookConfiguration
 metadata:
   name:  catalyst-agents-kube-prome-admission
   annotations:
-    
+
   labels:
     app: kube-prometheus-stack-admission
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -6947,10 +6947,10 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name:  catalyst-agents-kube-prome-admission
   annotations:
-    
+
   labels:
     app: kube-prometheus-stack-admission
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -7410,7 +7410,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-alertmanager
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -7753,7 +7753,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-prometheus
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -7823,7 +7823,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -7966,7 +7966,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -7998,7 +7998,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8166,7 +8166,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8234,7 +8234,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8262,7 +8262,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8289,7 +8289,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8316,7 +8316,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8343,7 +8343,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8370,7 +8370,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8459,7 +8459,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8527,7 +8527,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8657,7 +8657,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -8979,7 +8979,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9010,7 +9010,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9087,7 +9087,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9112,7 +9112,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9145,7 +9145,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9202,7 +9202,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9271,7 +9271,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9304,7 +9304,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9563,7 +9563,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9686,7 +9686,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9800,7 +9800,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9874,7 +9874,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9904,7 +9904,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -9934,7 +9934,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10075,7 +10075,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10105,7 +10105,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10148,7 +10148,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10231,7 +10231,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10560,7 +10560,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10590,7 +10590,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10647,7 +10647,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -10740,7 +10740,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11094,7 +11094,7 @@ kind: ServiceMonitor
 metadata:
   name: catalyst-agents-kube-state-metrics
   namespace: catalyst-agents
-  labels:    
+  labels:
     helm.sh/chart: kube-state-metrics-5.25.1
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: metrics
@@ -11104,9 +11104,9 @@ metadata:
     app.kubernetes.io/version: "2.13.0"
     release: catalyst-agents
 spec:
-  jobLabel: app.kubernetes.io/name  
+  jobLabel: app.kubernetes.io/name
   selector:
-    matchLabels:      
+    matchLabels:
       app.kubernetes.io/name: kube-state-metrics
       app.kubernetes.io/instance: catalyst-agents
   endpoints:
@@ -11131,7 +11131,7 @@ metadata:
     release: catalyst-agents
 spec:
   jobLabel: jobLabel
-  
+
   selector:
     matchLabels:
       app.kubernetes.io/name: prometheus-node-exporter
@@ -11150,7 +11150,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-alertmanager
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11159,7 +11159,7 @@ metadata:
     release: "catalyst-agents"
     heritage: "Helm"
 spec:
-  
+
   selector:
     matchLabels:
       app: kube-prometheus-stack-alertmanager
@@ -11183,7 +11183,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-coredns
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11193,7 +11193,7 @@ metadata:
     heritage: "Helm"
 spec:
   jobLabel: jobLabel
-  
+
   selector:
     matchLabels:
       app: kube-prometheus-stack-coredns
@@ -11213,7 +11213,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-apiserver
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11222,7 +11222,7 @@ metadata:
     release: "catalyst-agents"
     heritage: "Helm"
 spec:
-  
+
   endpoints:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
     port: https
@@ -11254,7 +11254,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-kube-controller-manager
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11264,7 +11264,7 @@ metadata:
     heritage: "Helm"
 spec:
   jobLabel: jobLabel
-  
+
   selector:
     matchLabels:
       app: kube-prometheus-stack-kube-controller-manager
@@ -11288,7 +11288,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-kube-etcd
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11298,7 +11298,7 @@ metadata:
     heritage: "Helm"
 spec:
   jobLabel: jobLabel
-    
+
   selector:
     matchLabels:
       app: kube-prometheus-stack-kube-etcd
@@ -11318,7 +11318,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-kube-proxy
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11328,7 +11328,7 @@ metadata:
     heritage: "Helm"
 spec:
   jobLabel: jobLabel
-  
+
   selector:
     matchLabels:
       app: kube-prometheus-stack-kube-proxy
@@ -11348,7 +11348,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-kube-scheduler
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11358,7 +11358,7 @@ metadata:
     heritage: "Helm"
 spec:
   jobLabel: jobLabel
-  
+
   selector:
     matchLabels:
       app: kube-prometheus-stack-kube-scheduler
@@ -11381,7 +11381,7 @@ metadata:
   name: catalyst-agents-kube-prome-kubelet
   namespace: catalyst-agents
   labels:
-    app: kube-prometheus-stack-kubelet    
+    app: kube-prometheus-stack-kubelet
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11390,7 +11390,7 @@ metadata:
     release: "catalyst-agents"
     heritage: "Helm"
 spec:
-  
+
   attachMetadata:
     node: false
   endpoints:
@@ -11477,7 +11477,7 @@ metadata:
   name: catalyst-agents-kube-prome-operator
   namespace: catalyst-agents
   labels:
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11489,7 +11489,7 @@ metadata:
     app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
     app.kubernetes.io/component: prometheus-operator
 spec:
-  
+
   endpoints:
   - port: https
     scheme: https
@@ -11517,7 +11517,7 @@ metadata:
   namespace: catalyst-agents
   labels:
     app: kube-prometheus-stack-prometheus
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11526,7 +11526,7 @@ metadata:
     release: "catalyst-agents"
     heritage: "Helm"
 spec:
-  
+
   selector:
     matchLabels:
       app: kube-prometheus-stack-prometheus
@@ -11589,7 +11589,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app: kube-prometheus-stack-admission
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11635,7 +11635,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app: kube-prometheus-stack-admission
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11665,7 +11665,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app: kube-prometheus-stack-admission
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11695,7 +11695,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app: kube-prometheus-stack-admission
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11725,7 +11725,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app: kube-prometheus-stack-admission
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11817,7 +11817,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app: kube-prometheus-stack-admission-create
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11834,7 +11834,7 @@ spec:
       name:  catalyst-agents-kube-prome-admission-create
       labels:
         app: kube-prometheus-stack-admission-create
-        
+
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/instance: catalyst-agents
         app.kubernetes.io/version: "61.9.0"
@@ -11855,7 +11855,7 @@ spec:
             - --namespace=catalyst-agents
             - --secret-name=catalyst-agents-kube-prome-admission
           securityContext:
-          
+
             allowPrivilegeEscalation: false
             capabilities:
               drop:
@@ -11883,7 +11883,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app: kube-prometheus-stack-admission-patch
-    
+
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: catalyst-agents
     app.kubernetes.io/version: "61.9.0"
@@ -11900,7 +11900,7 @@ spec:
       name:  catalyst-agents-kube-prome-admission-patch
       labels:
         app: kube-prometheus-stack-admission-patch
-        
+
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/instance: catalyst-agents
         app.kubernetes.io/version: "61.9.0"
@@ -11922,7 +11922,7 @@ spec:
             - --secret-name=catalyst-agents-kube-prome-admission
             - --patch-failure-policy=
           securityContext:
-          
+
             allowPrivilegeEscalation: false
             capabilities:
               drop:
