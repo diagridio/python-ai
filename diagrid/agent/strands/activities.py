@@ -66,46 +66,34 @@ class DaprToolActivity:
             self.tool_name,
         )
 
-        try:
-            # Execute the tool
-            result_content: list[dict[str, Any]] = []
+        # Execute the tool - let exceptions propagate for Dapr retry
+        result_content: list[dict[str, Any]] = []
 
-            async for event in self.tool.stream(tool_use, {}):
-                # Collect results from the tool stream
-                if isinstance(event, dict):
-                    if "toolResult" in event:
-                        return {
-                            "status": event["toolResult"].get("status", "success"),
-                            "content": event["toolResult"].get("content", []),
-                        }
-                    elif "text" in event:
-                        result_content.append({"text": event["text"]})
-                    elif "result" in event:
-                        result_content.append({"text": str(event["result"])})
+        async for event in self.tool.stream(tool_use, {}):
+            # Collect results from the tool stream
+            if isinstance(event, dict):
+                if "toolResult" in event:
+                    return {
+                        "status": event["toolResult"].get("status", "success"),
+                        "content": event["toolResult"].get("content", []),
+                    }
+                elif "text" in event:
+                    result_content.append({"text": event["text"]})
+                elif "result" in event:
+                    result_content.append({"text": str(event["result"])})
 
-            # If we got content from streaming, return it
-            if result_content:
-                return {"status": "success", "content": result_content}
+        # If we got content from streaming, return it
+        if result_content:
+            return {"status": "success", "content": result_content}
 
-            # Handle final event
-            if event is not None:
-                return {
-                    "status": "success",
-                    "content": [{"text": str(event)}],
-                }
-
-            return {"status": "success", "content": [{"text": "Tool completed"}]}
-
-        except Exception as e:
-            logger.exception(
-                "activity=%s tool=%s | tool execution failed",
-                self.activity_name,
-                self.tool_name,
-            )
+        # Handle final event
+        if event is not None:
             return {
-                "status": "error",
-                "content": [{"text": f"Error: {str(e)}"}],
+                "status": "success",
+                "content": [{"text": str(event)}],
             }
+
+        return {"status": "success", "content": [{"text": "Tool completed"}]}
 
 
 def create_tool_activity(

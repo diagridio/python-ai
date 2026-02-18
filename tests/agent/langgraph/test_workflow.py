@@ -263,12 +263,10 @@ class TestExecuteNodeActivity(unittest.TestCase):
             channel_state=ChannelState(),
         ).to_dict()
 
-        result = execute_node_activity(ctx, input_data)
-        output = ExecuteNodeOutput.from_dict(result)
-
-        self.assertEqual(output.node_name, "failing")
-        self.assertIsNotNone(output.error)
-        self.assertIn("Test error", output.error)
+        # Errors now propagate so Dapr's retry policy can handle them
+        with self.assertRaises(ValueError) as cm:
+            execute_node_activity(ctx, input_data)
+        self.assertIn("Test error", str(cm.exception))
 
 
 class TestEvaluateConditionActivity(unittest.TestCase):
