@@ -1,0 +1,151 @@
+# Copyright 2025 Diagrid Inc.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Tests for DaprAgentWorkflow."""
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from diagrid.agent.strands.workflow import (
+    DaprAgentWorkflow,
+    WorkflowInput,
+    WorkflowOutput,
+    dapr_agent_workflow,
+)
+
+
+class TestWorkflowInput:
+    """Tests for WorkflowInput dataclass."""
+
+    def test_defaults(self):
+        """Test default values."""
+        input_data = WorkflowInput(prompt="Hello")
+
+        assert input_data.prompt == "Hello"
+        assert input_data.conversation_id is None
+        assert input_data.metadata == {}
+
+    def test_full_init(self):
+        """Test full initialization."""
+        input_data = WorkflowInput(
+            prompt="Test prompt",
+            conversation_id="conv-123",
+            metadata={"key": "value"},
+        )
+
+        assert input_data.prompt == "Test prompt"
+        assert input_data.conversation_id == "conv-123"
+        assert input_data.metadata == {"key": "value"}
+
+
+class TestWorkflowOutput:
+    """Tests for WorkflowOutput dataclass."""
+
+    def test_defaults(self):
+        """Test default values."""
+        output = WorkflowOutput(result="Hello")
+
+        assert output.result == "Hello"
+        assert output.tool_calls == []
+        assert output.conversation_id is None
+        assert output.metadata == {}
+
+    def test_full_init(self):
+        """Test full initialization."""
+        output = WorkflowOutput(
+            result="Response",
+            tool_calls=[{"tool_name": "search"}],
+            conversation_id="conv-123",
+            metadata={"duration": 1.5},
+        )
+
+        assert output.result == "Response"
+        assert len(output.tool_calls) == 1
+        assert output.conversation_id == "conv-123"
+        assert output.metadata == {"duration": 1.5}
+
+
+class TestDaprAgentWorkflow:
+    """Tests for DaprAgentWorkflow class."""
+
+    @pytest.fixture
+    def mock_agent(self):
+        """Create a mock Strands agent."""
+        agent = MagicMock()
+        agent.tool_registry = MagicMock()
+        agent.tool_registry.registry = {"tool1": MagicMock(), "tool2": MagicMock()}
+        agent.tool_executor = MagicMock()
+        agent.messages = []
+        return agent
+
+    def test_init_defaults(self, mock_agent):
+        """Test initialization with defaults."""
+        workflow = DaprAgentWorkflow(agent=mock_agent)
+
+        assert workflow.agent is mock_agent
+        assert workflow.workflow_name == "strands_agent_workflow"
+
+    def test_init_custom_name(self, mock_agent):
+        """Test initialization with custom workflow name."""
+        workflow = DaprAgentWorkflow(
+            agent=mock_agent,
+            workflow_name="test_workflow",
+        )
+
+        assert workflow.workflow_name == "test_workflow"
+
+    def test_register(self, mock_agent):
+        """Test that register creates workflow and activity."""
+        workflow = DaprAgentWorkflow(agent=mock_agent)
+
+        mock_runtime = MagicMock()
+
+        workflow.register(mock_runtime)
+
+        mock_runtime.register_workflow.assert_called_once()
+        mock_runtime.register_activity.assert_called_once()
+
+
+class TestDaprAgentWorkflowDecorator:
+    """Tests for the dapr_agent_workflow decorator."""
+
+    def test_decorator_creates_workflow(self):
+        """Test that decorator creates a DaprAgentWorkflow."""
+        mock_agent = MagicMock()
+        mock_agent.tool_registry = MagicMock()
+        mock_agent.tool_registry.registry = {}
+
+        @dapr_agent_workflow(workflow_name="decorated_workflow")
+        def create_agent():
+            return mock_agent
+
+        workflow = create_agent()
+
+        assert isinstance(workflow, DaprAgentWorkflow)
+        assert workflow.workflow_name == "decorated_workflow"
+
+    def test_decorator_passes_args(self):
+        """Test that decorator passes arguments to factory."""
+        mock_agent = MagicMock()
+        mock_agent.tool_registry = MagicMock()
+        mock_agent.tool_registry.registry = {}
+
+        received_args = []
+
+        @dapr_agent_workflow()
+        def create_agent(param1, param2=None):
+            received_args.extend([param1, param2])
+            return mock_agent
+
+        create_agent("arg1", param2="arg2")
+
+        assert received_args == ["arg1", "arg2"]

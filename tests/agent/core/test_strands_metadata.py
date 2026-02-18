@@ -15,8 +15,12 @@ limitations under the License.
 
 import unittest
 
-from diagrid.agent.core.metadata.introspection import detect_framework
-from diagrid.agent.core.metadata.mapping.strands import StrandsMapper
+import pytest
+
+pytest.importorskip("dapr.ext.strands", reason="dapr.ext.strands not installed")
+
+from diagrid.agent.core.metadata.introspection import detect_framework  # noqa: E402
+from diagrid.agent.core.metadata.mapping.strands import StrandsMapper  # noqa: E402
 
 
 class MockSessionManager:
