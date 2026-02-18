@@ -1,7 +1,7 @@
 dependencies:
 - name: loki
   repository: https://grafana.github.io/helm-charts
-  version: 6.6.6
+  version: 6.53.0
 - name: tempo
   repository: https://grafana.github.io/helm-charts
   version: 1.10.3
@@ -17,5 +17,5 @@ dependencies:
 - name: kagent
   repository: oci://ghcr.io/kagent-dev/kagent/helm
   version: 0.7.14
-digest: sha256:311006a3ff59ce54445dba0a843c60751e523154084e6bae6d5d31d924020daa
-generated: "2026-02-14T17:29:00.542912+01:00"
+digest: sha256:c3367120ce802d93f0d0d2601a24817278dd8f11d190fa8a5418dba85a9fe64c
+generated: "2026-02-18T20:39:42.978244163Z"
