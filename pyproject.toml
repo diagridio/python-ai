@@ -18,17 +18,18 @@ diagridpy = "diagrid.cli.main:cli"
 
 [project.optional-dependencies]
 langgraph = [
-    "langgraph>=1.0.0",
+    "langgraph>=1.0.8",
     "langchain-core>=0.3.0",
 ]
 crewai = [
-    "crewai>=0.80.0",
+    "crewai>=1.6.1",
     "litellm>=1.0.0",
 ]
 adk = [
     "google-adk>=1.0.0",
 ]
 strands = [
+    "openai>=2.21.0",
     "strands-agents>=1.26.0",
 ]
 openai_agents = [
