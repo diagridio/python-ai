@@ -50,6 +50,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+*.json
 
 # Translations
 *.mo
@@ -188,6 +189,9 @@ cython_debug/
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
+# Helm chart packaged dependencies
+charts/*/charts/*.tgz
+
 # Ruff stuff:
 .ruff_cache/
 
@@ -205,3 +209,5 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+full-template.yaml

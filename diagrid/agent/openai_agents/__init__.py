@@ -71,7 +71,7 @@ from diagrid.agent.openai_agents.models import (
     ToolResult,
 )
 from diagrid.agent.openai_agents.workflow import (
-    openai_agents_workflow,
+    agent_workflow,
     call_llm_activity,
     execute_tool_activity,
     register_tool,
@@ -97,7 +97,7 @@ __all__ = [
     "ToolDefinition",
     "ToolResult",
     # Workflow and activities (for advanced usage)
-    "openai_agents_workflow",
+    "agent_workflow",
     "call_llm_activity",
     "execute_tool_activity",
     # Tool registry (for advanced usage)

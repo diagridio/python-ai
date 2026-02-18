@@ -28,21 +28,21 @@ class TestWorkflowInput:
 
     def test_defaults(self):
         """Test default values."""
-        input_data = WorkflowInput(prompt="Hello")
+        input_data = WorkflowInput(task="Hello")
 
-        assert input_data.prompt == "Hello"
+        assert input_data.task == "Hello"
         assert input_data.conversation_id is None
         assert input_data.metadata == {}
 
     def test_full_init(self):
         """Test full initialization."""
         input_data = WorkflowInput(
-            prompt="Test prompt",
+            task="Test prompt",
             conversation_id="conv-123",
             metadata={"key": "value"},
         )
 
-        assert input_data.prompt == "Test prompt"
+        assert input_data.task == "Test prompt"
         assert input_data.conversation_id == "conv-123"
         assert input_data.metadata == {"key": "value"}
 

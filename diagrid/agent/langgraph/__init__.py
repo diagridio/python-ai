@@ -64,7 +64,7 @@ from diagrid.agent.langgraph.models import (
     WorkflowStatus,
 )
 from diagrid.agent.langgraph.workflow import (
-    langgraph_workflow,
+    agent_workflow,
     execute_node_activity,
     evaluate_condition_activity,
     register_node,
@@ -90,7 +90,7 @@ __all__ = [
     "NodeWrite",
     "WorkflowStatus",
     # Workflow components (for advanced use)
-    "langgraph_workflow",
+    "agent_workflow",
     "execute_node_activity",
     "evaluate_condition_activity",
     "register_node",

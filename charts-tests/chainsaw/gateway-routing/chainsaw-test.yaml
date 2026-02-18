@@ -1,0 +1,37 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gateway-routing
+spec:
+  description: Validate gateway subdomain routing works for all services
+  namespace: catalyst-agents
+  timeouts:
+    assert: 2m
+    exec: 15m
+  steps:
+    - name: check-subdomains
+      try:
+        - script:
+            content: |
+              # Kind maps NodePort 30080 -> hostPort 9080
+              PORT=9080
+              echo "Testing via host port: $PORT"
+
+              echo "Checking default landing page..."
+              BODY=$(curl -sf http://localhost:$PORT)
+              echo "$BODY"
+              echo "$BODY" | grep "catalyst-agents gateway"
+
+              echo "Checking Kagent UI routing (HTTP 200)..."
+              curl -sf -o /dev/null http://kagent.localhost:$PORT
+
+              echo "Checking Grafana routing (HTTP 200)..."
+              curl -sf -o /dev/null http://grafana.localhost:$PORT
+
+              echo "Checking Redis Insight routing (HTTP 200)..."
+              curl -sf -o /dev/null http://redis.localhost:$PORT
+
+              echo "Checking Diagrid Dashboard routing (HTTP 200)..."
+              curl -sf -o /dev/null http://diagrid.localhost:$PORT
+
+              echo "All gateway routes OK"

@@ -63,12 +63,11 @@ from diagrid.agent.adk.models import (
     ToolDefinition,
     ToolResult,
 )
-from diagrid.agent.adk.workflow import (
-    adk_agent_workflow,
+from .workflow import (
+    agent_workflow,
     call_llm_activity,
     execute_tool_activity,
     register_tool,
-    get_registered_tool,
     clear_tool_registry,
 )
 from diagrid.agent.adk.version import __version__
@@ -103,7 +102,7 @@ __all__ = [
     "ToolDefinition",
     "ToolResult",
     # Workflow and activities (for advanced usage)
-    "adk_agent_workflow",
+    "agent_workflow",
     "call_llm_activity",
     "execute_tool_activity",
     # Tool registry (for advanced usage)

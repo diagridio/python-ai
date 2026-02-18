@@ -1,0 +1,10 @@
+---
+apiVersion: dapr.io/v1alpha1
+kind: HTTPEndpoint
+metadata:
+  name: mcp-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "catalyst-agents.labels" . | nindent 4 }}
+spec:
+  baseUrl: http://dapr-mcp-server.{{ .Release.Namespace }}.svc.cluster.local

@@ -14,10 +14,11 @@
 import json
 import logging
 import uuid
-from typing import Any, AsyncIterator, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
+from diagrid.agent.core import AgentRegistryMixin
 from .models import (
     ChannelState,
     EdgeConfig,
@@ -27,7 +28,7 @@ from .models import (
     NodeConfig,
 )
 from .workflow import (
-    langgraph_workflow,
+    agent_workflow,
     execute_node_activity,
     evaluate_condition_activity,
     register_node,
@@ -45,7 +46,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowGraphRunner:
+class DaprWorkflowGraphRunner(AgentRegistryMixin):
     """Runner that executes LangGraph graphs as Dapr Workflows.
 
     This runner wraps a compiled LangGraph and executes it using Dapr Workflows,
@@ -101,6 +102,7 @@ class DaprWorkflowGraphRunner:
         port: Optional[str] = None,
         max_steps: int = 100,
         name: Optional[str] = None,
+        registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -110,6 +112,7 @@ class DaprWorkflowGraphRunner:
             port: Dapr sidecar port (default: 50001)
             max_steps: Maximum number of steps before stopping (default: 100)
             name: Optional name for the graph (inferred if not provided)
+            registry_config: Optional registry configuration for metadata extraction
         """
         self._graph = graph
         self._max_steps = max_steps
@@ -117,13 +120,16 @@ class DaprWorkflowGraphRunner:
         self._port = port
         self._name = name or self._infer_graph_name()
 
+        # Register metadata
+        self._register_agent_metadata(
+            agent=self._graph, framework="langgraph", registry=registry_config
+        )
+
         # Create workflow runtime
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
 
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(
-            langgraph_workflow, name="langgraph_workflow"
-        )
+        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
         self._workflow_runtime.register_activity(
             execute_node_activity, name="execute_node_activity"
         )
@@ -402,7 +408,7 @@ class DaprWorkflowGraphRunner:
         # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
-            workflow=langgraph_workflow,
+            workflow=agent_workflow,
             input=workflow_input_dict,
             instance_id=workflow_id,
         )
@@ -502,7 +508,7 @@ class DaprWorkflowGraphRunner:
         # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
-            workflow=langgraph_workflow,
+            workflow=agent_workflow,
             input=workflow_input_dict,
             instance_id=workflow_id,
         )
@@ -664,6 +670,84 @@ class DaprWorkflowGraphRunner:
 
         self._workflow_client.purge_workflow(instance_id=workflow_id)
         logger.info(f"Purged workflow: {workflow_id}")
+
+    def serve(
+        self,
+        *,
+        port: int = 5001,
+        host: str = "0.0.0.0",
+        input_mapper: Optional["Callable[[dict], Dict[str, Any]]"] = None,
+    ) -> None:
+        """Start an HTTP server exposing /agent/run endpoints.
+
+        Requires: pip install fastapi uvicorn
+
+        Args:
+            port: Port to listen on (default: 5001)
+            host: Host to bind to (default: 0.0.0.0)
+            input_mapper: Optional function to map request dict to graph input.
+                         Default passes the request through as-is.
+        """
+        try:
+            from fastapi import FastAPI, HTTPException
+            import uvicorn
+        except ImportError:
+            raise ImportError(
+                "fastapi and uvicorn are required for serve(). "
+                "Install them with: pip install fastapi uvicorn[standard]"
+            )
+
+        mapper = input_mapper or (lambda req: req)
+        app = FastAPI()
+        self.start()
+
+        @app.post("/agent/run")
+        async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
+            # Support both thread_id (LangGraph) and session_id (standard)
+            thread_id = (
+                request.get("thread_id")
+                or request.get("session_id")
+                or uuid.uuid4().hex[:8]
+            )
+
+            # If a mapper is provided, use it.
+            if input_mapper:
+                try:
+                    graph_input = mapper(request)
+                except KeyError as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Request missing required key for input mapping: {str(e)}. "
+                        f"Available keys: {list(request.keys())}",
+                    )
+            else:
+                # Default behavior: try to find 'task' input key
+                graph_input = request
+                if "messages" not in request:
+                    task = request.get("task")
+                    if task:
+                        graph_input = {"messages": [{"role": "user", "content": task}]}
+
+            result: Dict[str, Any] = {}
+            async for event in self.run_async(input=graph_input, thread_id=thread_id):
+                if event["type"] == "workflow_started":
+                    result["instance_id"] = event["workflow_id"]
+                elif event["type"] == "workflow_completed":
+                    result.update(event)
+                    break
+                elif event["type"] == "workflow_failed":
+                    result.update(event)
+                    break
+            return result
+
+        @app.get("/agent/run/{workflow_id}")
+        async def get_status(workflow_id: str) -> dict:  # type: ignore[type-arg]
+            status = self.get_workflow_status(workflow_id)
+            if status is None:
+                raise HTTPException(status_code=404, detail="Workflow not found")
+            return status
+
+        uvicorn.run(app, host=host, port=port)
 
     @property
     def graph(self) -> "CompiledStateGraph":

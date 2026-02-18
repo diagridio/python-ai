@@ -77,7 +77,7 @@ def clear_tool_registry() -> None:
     _tool_definitions.clear()
 
 
-def openai_agents_workflow(
+def agent_workflow(
     ctx: DaprWorkflowContext, input_data: dict[str, Any]
 ) -> Generator[Any, Any, Any]:
     """Dapr Workflow that orchestrates an OpenAI Agents SDK agent execution.

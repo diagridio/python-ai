@@ -18,6 +18,7 @@ from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
+from diagrid.agent.core import AgentRegistryMixin
 from .models import (
     AgentConfig,
     AgentWorkflowInput,
@@ -28,7 +29,7 @@ from .models import (
     ToolDefinition,
 )
 from .workflow import (
-    crewai_agent_workflow,
+    agent_workflow,
     call_llm_activity,
     execute_tool_activity,
     register_tool,
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowAgentRunner:
+class DaprWorkflowAgentRunner(AgentRegistryMixin):
     """Runner that executes CrewAI agents as Dapr Workflows.
 
     This runner wraps a CrewAI Agent and executes it using Dapr Workflows,
@@ -102,6 +103,7 @@ class DaprWorkflowAgentRunner:
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: Optional[int] = None,
+        registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -111,6 +113,7 @@ class DaprWorkflowAgentRunner:
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations
                            (default: uses agent's max_iter)
+            registry_config: Optional registry configuration for metadata extraction
         """
         self._agent = agent
         self._max_iterations: int = max_iterations or int(
@@ -119,13 +122,16 @@ class DaprWorkflowAgentRunner:
         self._host = host
         self._port = port
 
+        # Register metadata
+        self._register_agent_metadata(
+            agent=self._agent, framework="crewai", registry=registry_config
+        )
+
         # Create workflow runtime
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
 
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(
-            crewai_agent_workflow, name="crewai_agent_workflow"
-        )
+        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
         self._workflow_runtime.register_activity(
             call_llm_activity, name="call_llm_activity"
         )
@@ -402,7 +408,7 @@ class DaprWorkflowAgentRunner:
         # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
-            workflow=crewai_agent_workflow,
+            workflow=agent_workflow,
             input=workflow_input_dict,
             instance_id=workflow_id,
         )
@@ -613,6 +619,59 @@ class DaprWorkflowAgentRunner:
 
         self._workflow_client.purge_workflow(instance_id=workflow_id)
         logger.info(f"Purged workflow: {workflow_id}")
+
+    def serve(self, *, port: int = 5001, host: str = "0.0.0.0") -> None:
+        """Start an HTTP server exposing /agent/run endpoints.
+
+        Requires: pip install fastapi uvicorn
+
+        Args:
+            port: Port to listen on (default: 5001)
+            host: Host to bind to (default: 0.0.0.0)
+        """
+        try:
+            from fastapi import FastAPI, HTTPException
+            import uvicorn
+        except ImportError:
+            raise ImportError(
+                "fastapi and uvicorn are required for serve(). "
+                "Install them with: pip install fastapi uvicorn[standard]"
+            )
+
+        from crewai import Task
+
+        app = FastAPI()
+        self.start()
+
+        @app.post("/agent/run")
+        async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
+            session_id = request.get("session_id", uuid.uuid4().hex[:8])
+            task_description = request.get("task") or ""
+            task = Task(
+                description=task_description,
+                expected_output="A helpful response",
+                agent=self._agent,
+            )
+            result: dict[str, Any] = {}
+            async for event in self.run_async(task=task, session_id=session_id):
+                if event["type"] == "workflow_started":
+                    result["instance_id"] = event["workflow_id"]
+                elif event["type"] == "workflow_completed":
+                    result.update(event)
+                    break
+                elif event["type"] == "workflow_failed":
+                    result.update(event)
+                    break
+            return result
+
+        @app.get("/agent/run/{workflow_id}")
+        async def get_status(workflow_id: str) -> dict:  # type: ignore[type-arg]
+            status = self.get_workflow_status(workflow_id)
+            if status is None:
+                raise HTTPException(status_code=404, detail="Workflow not found")
+            return status
+
+        uvicorn.run(app, host=host, port=port)
 
     @property
     def agent(self) -> "Agent":

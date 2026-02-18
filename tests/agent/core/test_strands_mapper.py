@@ -22,7 +22,7 @@ pytest.importorskip("dapr.ext.strands", reason="dapr.ext.strands not installed")
 from diagrid.agent.core.metadata.mapping.strands import StrandsMapper  # noqa: E402
 
 
-def make_mock_session_manager(session_id="test-session", state_store="statestore"):
+def make_mock_session_manager(session_id="test-session", state_store="agent-workflow"):
     """Create a mock DaprSessionManager for testing."""
     mock_manager = mock.Mock()
     mock_manager._session_id = session_id

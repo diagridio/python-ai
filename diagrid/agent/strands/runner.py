@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator, Generator, Optional, TYPE_CHECKING
 
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
+from diagrid.agent.core import AgentRegistryMixin
 from .workflow import WorkflowOutput
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowAgentRunner:
+class DaprWorkflowAgentRunner(AgentRegistryMixin):
     """Runner that executes Strands agents as Dapr Workflows.
 
     This runner wraps a Strands Agent and executes it using Dapr Workflows,
@@ -65,7 +66,7 @@ class DaprWorkflowAgentRunner:
         runner.start()
 
         async for event in runner.run_async(
-            prompt="What is the weather in Tokyo?",
+            task="What is the weather in Tokyo?",
             session_id="session-123",
         ):
             print(event)
@@ -86,6 +87,7 @@ class DaprWorkflowAgentRunner:
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: Optional[int] = None,
+        registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -94,11 +96,17 @@ class DaprWorkflowAgentRunner:
             host: Dapr sidecar host (default: localhost)
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations (default: 25)
+            registry_config: Optional registry configuration for metadata extraction
         """
         self._agent = agent
         self._host = host
         self._port = port
         self._max_iterations = max_iterations or 25
+
+        # Register metadata
+        self._register_agent_metadata(
+            agent=self._agent, framework="strands", registry=registry_config
+        )
 
         # Create workflow runtime
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
@@ -246,12 +254,12 @@ class DaprWorkflowAgentRunner:
             2. If model wants tools: call each tool as a separate activity (checkpointed)
             3. Repeat until model says done
             """
-            prompt = input_data.get("prompt", "")
+            task = input_data.get("task", "")
             system_prompt = agent_ref.system_prompt or ""
 
             # Build initial messages
             messages: list[dict[str, Any]] = [
-                {"role": "user", "content": [{"text": prompt}]}
+                {"role": "user", "content": [{"text": task}]}
             ]
             final_text = ""
             all_tool_calls: list[dict[str, Any]] = []
@@ -318,9 +326,7 @@ class DaprWorkflowAgentRunner:
             }
 
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(
-            agent_workflow, name="strands_agent_workflow"
-        )
+        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
         self._workflow_runtime.register_activity(
             call_model_activity, name="strands_call_model"
         )
@@ -361,19 +367,19 @@ class DaprWorkflowAgentRunner:
 
     async def run_async(
         self,
-        prompt: str,
+        task: str,
         session_id: str,
         *,
         workflow_id: Optional[str] = None,
         poll_interval: float = 0.5,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Run the agent with a prompt.
+        """Run the agent with a task.
 
         This starts a new Dapr Workflow for the agent execution. Each LLM call
         and tool execution becomes a separate durable activity.
 
         Args:
-            prompt: The user prompt to send to the agent
+            task: The user task to send to the agent
             session_id: Session ID for the execution
             workflow_id: Optional workflow instance ID (generated if not provided)
             poll_interval: How often to poll for workflow status (seconds)
@@ -395,7 +401,7 @@ class DaprWorkflowAgentRunner:
 
         # Create workflow input
         input_data = {
-            "prompt": prompt,
+            "task": task,
         }
 
         # Start the workflow
@@ -494,7 +500,7 @@ class DaprWorkflowAgentRunner:
 
     def run_sync(
         self,
-        prompt: str,
+        task: str,
         session_id: str,
         *,
         workflow_id: Optional[str] = None,
@@ -506,7 +512,7 @@ class DaprWorkflowAgentRunner:
         the workflow to complete.
 
         Args:
-            prompt: The user prompt to send to the agent
+            task: The user task to send to the agent
             session_id: Session ID for the execution
             workflow_id: Optional workflow instance ID (generated if not provided)
             timeout: Maximum time to wait for completion (seconds)
@@ -522,7 +528,7 @@ class DaprWorkflowAgentRunner:
         async def _run() -> Optional[WorkflowOutput]:
             result = None
             async for event in self.run_async(
-                prompt=prompt,
+                task=task,
                 session_id=session_id,
                 workflow_id=workflow_id,
             ):
@@ -605,6 +611,52 @@ class DaprWorkflowAgentRunner:
 
         self._workflow_client.purge_workflow(instance_id=workflow_id)
         logger.info("Purged workflow: %s", workflow_id)
+
+    def serve(self, *, port: int = 5001, host: str = "0.0.0.0") -> None:
+        """Start an HTTP server exposing /agent/run endpoints.
+
+        Requires: pip install fastapi uvicorn
+
+        Args:
+            port: Port to listen on (default: 5001)
+            host: Host to bind to (default: 0.0.0.0)
+        """
+        try:
+            from fastapi import FastAPI, HTTPException
+            import uvicorn
+        except ImportError:
+            raise ImportError(
+                "fastapi and uvicorn are required for serve(). "
+                "Install them with: pip install fastapi uvicorn[standard]"
+            )
+
+        app = FastAPI()
+        self.start()
+
+        @app.post("/agent/run")
+        async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
+            session_id = request.get("session_id", uuid.uuid4().hex[:8])
+            task = request.get("task") or ""
+            result: dict[str, Any] = {}
+            async for event in self.run_async(task=task, session_id=session_id):
+                if event["type"] == "workflow_started":
+                    result["instance_id"] = event["workflow_id"]
+                elif event["type"] == "workflow_completed":
+                    result.update(event)
+                    break
+                elif event["type"] == "workflow_failed":
+                    result.update(event)
+                    break
+            return result
+
+        @app.get("/agent/run/{workflow_id}")
+        async def get_status(workflow_id: str) -> dict:  # type: ignore[type-arg]
+            status = self.get_workflow_status(workflow_id)
+            if status is None:
+                raise HTTPException(status_code=404, detail="Workflow not found")
+            return status
+
+        uvicorn.run(app, host=host, port=port)
 
     @property
     def agent(self) -> "Agent":

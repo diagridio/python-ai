@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Generator, TypeVar
 
 from strands import Agent
-from strands.agent import AgentResult
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ T = TypeVar("T")
 class WorkflowInput:
     """Input for the agent workflow."""
 
-    prompt: str
+    task: str
     conversation_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -103,17 +102,17 @@ class DaprAgentWorkflow:
                 flush=True,
             )
 
-            prompt = input_data.get("prompt", "")
+            task = input_data.get("task", "")
             conversation_id = input_data.get("conversation_id", str(uuid.uuid4()))
 
             print(
-                f"[ACTIVITY] Running agent with prompt: {prompt[:100]}...",
+                f"[ACTIVITY] Running agent with task: {task[:100]}...",
                 flush=True,
             )
 
             try:
                 # Run the agent synchronously (activity context)
-                result = asyncio.run(agent.invoke_async(prompt))
+                result = asyncio.run(agent.invoke_async(task))
 
                 result_str = str(result)
                 print(
@@ -196,7 +195,7 @@ class DaprAgentWorkflow:
     def start(
         self,
         workflow_client: Any,
-        prompt: str,
+        task: str,
         conversation_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         instance_id: str | None = None,
@@ -205,7 +204,7 @@ class DaprAgentWorkflow:
 
         Args:
             workflow_client: The DaprWorkflowClient instance
-            prompt: The user prompt
+            task: The user task
             conversation_id: Optional conversation ID
             metadata: Optional metadata
             instance_id: Optional workflow instance ID
@@ -217,7 +216,7 @@ class DaprAgentWorkflow:
             instance_id = f"{self.workflow_name}_{uuid.uuid4().hex[:8]}"
 
         input_data = {
-            "prompt": prompt,
+            "task": task,
             "conversation_id": conversation_id or str(uuid.uuid4()),
             "metadata": metadata or {},
         }
@@ -314,7 +313,7 @@ class DaprAgentWorkflow:
     def run(
         self,
         workflow_client: Any,
-        prompt: str,
+        task: str,
         conversation_id: str | None = None,
         timeout_seconds: int = 120,
     ) -> WorkflowOutput:
@@ -324,7 +323,7 @@ class DaprAgentWorkflow:
 
         Args:
             workflow_client: The DaprWorkflowClient instance
-            prompt: The user prompt
+            task: The user task
             conversation_id: Optional conversation ID
             timeout_seconds: Timeout in seconds
 
@@ -333,7 +332,7 @@ class DaprAgentWorkflow:
         """
         instance_id = self.start(
             workflow_client=workflow_client,
-            prompt=prompt,
+            task=task,
             conversation_id=conversation_id,
         )
 

@@ -1,0 +1,54 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dapr-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "catalyst-agents.labels" . | nindent 4 }}
+type: Opaque
+data:
+  redis-password: {{ .Values.redis.password | b64enc | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dapr-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "catalyst-agents.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dapr-redis
+  template:
+    metadata:
+      labels:
+        app: dapr-redis
+    spec:
+      containers:
+      - name: redis
+        image: "{{ .Values.redis.image }}:{{ .Values.redis.tag }}"
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: {{ .Values.redis.port }}
+          name: redis
+        command: ["redis-server"]
+        args: ["--protected-mode", "no"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dapr-redis-master
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "catalyst-agents.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: dapr-redis
+  ports:
+  - port: {{ .Values.redis.port }}
+    targetPort: {{ .Values.redis.port }}
+  type: ClusterIP
+{{- end }}
