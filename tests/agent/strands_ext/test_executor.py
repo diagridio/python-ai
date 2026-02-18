@@ -156,7 +156,9 @@ class TestDaprWorkflowToolExecutorAsync:
                 mock_execute_direct.return_value = _async_generator([])
 
                 tool_results = []
-                await _collect_execute(executor, mock_agent, [mock_tool_use], tool_results)
+                await _collect_execute(
+                    executor, mock_agent, [mock_tool_use], tool_results
+                )
 
                 mock_execute_direct.assert_called_once()
 
