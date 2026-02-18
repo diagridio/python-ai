@@ -638,7 +638,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         @app.post("/agent/run")
         async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
             session_id = request.get("session_id", uuid.uuid4().hex[:8])
-            task = request.get("task", "")
+            task = request.get("task") or ""
             result: dict[str, Any] = {}
             async for event in self.run_async(task=task, session_id=session_id):
                 if event["type"] == "workflow_started":

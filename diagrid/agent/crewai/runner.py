@@ -648,7 +648,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         @app.post("/agent/run")
         async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
             session_id = request.get("session_id", uuid.uuid4().hex[:8])
-            task_description = request.get("task", "")
+            task_description = request.get("task") or ""
             task = Task(
                 description=task_description,
                 expected_output="A helpful response",

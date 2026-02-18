@@ -705,8 +705,31 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
 
         @app.post("/agent/run")
         async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
-            thread_id = request.get("thread_id", uuid.uuid4().hex[:8])
-            graph_input = mapper(request)
+            # Support both thread_id (LangGraph) and session_id (standard)
+            thread_id = (
+                request.get("thread_id")
+                or request.get("session_id")
+                or uuid.uuid4().hex[:8]
+            )
+
+            # If a mapper is provided, use it.
+            if input_mapper:
+                try:
+                    graph_input = mapper(request)
+                except KeyError as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Request missing required key for input mapping: {str(e)}. "
+                        f"Available keys: {list(request.keys())}",
+                    )
+            else:
+                # Default behavior: try to find 'task' input key
+                graph_input = request
+                if "messages" not in request:
+                    task = request.get("task")
+                    if task:
+                        graph_input = {"messages": [{"role": "user", "content": task}]}
+
             result: Dict[str, Any] = {}
             async for event in self.run_async(input=graph_input, thread_id=thread_id):
                 if event["type"] == "workflow_started":

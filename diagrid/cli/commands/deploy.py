@@ -253,9 +253,9 @@ def _trigger_agent(
         # Wait for port-forward to be ready
         _wait_for_port(local_port, timeout=15)
 
-        # Wait for the agent's HTTP server to be ready, then send the prompt
+        # Wait for the agent's HTTP server to be ready, then send the task
         url = f"http://localhost:{local_port}/agent/run"
-        return _post_with_retry(url, {"prompt": prompt}, timeout=timeout)
+        return _post_with_retry(url, {"task": prompt}, timeout=timeout)
     finally:
         pf.terminate()
         pf.wait(timeout=5)
