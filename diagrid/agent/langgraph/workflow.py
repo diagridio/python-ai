@@ -98,7 +98,7 @@ def clear_registries() -> None:
     _serializer = None
 
 
-def langgraph_workflow(
+def agent_workflow(
     ctx: DaprWorkflowContext, input_data: Dict[str, Any]
 ) -> Generator[Any, Any, Dict[str, Any]]:
     """Dapr Workflow that orchestrates LangGraph execution.

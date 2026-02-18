@@ -81,7 +81,7 @@ from diagrid.agent.crewai.models import (
     ToolResult,
 )
 from diagrid.agent.crewai.workflow import (
-    crewai_agent_workflow,
+    agent_workflow,
     call_llm_activity,
     execute_tool_activity,
     register_tool,
@@ -108,7 +108,7 @@ __all__ = [
     "ToolDefinition",
     "ToolResult",
     # Workflow and activities (for advanced usage)
-    "crewai_agent_workflow",
+    "agent_workflow",
     "call_llm_activity",
     "execute_tool_activity",
     # Tool registry (for advanced usage)

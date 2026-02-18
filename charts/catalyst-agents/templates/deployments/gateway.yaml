@@ -1,0 +1,141 @@
+{{- define "gateway.nginx.conf" }}
+    events { worker_connections 1024; }
+    http {
+      log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$upstream_addr"';
+      access_log /var/log/nginx/access.log main;
+
+      # Default resolver for internal service names
+      resolver 10.96.0.10;
+
+      server {
+        listen 80;
+        server_name kagent.localhost;
+        location / {
+          proxy_pass http://kagent-ui.{{ .Release.Namespace }}.svc.cluster.local:8080;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        # Kagent API/Workflows
+        location /api/ {
+          proxy_pass http://kagent-controller.{{ .Release.Namespace }}.svc.cluster.local:8083/api/;
+          proxy_set_header Host $host;
+        }
+      }
+
+      server {
+        listen 80;
+        server_name grafana.localhost;
+        location / {
+          proxy_pass http://catalyst-agents-grafana.{{ .Release.Namespace }}.svc.cluster.local;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+      }
+
+      server {
+        listen 80;
+        server_name redis.localhost;
+        location / {
+          proxy_pass http://redisinsight.{{ .Release.Namespace }}.svc.cluster.local:5540;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+      }
+
+      server {
+        listen 80;
+        server_name diagrid.localhost;
+        location / {
+          proxy_pass http://diagrid-dashboard.{{ .Release.Namespace }}.svc.cluster.local:8080;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+      }
+
+      # Landing page for other requests
+      server {
+        listen 80 default_server;
+        location / {
+          default_type text/html;
+          return 200 '<html><body><h2>catalyst-agents gateway (Subdomains)</h2><ul>
+            <li><a href="http://kagent.localhost:8080">Kagent UI</a></li>
+            <li><a href="http://grafana.localhost:8080">Grafana</a></li>
+            <li><a href="http://redis.localhost:8080">Redis Insight</a></li>
+            <li><a href="http://diagrid.localhost:8080">Diagrid Dashboard</a></li>
+          </ul><p>Note: Ensure these subdomains point to 127.0.0.1 in your hosts file if they do not resolve automatically.</p></body></html>';
+        }
+      }
+    }
+{{- end }}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: {{ .Release.Namespace }}
+data:
+  nginx.conf: |
+{{ include "gateway.nginx.conf" . | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include "gateway.nginx.conf" . | sha256sum }}
+      labels:
+        app: gateway
+    spec:
+      # Pin to control-plane node where extraPortMappings are configured
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+      volumes:
+      - name: config
+        configMap:
+          name: gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: NodePort
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    nodePort: 30080
+  selector:
+    app: gateway

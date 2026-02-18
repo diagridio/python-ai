@@ -36,7 +36,7 @@ Example:
 
     # Run the agent - each invocation is now durable
     async for event in runner.run_async(
-        prompt="What is the weather in Tokyo?",
+        task="What is the weather in Tokyo?",
         session_id="session-123",
     ):
         print(event)

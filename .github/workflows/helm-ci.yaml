@@ -1,0 +1,95 @@
+name: Helm CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/catalyst-agents/**"
+      - "charts-tests/**"
+      - ".github/workflows/helm-ci.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/catalyst-agents/**"
+      - "charts-tests/**"
+      - ".github/workflows/helm-ci.yaml"
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: "3.17.0"
+  CHAINSAW_VERSION: "v0.2.12"
+  KUBECONFORM_VERSION: "v0.6.7"
+
+jobs:
+  lint-and-validate:
+    name: Lint & Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          BASE="https://github.com/yannh/kubeconform"
+          V="${{ env.KUBECONFORM_VERSION }}"
+          curl -sSLo kubeconform.tar.gz \
+            "$BASE/releases/download/$V/kubeconform-linux-amd64.tar.gz"
+          tar xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Helm dependency update
+        run: helm dependency update ./charts/catalyst-agents
+
+      - name: Helm lint (full)
+        run: make helm-test-lint
+
+      - name: Template validation (minimal - own templates only)
+        run: make helm-test-template
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: lint-and-validate
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install Chainsaw
+        run: |
+          BASE="https://github.com/kyverno/chainsaw"
+          V="${{ env.CHAINSAW_VERSION }}"
+          curl -sSLo chainsaw.tar.gz \
+            "$BASE/releases/download/$V/chainsaw_linux_amd64.tar.gz"
+          tar xzf chainsaw.tar.gz
+          sudo mv chainsaw /usr/local/bin/
+
+      - name: Install kubeconform
+        run: |
+          BASE="https://github.com/yannh/kubeconform"
+          V="${{ env.KUBECONFORM_VERSION }}"
+          curl -sSLo kubeconform.tar.gz \
+            "$BASE/releases/download/$V/kubeconform-linux-amd64.tar.gz"
+          tar xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Restore registry mirror cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/registry-mirror-cache
+          key: mirror-cache-${{ hashFiles('charts/catalyst-agents/Chart.yaml', 'charts/catalyst-agents/values.yaml') }}
+          restore-keys: mirror-cache-
+
+      - name: Run integration tests
+        run: make helm-test-chainsaw

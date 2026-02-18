@@ -7,7 +7,7 @@ name = "diagrid-agent-core"
 version = "0.1.0"
 description = "Diagrid Agent Core - Metadata and introspection for AI agents"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "dapr>=1.17.0rc3",
     "dapr-agents>=0.10.6",

@@ -25,7 +25,7 @@ import uuid
 from typing import Any, Generator
 
 from strands import Agent
-from strands.types.tools import ToolResult, ToolUse
+from strands.types.tools import ToolUse
 
 logger = logging.getLogger(__name__)
 
@@ -274,17 +274,17 @@ class DurableAgent:
             2. If model wants tools: call tool activities (can be parallel)
             3. Repeat until model says done
             """
-            prompt = input_data.get("prompt", "")
+            task = input_data.get("task", "")
             system_prompt = agent.system_prompt or ""
 
             print(
-                f"[WORKFLOW] Starting with prompt: {prompt[:100]}...",
+                f"[WORKFLOW] Starting with task: {task[:100]}...",
                 flush=True,
             )
 
             # Build initial messages
             messages: list[dict[str, Any]] = [
-                {"role": "user", "content": [{"text": prompt}]}
+                {"role": "user", "content": [{"text": task}]}
             ]
             final_text = ""
             all_tool_calls: list[dict[str, Any]] = []
@@ -389,8 +389,8 @@ class DurableAgent:
 
         self._initialized = True
 
-    def __call__(self, prompt: str, timeout_seconds: int = 120) -> str:
-        """Run the agent with the given prompt."""
+    def __call__(self, task: str, timeout_seconds: int = 120) -> str:
+        """Run the agent with the given task."""
         self._initialize_dapr()
 
         instance_id = f"{self._workflow_name}_{uuid.uuid4().hex[:8]}"
@@ -398,7 +398,7 @@ class DurableAgent:
         # Use the new DaprWorkflowClient API with function reference
         self._workflow_client.schedule_new_workflow(
             workflow=self._workflow_func,
-            input={"prompt": prompt},
+            input={"task": task},
             instance_id=instance_id,
         )
 

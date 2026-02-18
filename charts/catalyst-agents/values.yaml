@@ -1,0 +1,250 @@
+# ==============================================================================
+# CATALYST AGENTS STACK - CONSOLIDATED CONFIGURATION
+# ==============================================================================
+registry: localhost:5001
+
+global:
+  logLevel: DEBUG
+
+# ------------------------------------------------------------------------------
+# 1. MONITORING STACK
+# ------------------------------------------------------------------------------
+monitoring:
+  enabled: true
+
+loki:
+  enabled: true
+  deploymentMode: SingleBinary
+  loki:
+    useTestSchema: true
+    auth_enabled: false
+    commonConfig: { replication_factor: 1 }
+    storage:
+      type: filesystem
+      bucketNames: { chunks: chunks, ruler: ruler, admin: admin }
+  singleBinary: { replicas: 1 }
+  read: { replicas: 0 }
+  write: { replicas: 0 }
+  backend: { replicas: 0 }
+
+tempo:
+  enabled: true
+
+kube-prometheus-stack:
+  enabled: true
+  prometheus:
+    prometheusSpec:
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+  grafana:
+    enabled: true
+    adminUser: admin
+    adminPassword: admin
+    grafana.ini:
+      server:
+        domain: grafana.localhost
+        root_url: "%(protocol)s://%(domain)s:8080/"
+        serve_from_sub_path: false
+      auth.anonymous:
+        enabled: true
+        org_name: Main Org.
+        org_role: Admin
+    additionalDataSources:
+    - name: Loki
+      type: loki
+      url: "http://catalyst-agents-loki-gateway.catalyst-agents.svc.cluster.local"
+      access: proxy
+    - name: Tempo
+      type: tempo
+      url: "http://catalyst-agents-tempo.catalyst-agents.svc.cluster.local:3100"
+      access: proxy
+
+opentelemetry-collector:
+  enabled: true
+  mode: deployment
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: "0.142.0"
+  service:
+    type: NodePort
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 512
+    exporters:
+      otlp/tempo:
+        endpoint: "catalyst-agents-tempo.catalyst-agents.svc.cluster.local:4317"
+        tls: { insecure: true }
+      otlphttp/loki:
+        endpoint: "http://catalyst-agents-loki-gateway.catalyst-agents.svc.cluster.local/otlp"
+        tls: { insecure: true }
+      debug:
+        verbosity: basic
+    service:
+      telemetry:
+        metrics:
+          address: null # Explicitly nullify the old address key from chart defaults
+          level: normal
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp/tempo, debug]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlphttp/loki, debug]
+  ports:
+    otlp: { enabled: true, containerPort: 4317, servicePort: 4317, hostPort: 4317, protocol: TCP, nodePort: 30317 }
+    otlp-http: { enabled: true, containerPort: 4318, servicePort: 4318, hostPort: 4318, protocol: TCP, nodePort: 30318 }
+    metrics: { enabled: true, containerPort: 8888, servicePort: 8888, protocol: TCP }
+
+# ------------------------------------------------------------------------------
+# 2. KAGENT & KMCP
+# ------------------------------------------------------------------------------
+kagent:
+  enabled: true
+  fullnameOverride: kagent
+  controller:
+    service: { type: NodePort, ports: { nodePort: 30083 } }
+  ui:
+    service: { type: NodePort, ports: { nodePort: 30081 } }
+  kmcp:
+    enabled: true
+    image: { tag: "0.2.2" }
+    service: { type: NodePort, nodePort: 30082 }
+  # Ensure sub-components have stable names for agent references
+  grafana-mcp:
+    fullnameOverride: kagent-grafana-mcp
+    grafana:
+      url: "http://catalyst-agents-grafana.catalyst-agents.svc.cluster.local"
+  kagent-tools:
+    fullnameOverride: kagent-tools
+    tools:
+      prometheus:
+        url: "http://catalyst-agents-kube-prometheu-prometheus.catalyst-agents.svc.cluster.local:9090"
+      grafana:
+        url: "http://catalyst-agents-grafana.catalyst-agents.svc.cluster.local"
+  providers:
+    default: ollama
+    openAI:
+      apiKey: "" # This will be overridden by --set llm.apiKey during install
+    ollama:
+      provider: Ollama
+      model: "llama3.2:latest"
+      config:
+        host: "http://host.docker.internal:11434"
+  # Standard Agents toggles
+  agents:
+    promql-agent: { enabled: true }
+    observability-agent: { enabled: true }
+    k8s-agent: { enabled: false }
+    kgateway-agent: { enabled: false }
+    istio-agent: { enabled: false }
+    argo-rollouts-agent: { enabled: false }
+    helm-agent: { enabled: false }
+    cilium-policy-agent: { enabled: false }
+    cilium-manager-agent: { enabled: false }
+    cilium-debug-agent: { enabled: false }
+
+  # OpenTelemetry configuration for Kagent components
+  otel:
+    tracing:
+      enabled: true
+      exporter:
+        otlp:
+          endpoint: "http://catalyst-agents-opentelemetry-collector.catalyst-agents.svc.cluster.local:4317"
+          insecure: true
+    logging:
+      enabled: true
+      exporter:
+        otlp:
+          endpoint: "http://catalyst-agents-opentelemetry-collector.catalyst-agents.svc.cluster.local:4317"
+          insecure: true
+
+# ------------------------------------------------------------------------------
+# 3. DAPR CONTROL PLANE
+# ------------------------------------------------------------------------------
+dapr:
+  enabled: true
+
+# ------------------------------------------------------------------------------
+# 4. DEVELOPER AGENTS & TOOLS
+# ------------------------------------------------------------------------------
+redis:
+  enabled: true
+  image: redis
+  tag: 6.2
+  port: 6379
+  password: ""
+
+redisConfig:
+  serviceName: dapr-redis-master
+  passwordSecret: { name: dapr-redis, key: redis-password }
+
+agents: {}
+
+daprMcpServer:
+  image: dapr-mcp-server
+  tag: latest
+  replicas: 1
+  port: 8080
+
+opentelemetry:
+  enabled: true
+  endpoint: "catalyst-agents-opentelemetry-collector.catalyst-agents.svc.cluster.local:4317"
+  protocol: "grpc"
+  headers: "authorization=Bearer your-secret-token-here"
+
+llm:
+  provider: ollama # 'ollama' or 'openAI'
+  ollama:
+    enabled: true
+    model: llama3.2:latest
+    endpoint: http://host.docker.internal:11434/v1
+  openAI:
+    model: gpt-4o-mini
+  apiKey: "dummy-key"
+
+externalWebhook: { url: "http://localhost:8000" }
+
+secrets:
+  apiKeySafe: { keyId: "safe-api-1234", tokenValue: "mock_token_xyz_safe", expiry: "2026-01-01" }
+  database:
+    username: "dapr_agent_user"
+    password: "mock_db_password_890"
+    connectionString: "host=localhost;port=5432;database=prod"
+  agentConfig: { logLevel: "DEBUG", maxRetries: "3", cacheTtlSeconds: "300" }
+
+redisInsight:
+  enabled: true
+  service: { nodePort: 30540 }
+
+diagridDashboard:
+  enabled: true
+  service: { nodePort: 30088 }
+
+# ------------------------------------------------------------------------------
+# 5. GATEWAY
+# ------------------------------------------------------------------------------
+gateway:
+  enabled: true
