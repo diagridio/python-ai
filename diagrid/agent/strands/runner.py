@@ -326,9 +326,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             }
 
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(
-            agent_workflow, name="strands_agent_workflow"
-        )
+        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
         self._workflow_runtime.register_activity(
             call_model_activity, name="strands_call_model"
         )

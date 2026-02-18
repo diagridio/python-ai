@@ -10,6 +10,7 @@ class SupportedFrameworks(StrEnum):
     STRANDS = "Strands"
     CREWAI = "CrewAI"
     ADK = "ADK"
+    OPENAI = "OpenAI"
 
 
 class AgentMetadata(BaseModel):

@@ -58,7 +58,7 @@ def clear_tool_registry() -> None:
     _tool_registry.clear()
 
 
-def adk_agent_workflow(
+def agent_workflow(
     ctx: DaprWorkflowContext, input_data: dict[str, Any]
 ) -> Generator[Any, Any, Any]:
     """Dapr Workflow that orchestrates a Google ADK agent execution.

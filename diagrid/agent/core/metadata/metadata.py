@@ -130,11 +130,20 @@ class AgentRegistryAdapter:
         except PackageNotFoundError:
             schema_version = "edge"
 
-        from diagrid.agent.core.metadata.mapping import LangGraphMapper, StrandsMapper
+        from diagrid.agent.core.metadata.mapping import (
+            LangGraphMapper,
+            StrandsMapper,
+            CrewAIMapper,
+            ADKMapper,
+            OpenAIAgentsMapper,
+        )
 
         framework_mappers = {
             SupportedFrameworks.LANGGRAPH: LangGraphMapper().map_agent_metadata,
             SupportedFrameworks.STRANDS: StrandsMapper().map_agent_metadata,
+            SupportedFrameworks.CREWAI: CrewAIMapper().map_agent_metadata,
+            SupportedFrameworks.ADK: ADKMapper().map_agent_metadata,
+            SupportedFrameworks.OPENAI: OpenAIAgentsMapper().map_agent_metadata,
         }
 
         mapper = framework_mappers.get(self._framework)

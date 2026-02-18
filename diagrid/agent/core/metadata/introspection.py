@@ -26,6 +26,9 @@ def find_agent_in_stack() -> Optional[Any]:
     Currently supports:
     - LangGraph: CompiledStateGraph or SyncPregelLoop
     - Strands: DaprSessionManager
+    - CrewAI: Agent or DaprWorkflowAgentRunner
+    - ADK: LlmAgent or DaprWorkflowAgentRunner
+    - OpenAI: Agent or DaprWorkflowAgentRunner
 
     Returns:
         The agent/graph object if found, None otherwise.
@@ -38,6 +41,7 @@ def find_agent_in_stack() -> Optional[Any]:
         if "self" in frame_locals:
             obj = frame_locals["self"]
             obj_type = type(obj).__name__
+            obj_module = type(obj).__module__
 
             # LangGraph support - CompiledStateGraph
             if obj_type == "CompiledStateGraph":
@@ -55,6 +59,24 @@ def find_agent_in_stack() -> Optional[Any]:
                         return ref
                 # Don't register bare DaprSessionManager - only register when Agent exists
                 return None
+
+            # CrewAI support
+            if obj_type == "Agent" and "crewai" in obj_module:
+                return obj
+            if obj_type == "DaprWorkflowAgentRunner" and "crewai" in obj_module:
+                return getattr(obj, "_agent", None)
+
+            # ADK support
+            if obj_type == "LlmAgent" and "google.adk" in obj_module:
+                return obj
+            if obj_type == "DaprWorkflowAgentRunner" and "adk" in obj_module:
+                return getattr(obj, "_agent", None)
+
+            # OpenAI Agents support
+            if obj_type == "Agent" and "agents" in obj_module:
+                return obj
+            if obj_type == "DaprWorkflowAgentRunner" and "openai_agents" in obj_module:
+                return getattr(obj, "_agent", None)
 
             # If we found a checkpointer, use gc to find the graph that references it
             if obj_type == "DaprCheckpointer":
@@ -90,5 +112,17 @@ def detect_framework(agent: Any) -> Optional[str]:
         return "strands"
     if agent_type == "DaprSessionManager":
         return "strands"
+
+    # CrewAI
+    if agent_type == "Agent" and "crewai" in agent_module:
+        return "crewai"
+
+    # ADK
+    if agent_type == "LlmAgent" and "google.adk" in agent_module:
+        return "adk"
+
+    # OpenAI Agents
+    if agent_type == "Agent" and "agents" in agent_module:
+        return "openai"
 
     return None

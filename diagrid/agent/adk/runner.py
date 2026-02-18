@@ -25,7 +25,7 @@ from .models import (
     ToolDefinition,
 )
 from .workflow import (
-    adk_agent_workflow,
+    agent_workflow,
     call_llm_activity,
     execute_tool_activity,
     register_tool,
@@ -114,9 +114,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
 
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(
-            adk_agent_workflow, name="adk_agent_workflow"
-        )
+        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
         self._workflow_runtime.register_activity(
             call_llm_activity, name="call_llm_activity"
         )
@@ -297,7 +295,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
-            workflow=adk_agent_workflow,
+            workflow=agent_workflow,
             input=workflow_input_dict,
             instance_id=workflow_id,
         )

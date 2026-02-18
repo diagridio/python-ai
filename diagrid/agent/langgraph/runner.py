@@ -28,7 +28,7 @@ from .models import (
     NodeConfig,
 )
 from .workflow import (
-    langgraph_workflow,
+    agent_workflow,
     execute_node_activity,
     evaluate_condition_activity,
     register_node,
@@ -129,9 +129,7 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
 
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(
-            langgraph_workflow, name="langgraph_agent_workflow"
-        )
+        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
         self._workflow_runtime.register_activity(
             execute_node_activity, name="execute_node_activity"
         )
@@ -410,7 +408,7 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
-            workflow=langgraph_workflow,
+            workflow=agent_workflow,
             input=workflow_input_dict,
             instance_id=workflow_id,
         )
@@ -510,7 +508,7 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
-            workflow=langgraph_workflow,
+            workflow=agent_workflow,
             input=workflow_input_dict,
             instance_id=workflow_id,
         )
