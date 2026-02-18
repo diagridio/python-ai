@@ -41,28 +41,64 @@ pip install "diagrid[openai_agents]"
 
 ### LangGraph
 
-Wrap your LangGraph `CompiledGraph` with `DaprWorkflowGraphRunner` to make it durable.
+Wrap your LangGraph `StateGraph` with `DaprWorkflowGraphRunner` to make it durable.
 
 ```python
-from langgraph.graph import StateGraph, START, END
+import os
+
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.tools import tool
+from langgraph.graph import StateGraph, START, END, MessagesState
 from diagrid.agent.langgraph import DaprWorkflowGraphRunner
 
-# ... Define your graph nodes and state ...
-graph = StateGraph(State)
-# ... Add nodes and edges ...
-compiled_graph = graph.compile()
 
-# Run durably
-runner = DaprWorkflowGraphRunner(graph=compiled_graph)
-runner.start()
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Sunny in {city}, 72F"
 
-result = runner.invoke(
-    input={"messages": ["Hello"]},
-    thread_id="thread-1"
+
+tools = [get_weather]
+tools_by_name = {t.name: t for t in tools}
+model = ChatOpenAI(model="gpt-4o-mini").bind_tools(tools)
+
+
+def call_model(state: MessagesState) -> dict:
+    response = model.invoke(state["messages"])
+    return {"messages": [response]}
+
+
+def call_tools(state: MessagesState) -> dict:
+    last_message = state["messages"][-1]
+    results = []
+    for tc in last_message.tool_calls:
+        result = tools_by_name[tc["name"]].invoke(tc["args"])
+        results.append(
+            ToolMessage(content=str(result), tool_call_id=tc["id"])
+        )
+    return {"messages": results}
+
+
+def should_use_tools(state: MessagesState) -> str:
+    last_message = state["messages"][-1]
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "tools"
+    return "__end__"
+
+
+graph = StateGraph(MessagesState)
+graph.add_node("agent", call_model)
+graph.add_node("tools", call_tools)
+graph.add_edge(START, "agent")
+graph.add_conditional_edges("agent", should_use_tools)
+graph.add_edge("tools", "agent")
+
+runner = DaprWorkflowGraphRunner(graph=graph.compile())
+runner.serve(
+    port=int(os.environ.get("APP_PORT", "5001")),
+    input_mapper=lambda req: {"messages": [HumanMessage(content=req["task"])]},
 )
-print(result)
-
-runner.shutdown()
 ```
 
 ### CrewAI
@@ -70,21 +106,28 @@ runner.shutdown()
 Wrap your CrewAI `Agent` with `DaprWorkflowAgentRunner`.
 
 ```python
-from crewai import Agent, Task
+import os
+
+from crewai import Agent
+from crewai.tools import tool
 from diagrid.agent.crewai import DaprWorkflowAgentRunner
 
-agent = Agent(role="Researcher", goal="Find data", ...)
-task = Task(description="Research AI", agent=agent)
 
-# Run durably
+@tool("Get weather")
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Sunny in {city}, 72F"
+
+
+agent = Agent(
+    role="Assistant",
+    goal="Help users",
+    backstory="Expert assistant",
+    tools=[get_weather],
+    llm="openai/gpt-4o-mini",
+)
 runner = DaprWorkflowAgentRunner(agent=agent)
-runner.start()
-
-# Execute asynchronously
-import asyncio
-asyncio.run(runner.run_async(task=task, session_id="session-1"))
-
-runner.shutdown()
+runner.serve(port=int(os.environ.get("APP_PORT", "5001")))
 ```
 
 ### Google ADK
@@ -92,31 +135,79 @@ runner.shutdown()
 Use `DaprWorkflowAgentRunner` to execute Google ADK agents as workflows.
 
 ```python
+import os
+
 from google.adk.agents import LlmAgent
+from google.adk.tools import FunctionTool
 from diagrid.agent.adk import DaprWorkflowAgentRunner
 
-agent = LlmAgent(name="my_agent", model="gemini-2.0-flash", ...)
 
-runner = DaprWorkflowAgentRunner(agent=agent, state_store_name="agent-store")
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Sunny in {city}, 72F"
 
-# Run the agent loop
-async for event in runner.run_async(user_message="Hello", session_id="session-1"):
-    print(event)
+
+agent = LlmAgent(
+    name="assistant",
+    model="gemini-2.0-flash",
+    tools=[FunctionTool(get_weather)],
+)
+runner = DaprWorkflowAgentRunner(agent=agent)
+runner.serve(port=int(os.environ.get("APP_PORT", "5001")))
 ```
 
 ### Strands
 
-Use the `DurableAgent` wrapper for Strands.
+Use the `DaprWorkflowAgentRunner` wrapper for Strands.
 
 ```python
-from strands import Agent
-from diagrid.agent.strands import DurableAgent
+import os
 
-agent = Agent(model="us.amazon.nova-pro-v1:0", ...)
-durable_agent = DurableAgent(agent)
+from strands import Agent, tool
+from strands.models.openai import OpenAIModel
+from diagrid.agent.strands import DaprWorkflowAgentRunner
 
-result = durable_agent("What is the weather?")
-print(result)
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Weather in {city}: Sunny, 72F"
+
+
+agent = Agent(
+    model=OpenAIModel(model_id="gpt-4o-mini"),
+    tools=[get_weather],
+    system_prompt="You are a helpful assistant.",
+)
+runner = DaprWorkflowAgentRunner(agent=agent)
+runner.serve(port=int(os.environ.get("APP_PORT", "5001")))
+```
+
+### OpenAI Agents
+
+Use the `DaprWorkflowAgentRunner` wrapper for OpenAI Agents.
+
+```python
+import os
+
+from agents import Agent, function_tool
+from diagrid.agent.openai_agents import DaprWorkflowAgentRunner
+
+
+@function_tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Sunny in {city}, 72F"
+
+
+agent = Agent(
+    name="assistant",
+    instructions="You are a helpful assistant.",
+    model="gpt-4o-mini",
+    tools=[get_weather],
+)
+runner = DaprWorkflowAgentRunner(agent=agent)
+runner.serve(port=int(os.environ.get("APP_PORT", "5001")))
 ```
 
 ## How It Works
