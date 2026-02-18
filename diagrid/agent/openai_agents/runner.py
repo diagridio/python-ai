@@ -110,7 +110,7 @@ class DaprWorkflowAgentRunner:
 
         # Register workflow and activities
         self._workflow_runtime.register_workflow(
-            openai_agents_workflow, name="openai_agents_workflow"
+            openai_agents_workflow, name="openai_agents_agent_workflow"
         )
         self._workflow_runtime.register_activity(
             call_llm_activity, name="call_llm_activity"

@@ -130,7 +130,7 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
 
         # Register workflow and activities
         self._workflow_runtime.register_workflow(
-            langgraph_workflow, name="langgraph_workflow"
+            langgraph_workflow, name="langgraph_agent_workflow"
         )
         self._workflow_runtime.register_activity(
             execute_node_activity, name="execute_node_activity"
