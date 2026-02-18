@@ -16,7 +16,11 @@ limitations under the License.
 import unittest
 from unittest import mock
 
-from diagrid.agent.core.metadata.mapping.langgraph import LangGraphMapper
+import pytest
+
+pytest.importorskip("langgraph.pregel", reason="langgraph not installed")
+
+from diagrid.agent.core.metadata.mapping.langgraph import LangGraphMapper  # noqa: E402
 
 
 class MockCheckpointer:
