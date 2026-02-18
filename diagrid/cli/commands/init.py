@@ -24,6 +24,15 @@ from diagrid.core.config.constants import (
 )
 
 
+SUPPORTED_FRAMEWORKS = [
+    "dapr-agents",
+    "langgraph",
+    "crewai",
+    "strands",
+    "openai-agents",
+]
+
+
 @click.command()
 @click.argument("project_name", default="agents-quickstart")
 @click.option("--api-key", default=None, help="Diagrid API key")
@@ -33,13 +42,26 @@ from diagrid.core.config.constants import (
     default=None,
     help="OpenAI API key (or set OPENAI_API_KEY env)",
 )
+@click.option(
+    "--framework",
+    type=click.Choice(SUPPORTED_FRAMEWORKS, case_sensitive=False),
+    default="dapr-agents",
+    help="Agent framework to use (default: dapr-agents)",
+)
 def init(
     project_name: str,
     api_key: str | None,
     no_browser: bool,
     openai_api_key: str | None,
+    framework: str,
 ) -> None:
     """Initialize a local agent development environment."""
+    if framework != "dapr-agents":
+        raise click.ClickException(
+            f"Framework '{framework}' is not yet supported. "
+            "Currently only 'dapr-agents' is available."
+        )
+
     total_steps = 7
 
     try:
