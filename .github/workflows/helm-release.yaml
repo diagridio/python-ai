@@ -72,6 +72,9 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
 
+      - name: Helm dependency update
+        run: helm dependency update ./charts/catalyst-agents
+
       - name: Package chart
         run: helm package ./charts/catalyst-agents
 
