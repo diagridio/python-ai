@@ -20,7 +20,9 @@ def _make_token(org_id: str = "org-123", exp: int = 9999999999) -> str:
         f"https://diagrid.io/org_{org_id}/roles": ["cra.diagrid.admin"],
         "exp": exp,
     }
-    return pyjwt.encode(claims, "secret", algorithm="HS256")
+    return pyjwt.encode(
+        claims, "test-secret-key-that-is-long-enough", algorithm="HS256"
+    )
 
 
 def test_authenticate_with_api_key(tmp_path: pytest.TempPathFactory) -> None:

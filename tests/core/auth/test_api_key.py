@@ -18,7 +18,9 @@ def _make_api_key(org_id: str = "test-org-123") -> str:
         "sub": "api-key|abc",
         f"https://diagrid.io/org_{org_id}/roles": ["cra.diagrid.admin"],
     }
-    return pyjwt.encode(claims, "secret", algorithm="HS256")
+    return pyjwt.encode(
+        claims, "test-secret-key-that-is-long-enough", algorithm="HS256"
+    )
 
 
 def test_extract_org_id_from_api_key() -> None:
@@ -33,7 +35,9 @@ def test_extract_org_id_invalid_key() -> None:
 
 
 def test_extract_org_id_no_claim() -> None:
-    key = pyjwt.encode({"sub": "test"}, "secret", algorithm="HS256")
+    key = pyjwt.encode(
+        {"sub": "test"}, "test-secret-key-that-is-long-enough", algorithm="HS256"
+    )
     with pytest.raises(InvalidAPIKeyError, match="No organization claim"):
         extract_org_id_from_api_key(key)
 
