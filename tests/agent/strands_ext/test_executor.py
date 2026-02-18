@@ -14,8 +14,6 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from diagrid.agent.strands.executor import DaprWorkflowToolExecutor
 
 
@@ -93,225 +91,203 @@ class TestDaprWorkflowToolExecutor:
         assert executor._get_activity_name("my_tool") == "strands_tool_my_tool"
 
 
+def _make_mock_agent():
+    """Create a mock agent."""
+    agent = MagicMock()
+    agent.tool_registry = MagicMock()
+    agent.tool_registry.registry = {}
+    agent.tool_registry.dynamic_tools = {}
+    agent.tool_registry.get_all_tool_specs = MagicMock(return_value=[])
+    agent.messages = []
+    agent.system_prompt = "Test prompt"
+    agent.model = MagicMock()
+    agent.hooks = MagicMock()
+    agent.hooks.invoke_callbacks_async = AsyncMock(return_value=(MagicMock(), []))
+    agent.event_loop_metrics = MagicMock()
+    agent.trace_attributes = {}
+    return agent
+
+
+def _make_mock_tool_use():
+    """Create a mock tool use."""
+    return {
+        "name": "test_tool",
+        "toolUseId": "test-123",
+        "input": {"arg": "value"},
+    }
+
+
+async def _async_generator(items):
+    """Create an async generator from a list."""
+    for item in items:
+        yield item
+
+
+async def _collect_execute(executor, agent, tool_uses, tool_results):
+    """Run executor._execute and collect events."""
+    events = []
+    async for event in executor._execute(
+        agent=agent,
+        tool_uses=tool_uses,
+        tool_results=tool_results,
+        cycle_trace=MagicMock(),
+        cycle_span=MagicMock(),
+        invocation_state={},
+    ):
+        events.append(event)
+    return events
+
+
 class TestDaprWorkflowToolExecutorAsync:
     """Async tests for DaprWorkflowToolExecutor."""
 
-    @pytest.fixture
-    def mock_agent(self):
-        """Create a mock agent."""
-        agent = MagicMock()
-        agent.tool_registry = MagicMock()
-        agent.tool_registry.registry = {}
-        agent.tool_registry.dynamic_tools = {}
-        agent.tool_registry.get_all_tool_specs = MagicMock(return_value=[])
-        agent.messages = []
-        agent.system_prompt = "Test prompt"
-        agent.model = MagicMock()
-        agent.hooks = MagicMock()
-        agent.hooks.invoke_callbacks_async = AsyncMock(return_value=(MagicMock(), []))
-        agent.event_loop_metrics = MagicMock()
-        agent.trace_attributes = {}
-        return agent
-
-    @pytest.fixture
-    def mock_tool_use(self):
-        """Create a mock tool use."""
-        return {
-            "name": "test_tool",
-            "toolUseId": "test-123",
-            "input": {"arg": "value"},
-        }
-
-    @pytest.mark.asyncio
-    async def test_execute_direct_mode(self, mock_agent, mock_tool_use):
+    def test_execute_direct_mode(self):
         """Test execution in direct mode (no workflow context)."""
-        executor = DaprWorkflowToolExecutor()
 
-        # Patch _execute_direct to verify it's called in direct mode
-        with patch.object(
-            DaprWorkflowToolExecutor,
-            "_execute_direct",
-        ) as mock_execute_direct:
-            mock_execute_direct.return_value = self._async_generator([])
+        async def _run():
+            executor = DaprWorkflowToolExecutor()
+            mock_agent = _make_mock_agent()
+            mock_tool_use = _make_mock_tool_use()
+
+            with patch.object(
+                DaprWorkflowToolExecutor,
+                "_execute_direct",
+            ) as mock_execute_direct:
+                mock_execute_direct.return_value = _async_generator([])
+
+                tool_results = []
+                await _collect_execute(executor, mock_agent, [mock_tool_use], tool_results)
+
+                mock_execute_direct.assert_called_once()
+
+        asyncio.run(_run())
+
+    def test_execute_workflow_mode_activity_call(self):
+        """Test that workflow mode calls activities."""
+
+        async def _run():
+            executor = DaprWorkflowToolExecutor()
+            mock_agent = _make_mock_agent()
+            mock_tool_use = _make_mock_tool_use()
+
+            mock_ctx = MagicMock()
+            mock_ctx.call_activity = AsyncMock(
+                return_value={"status": "success", "content": [{"text": "result"}]}
+            )
+            executor.set_workflow_context(mock_ctx)
 
             tool_results = []
-            events = []
-            async for event in executor._execute(
-                agent=mock_agent,
-                tool_uses=[mock_tool_use],
-                tool_results=tool_results,
-                cycle_trace=MagicMock(),
-                cycle_span=MagicMock(),
-                invocation_state={},
-            ):
-                events.append(event)
+            await _collect_execute(executor, mock_agent, [mock_tool_use], tool_results)
 
-            mock_execute_direct.assert_called_once()
+            mock_ctx.call_activity.assert_called_once()
+            call_args = mock_ctx.call_activity.call_args
 
-    @pytest.mark.asyncio
-    async def test_execute_workflow_mode_activity_call(self, mock_agent, mock_tool_use):
-        """Test that workflow mode calls activities."""
-        executor = DaprWorkflowToolExecutor()
+            assert call_args[0][0] == "strands_tool_test_tool"
 
-        # Set up mock workflow context
-        mock_ctx = MagicMock()
-        mock_ctx.call_activity = AsyncMock(
-            return_value={"status": "success", "content": [{"text": "result"}]}
-        )
-        executor.set_workflow_context(mock_ctx)
+            activity_input = call_args[1]["input"]
+            assert activity_input["tool_name"] == "test_tool"
+            assert activity_input["tool_use"]["name"] == "test_tool"
 
-        tool_results = []
-        events = []
-        async for event in executor._execute(
-            agent=mock_agent,
-            tool_uses=[mock_tool_use],
-            tool_results=tool_results,
-            cycle_trace=MagicMock(),
-            cycle_span=MagicMock(),
-            invocation_state={},
-        ):
-            events.append(event)
+        asyncio.run(_run())
 
-        # Verify activity was called
-        mock_ctx.call_activity.assert_called_once()
-        call_args = mock_ctx.call_activity.call_args
-
-        # Check activity name
-        assert call_args[0][0] == "strands_tool_test_tool"
-
-        # Check activity input
-        activity_input = call_args[1]["input"]
-        assert activity_input["tool_name"] == "test_tool"
-        assert activity_input["tool_use"]["name"] == "test_tool"
-
-    @pytest.mark.asyncio
-    async def test_execute_workflow_mode_activity_error(
-        self, mock_agent, mock_tool_use
-    ):
+    def test_execute_workflow_mode_activity_error(self):
         """Test error handling when activity fails."""
-        executor = DaprWorkflowToolExecutor()
 
-        # Set up mock workflow context that raises an error
-        mock_ctx = MagicMock()
-        mock_ctx.call_activity = AsyncMock(side_effect=Exception("Activity failed"))
-        executor.set_workflow_context(mock_ctx)
+        async def _run():
+            executor = DaprWorkflowToolExecutor()
+            mock_agent = _make_mock_agent()
+            mock_tool_use = _make_mock_tool_use()
 
-        tool_results = []
-        events = []
-        async for event in executor._execute(
-            agent=mock_agent,
-            tool_uses=[mock_tool_use],
-            tool_results=tool_results,
-            cycle_trace=MagicMock(),
-            cycle_span=MagicMock(),
-            invocation_state={},
-        ):
-            events.append(event)
+            mock_ctx = MagicMock()
+            mock_ctx.call_activity = AsyncMock(side_effect=Exception("Activity failed"))
+            executor.set_workflow_context(mock_ctx)
 
-        # Should have one result event
-        assert len(events) == 1
+            tool_results = []
+            events = await _collect_execute(
+                executor, mock_agent, [mock_tool_use], tool_results
+            )
 
-        # Should have error status
-        assert len(tool_results) == 1
-        assert tool_results[0]["status"] == "error"
-        assert "Activity failed" in tool_results[0]["content"][0]["text"]
+            assert len(events) == 1
+            assert len(tool_results) == 1
+            assert tool_results[0]["status"] == "error"
+            assert "Activity failed" in tool_results[0]["content"][0]["text"]
 
-    @staticmethod
-    async def _async_generator(items):
-        """Create an async generator from a list."""
-        for item in items:
-            yield item
+        asyncio.run(_run())
 
 
 class TestExecutorIntegration:
     """Integration tests for the executor."""
 
-    @pytest.mark.asyncio
-    async def test_concurrent_mode_multiple_tools(self):
+    def test_concurrent_mode_multiple_tools(self):
         """Test concurrent execution of multiple tools."""
-        executor = DaprWorkflowToolExecutor(concurrent=True)
 
-        # Create mock context with activity tracking
-        activity_calls = []
+        async def _run():
+            executor = DaprWorkflowToolExecutor(concurrent=True)
 
-        async def mock_call_activity(name, input):
-            activity_calls.append(name)
-            await asyncio.sleep(0.01)  # Simulate work
-            return {
-                "status": "success",
-                "content": [{"text": f"result from {name}"}],
-            }
+            activity_calls = []
 
-        mock_ctx = MagicMock()
-        mock_ctx.call_activity = mock_call_activity
-        executor.set_workflow_context(mock_ctx)
+            async def mock_call_activity(name, input):
+                activity_calls.append(name)
+                await asyncio.sleep(0.01)
+                return {
+                    "status": "success",
+                    "content": [{"text": f"result from {name}"}],
+                }
 
-        # Create mock agent
-        mock_agent = MagicMock()
-        mock_agent.tool_registry = MagicMock()
-        mock_agent.tool_registry.registry = {}
-        mock_agent.tool_registry.dynamic_tools = {}
+            mock_ctx = MagicMock()
+            mock_ctx.call_activity = mock_call_activity
+            executor.set_workflow_context(mock_ctx)
 
-        # Multiple tool uses
-        tool_uses = [
-            {"name": "tool1", "toolUseId": "1", "input": {}},
-            {"name": "tool2", "toolUseId": "2", "input": {}},
-            {"name": "tool3", "toolUseId": "3", "input": {}},
-        ]
+            mock_agent = MagicMock()
+            mock_agent.tool_registry = MagicMock()
+            mock_agent.tool_registry.registry = {}
+            mock_agent.tool_registry.dynamic_tools = {}
 
-        tool_results = []
-        async for _ in executor._execute(
-            agent=mock_agent,
-            tool_uses=tool_uses,
-            tool_results=tool_results,
-            cycle_trace=MagicMock(),
-            cycle_span=MagicMock(),
-            invocation_state={},
-        ):
-            pass
+            tool_uses = [
+                {"name": "tool1", "toolUseId": "1", "input": {}},
+                {"name": "tool2", "toolUseId": "2", "input": {}},
+                {"name": "tool3", "toolUseId": "3", "input": {}},
+            ]
 
-        # All tools should have been called
-        assert len(activity_calls) == 3
-        assert "strands_tool_tool1" in activity_calls
-        assert "strands_tool_tool2" in activity_calls
-        assert "strands_tool_tool3" in activity_calls
+            tool_results = []
+            await _collect_execute(executor, mock_agent, tool_uses, tool_results)
 
-    @pytest.mark.asyncio
-    async def test_sequential_mode_multiple_tools(self):
+            assert len(activity_calls) == 3
+            assert "strands_tool_tool1" in activity_calls
+            assert "strands_tool_tool2" in activity_calls
+            assert "strands_tool_tool3" in activity_calls
+
+        asyncio.run(_run())
+
+    def test_sequential_mode_multiple_tools(self):
         """Test sequential execution of multiple tools."""
-        executor = DaprWorkflowToolExecutor(concurrent=False)
 
-        # Track call order
-        call_order = []
+        async def _run():
+            executor = DaprWorkflowToolExecutor(concurrent=False)
 
-        async def mock_call_activity(name, input):
-            call_order.append(name)
-            return {"status": "success", "content": [{"text": "ok"}]}
+            call_order = []
 
-        mock_ctx = MagicMock()
-        mock_ctx.call_activity = mock_call_activity
-        executor.set_workflow_context(mock_ctx)
+            async def mock_call_activity(name, input):
+                call_order.append(name)
+                return {"status": "success", "content": [{"text": "ok"}]}
 
-        mock_agent = MagicMock()
-        mock_agent.tool_registry = MagicMock()
-        mock_agent.tool_registry.registry = {}
-        mock_agent.tool_registry.dynamic_tools = {}
+            mock_ctx = MagicMock()
+            mock_ctx.call_activity = mock_call_activity
+            executor.set_workflow_context(mock_ctx)
 
-        tool_uses = [
-            {"name": "first", "toolUseId": "1", "input": {}},
-            {"name": "second", "toolUseId": "2", "input": {}},
-        ]
+            mock_agent = MagicMock()
+            mock_agent.tool_registry = MagicMock()
+            mock_agent.tool_registry.registry = {}
+            mock_agent.tool_registry.dynamic_tools = {}
 
-        tool_results = []
-        async for _ in executor._execute(
-            agent=mock_agent,
-            tool_uses=tool_uses,
-            tool_results=tool_results,
-            cycle_trace=MagicMock(),
-            cycle_span=MagicMock(),
-            invocation_state={},
-        ):
-            pass
+            tool_uses = [
+                {"name": "first", "toolUseId": "1", "input": {}},
+                {"name": "second", "toolUseId": "2", "input": {}},
+            ]
 
-        # Verify sequential order
-        assert call_order == ["strands_tool_first", "strands_tool_second"]
+            tool_results = []
+            await _collect_execute(executor, mock_agent, tool_uses, tool_results)
+
+            assert call_order == ["strands_tool_first", "strands_tool_second"]
+
+        asyncio.run(_run())
