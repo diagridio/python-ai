@@ -23,12 +23,14 @@ def test_cluster_exists_no_kind(mock_avail: object) -> None:
 
 
 @patch("diagrid.cli.infra.kind.kind_available", return_value=True)
-@patch("diagrid.cli.infra.kind.run_capture", return_value="dapr-agents\nother-cluster")
+@patch(
+    "diagrid.cli.infra.kind.run_capture", return_value="catalyst-agents\nother-cluster"
+)
 def test_cluster_exists_found(mock_run: object, mock_avail: object) -> None:
-    assert cluster_exists("dapr-agents") is True
+    assert cluster_exists("catalyst-agents") is True
 
 
 @patch("diagrid.cli.infra.kind.kind_available", return_value=True)
 @patch("diagrid.cli.infra.kind.run_capture", return_value="other-cluster")
 def test_cluster_exists_not_found(mock_run: object, mock_avail: object) -> None:
-    assert cluster_exists("dapr-agents") is False
+    assert cluster_exists("catalyst-agents") is False

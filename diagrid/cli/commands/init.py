@@ -104,7 +104,7 @@ def init(
         _provision_cluster()
 
         # Step 6: Deploy helm chart
-        console.step(6, total_steps, "Installing dapr-agents helm chart...")
+        console.step(6, total_steps, "Installing catalyst-agents helm chart...")
         install_dapr_agents(llm_key)
         console.success("Helm chart installed")
 

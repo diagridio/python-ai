@@ -16,6 +16,11 @@ repos:
       - id: check-yaml
         name: Check YAML files
         stages: [pre-push]
+        exclude: ^charts/catalyst-agents/(templates|crds)/
+      - id: check-added-large-files
+        name: Check for large files
+        args: [--maxkb=1000]
+        stages: [pre-push]
 
   # Code formatting with Ruff
   - repo: local

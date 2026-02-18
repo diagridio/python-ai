@@ -1,0 +1,17 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: lockstore-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "catalyst-agents.labels" . | nindent 4 }}
+spec:
+  type: lock.redis
+  version: v1
+  metadata:
+  - name: redisHost
+    value: {{ printf "%s.%s.svc.cluster.local:6379" .Values.redisConfig.serviceName .Release.Namespace }}
+  - name: redisPassword
+    secretKeyRef:
+      name: {{ .Values.redisConfig.passwordSecret.name }}
+      key: {{ .Values.redisConfig.passwordSecret.key }}

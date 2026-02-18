@@ -6,6 +6,9 @@ on:
       - main
       - feature/*
       - release-*
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:

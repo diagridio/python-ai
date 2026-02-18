@@ -1,0 +1,40 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build diagrid-core
+        run: uv build --package diagrid-core --out-dir dist-core/
+      - name: Publish diagrid-core
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-core/
+
+      - name: Build diagrid-cli
+        run: uv build --package diagrid-cli --out-dir dist-cli/
+      - name: Publish diagrid-cli
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-cli/
+
+      - name: Build diagrid (root)
+        run: uv build --out-dir dist-root/
+      - name: Publish diagrid
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-root/

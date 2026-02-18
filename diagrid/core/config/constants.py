@@ -23,10 +23,10 @@ AUTH_SCOPE = "openid profile email offline_access"
 TOKEN_REFRESH_BUFFER_SECONDS = 300
 
 # Kind cluster defaults
-DEFAULT_KIND_CLUSTER = "dapr-agents"
-DEFAULT_NAMESPACE = "dapr-agents"
+DEFAULT_KIND_CLUSTER = "catalyst-agents"
+DEFAULT_NAMESPACE = "catalyst-agents"
 
-# Scripts repo — contains kind-config.yaml and the local dapr-agents helm chart
+# Scripts repo — contains kind-config.yaml and the catalyst-agents helm chart
 SCRIPTS_REPO_URL = "https://github.com/diagridio/catalyst-quickstarts"
 SCRIPTS_REPO_BRANCH = "main"
 
@@ -70,10 +70,9 @@ REGISTRY_MIRRORS = [
     ("registry.k8s.io", "https://registry.k8s.io"),
 ]
 
-# Helm chart — remote repo
-DEFAULT_HELM_REPO_NAME = "dapr-agents"
-DEFAULT_HELM_REPO_URL = "https://caspergn.github.io/dapr-agents-dev/"
-DEFAULT_HELM_CHART = "dapr-agents/dapr-agents"
+# Helm chart — OCI registry
+DEFAULT_HELM_OCI_CHART = "oci://ghcr.io/diagridio/charts/catalyst-agents"
+DEFAULT_HELM_CHART_VERSION = "0.1.0"
 
 # Quickstart repo
 QUICKSTART_REPO_URL = "https://github.com/diagridio/catalyst-quickstarts"
