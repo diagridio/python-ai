@@ -51,7 +51,7 @@ class DaprStateSessionManager(HookProvider):
 
         # Create session manager
         session_manager = DaprStateSessionManager(
-            store_name="statestore",
+            store_name="agent-workflow",
             session_id="user-123-conversation",
         )
 

@@ -87,7 +87,7 @@ State persistence:
     from diagrid.agent.strands import DaprStateSessionManager
 
     session_manager = DaprStateSessionManager(
-        store_name="statestore",
+        store_name="agent-workflow",
         session_id="user-123",
     )
 

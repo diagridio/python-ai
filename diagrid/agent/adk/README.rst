@@ -36,7 +36,7 @@ Quick Start
     # Create a Dapr workflow runner
     runner = DaprWorkflowAgentRunner(
         agent=agent,
-        state_store_name="statestore",
+        state_store_name="agent-workflow",
     )
 
     # Run the agent - each tool execution is now a durable activity
