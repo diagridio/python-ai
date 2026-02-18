@@ -17,8 +17,9 @@ for persisting agent conversation history and state.
 
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
+from diagrid.agent.core import AgentRegistryMixin, find_agent_in_stack
 from strands.hooks import HookProvider, HookRegistry
 from strands.hooks.events import (
     AfterInvocationEvent,
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprStateSessionManager(HookProvider):
+class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
     """Session manager that persists agent state to Dapr state stores.
 
     This class implements the HookProvider protocol to automatically
@@ -71,6 +72,7 @@ class DaprStateSessionManager(HookProvider):
         session_id: Unique identifier for the session
         auto_save: Whether to automatically save after each invocation (default: True)
         auto_load: Whether to automatically load on first invocation (default: True)
+        registry_config: Optional registry configuration for metadata extraction
     """
 
     def __init__(
@@ -80,6 +82,7 @@ class DaprStateSessionManager(HookProvider):
         auto_save: bool = True,
         auto_load: bool = True,
         consistency: str = "strong",
+        registry_config: Optional[Any] = None,
     ) -> None:
         """Initialize the Dapr state session manager.
 
@@ -89,12 +92,14 @@ class DaprStateSessionManager(HookProvider):
             auto_save: Automatically save after invocations
             auto_load: Automatically load on first invocation
             consistency: State consistency level ("strong" or "eventual")
+            registry_config: Optional registry configuration for metadata extraction
         """
         self.store_name = store_name
         self.session_id = session_id
         self.auto_save = auto_save
         self.auto_load = auto_load
         self.consistency = consistency
+        self.registry_config = registry_config
 
         self._dapr_client: Any = None
         self._loaded = False
@@ -306,6 +311,22 @@ class DaprStateSessionManager(HookProvider):
             registry: The agent's hook registry
             **kwargs: Additional arguments
         """
+        # Register metadata if agent is available in kwargs or can be found in stack
+        agent = kwargs.get("agent")
+        if agent:
+            self._register_agent_metadata(
+                agent=agent, framework="strands", registry=self.registry_config
+            )
+        else:
+            # Try to find agent in stack
+            stack_agent = find_agent_in_stack()
+            if stack_agent:
+                self._register_agent_metadata(
+                    agent=stack_agent,
+                    framework="strands",
+                    registry=self.registry_config,
+                )
+
         if self.auto_load:
             registry.add_callback(BeforeInvocationEvent, self._on_before_invocation)
 

@@ -6,7 +6,7 @@ import time
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Callable, Dict, Optional, Sequence
 
-from diagrid.agent.core.metadata import (
+from .introspection import (
     detect_framework,
     find_agent_in_stack,
 )

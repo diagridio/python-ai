@@ -18,6 +18,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, TYPE_CHEC
 
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
+from diagrid.agent.core import AgentRegistryMixin
 from .models import (
     ChannelState,
     EdgeConfig,
@@ -45,7 +46,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowGraphRunner:
+class DaprWorkflowGraphRunner(AgentRegistryMixin):
     """Runner that executes LangGraph graphs as Dapr Workflows.
 
     This runner wraps a compiled LangGraph and executes it using Dapr Workflows,
@@ -101,6 +102,7 @@ class DaprWorkflowGraphRunner:
         port: Optional[str] = None,
         max_steps: int = 100,
         name: Optional[str] = None,
+        registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -110,12 +112,18 @@ class DaprWorkflowGraphRunner:
             port: Dapr sidecar port (default: 50001)
             max_steps: Maximum number of steps before stopping (default: 100)
             name: Optional name for the graph (inferred if not provided)
+            registry_config: Optional registry configuration for metadata extraction
         """
         self._graph = graph
         self._max_steps = max_steps
         self._host = host
         self._port = port
         self._name = name or self._infer_graph_name()
+
+        # Register metadata
+        self._register_agent_metadata(
+            agent=self._graph, framework="langgraph", registry=registry_config
+        )
 
         # Create workflow runtime
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)

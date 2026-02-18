@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator, Generator, Optional, TYPE_CHECKING
 
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
+from diagrid.agent.core import AgentRegistryMixin
 from .workflow import WorkflowOutput
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowAgentRunner:
+class DaprWorkflowAgentRunner(AgentRegistryMixin):
     """Runner that executes Strands agents as Dapr Workflows.
 
     This runner wraps a Strands Agent and executes it using Dapr Workflows,
@@ -86,6 +87,7 @@ class DaprWorkflowAgentRunner:
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: Optional[int] = None,
+        registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -94,11 +96,17 @@ class DaprWorkflowAgentRunner:
             host: Dapr sidecar host (default: localhost)
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations (default: 25)
+            registry_config: Optional registry configuration for metadata extraction
         """
         self._agent = agent
         self._host = host
         self._port = port
         self._max_iterations = max_iterations or 25
+
+        # Register metadata
+        self._register_agent_metadata(
+            agent=self._agent, framework="strands", registry=registry_config
+        )
 
         # Create workflow runtime
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)

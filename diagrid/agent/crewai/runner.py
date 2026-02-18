@@ -18,6 +18,7 @@ from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
+from diagrid.agent.core import AgentRegistryMixin
 from .models import (
     AgentConfig,
     AgentWorkflowInput,
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowAgentRunner:
+class DaprWorkflowAgentRunner(AgentRegistryMixin):
     """Runner that executes CrewAI agents as Dapr Workflows.
 
     This runner wraps a CrewAI Agent and executes it using Dapr Workflows,
@@ -102,6 +103,7 @@ class DaprWorkflowAgentRunner:
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: Optional[int] = None,
+        registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -111,6 +113,7 @@ class DaprWorkflowAgentRunner:
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations
                            (default: uses agent's max_iter)
+            registry_config: Optional registry configuration for metadata extraction
         """
         self._agent = agent
         self._max_iterations: int = max_iterations or int(
@@ -118,6 +121,11 @@ class DaprWorkflowAgentRunner:
         )
         self._host = host
         self._port = port
+
+        # Register metadata
+        self._register_agent_metadata(
+            agent=self._agent, framework="crewai", registry=registry_config
+        )
 
         # Create workflow runtime
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)

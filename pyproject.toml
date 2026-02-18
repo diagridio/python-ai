@@ -20,21 +20,26 @@ diagridpy = "diagrid.cli.main:cli"
 langgraph = [
     "langgraph>=1.0.8",
     "langchain-core>=0.3.0",
+    "diagrid-agent-core",
 ]
 crewai = [
     "crewai>=1.6.1",
     "litellm>=1.0.0",
+    "diagrid-agent-core",
 ]
 adk = [
     "google-adk>=1.0.0",
+    "diagrid-agent-core",
 ]
 strands = [
     "openai>=2.21.0",
     "strands-agents>=1.26.0",
+    "diagrid-agent-core",
 ]
 openai_agents = [
     "openai-agents>=0.1.0",
     "openai>=1.0.0",
+    "diagrid-agent-core",
 ]
 all = [
     "diagrid[langgraph,crewai,adk,strands,openai_agents]",
@@ -60,7 +65,11 @@ pythonpath = ["."]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["diagrid*"]
-exclude = ["diagrid.agent.core*", "diagrid.core*", "diagrid.cli*"]
+exclude = [
+    "diagrid.agent.core*",
+    "diagrid.core*",
+    "diagrid.cli*",
+]
 
 [tool.setuptools.package-data]
 diagrid = ["py.typed"]
