@@ -186,7 +186,7 @@ async def main():
         if not state["workflow_scheduled"]:
             log("Scheduling new workflow...")
             async for event in runner.run_async(
-                prompt=PROMPT,
+                task=PROMPT,
                 session_id=SESSION_ID,
             ):
                 event_type = event["type"]

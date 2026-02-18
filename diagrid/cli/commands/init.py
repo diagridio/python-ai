@@ -20,17 +20,11 @@ from diagrid.core.config.constants import (
     DEFAULT_KIND_CLUSTER,
     ENV_OPENAI_API_KEY,
     QUICKSTART_REPO_URL,
-    QUICKSTART_SUBDIR,
+    QUICKSTART_SUBDIRS,
 )
 
 
-SUPPORTED_FRAMEWORKS = [
-    "dapr-agents",
-    "langgraph",
-    "crewai",
-    "strands",
-    "openai-agents",
-]
+SUPPORTED_FRAMEWORKS = list(QUICKSTART_SUBDIRS.keys())
 
 
 @click.command()
@@ -43,6 +37,11 @@ SUPPORTED_FRAMEWORKS = [
     help="OpenAI API key (or set OPENAI_API_KEY env)",
 )
 @click.option(
+    "--google-api-key",
+    default=None,
+    help="Google API key for ADK framework (or set GOOGLE_API_KEY env)",
+)
+@click.option(
     "--framework",
     type=click.Choice(SUPPORTED_FRAMEWORKS, case_sensitive=False),
     default="dapr-agents",
@@ -53,14 +52,10 @@ def init(
     api_key: str | None,
     no_browser: bool,
     openai_api_key: str | None,
+    google_api_key: str | None,
     framework: str,
 ) -> None:
     """Initialize a local agent development environment."""
-    if framework != "dapr-agents":
-        raise click.ClickException(
-            f"Framework '{framework}' is not yet supported. "
-            "Currently only 'dapr-agents' is available."
-        )
 
     total_steps = 7
 
@@ -73,13 +68,18 @@ def init(
 
         # Step 2: Get LLM API key
         console.step(2, total_steps, "Checking LLM API key...")
-        llm_key = openai_api_key or os.environ.get(ENV_OPENAI_API_KEY)
+        if framework == "adk":
+            key_name = "GOOGLE_API_KEY"
+            llm_key = google_api_key or os.environ.get("GOOGLE_API_KEY")
+        else:
+            key_name = "OPENAI_API_KEY"
+            llm_key = openai_api_key or os.environ.get(ENV_OPENAI_API_KEY)
         if llm_key:
             console.success("LLM API key found")
         else:
-            llm_key = click.prompt("Enter your OPENAI_API_KEY", hide_input=True)
+            llm_key = click.prompt(f"Enter your {key_name}", hide_input=True)
             if not llm_key:
-                raise click.ClickException("OPENAI_API_KEY is required")
+                raise click.ClickException(f"{key_name} is required")
             console.success("LLM API key configured")
 
         # Step 3: Create project
@@ -96,7 +96,7 @@ def init(
 
         # Step 4: Clone quickstart
         console.step(4, total_steps, "Cloning quickstart template...")
-        _clone_quickstart(project_name)
+        _clone_quickstart(project_name, framework)
         console.success(f"Quickstart cloned to ./{project_name}/")
 
         # Step 5: Provision cluster
@@ -142,8 +142,12 @@ def init(
         raise SystemExit(1) from exc
 
 
-def _clone_quickstart(project_name: str) -> None:
-    """Clone the quickstart repo and copy the Python agent template."""
+def _clone_quickstart(project_name: str, framework: str) -> None:
+    """Clone the quickstart repo and copy the framework template."""
+    subdir = QUICKSTART_SUBDIRS.get(framework)
+    if not subdir:
+        raise click.ClickException(f"Unknown framework: {framework}")
+
     with tempfile.TemporaryDirectory() as tmp:
         run(
             "git",
@@ -154,11 +158,9 @@ def _clone_quickstart(project_name: str) -> None:
             tmp,
         )
 
-        source = os.path.join(tmp, QUICKSTART_SUBDIR)
+        source = os.path.join(tmp, subdir)
         if not os.path.isdir(source):
-            raise click.ClickException(
-                f"Quickstart template not found at {QUICKSTART_SUBDIR}"
-            )
+            raise click.ClickException(f"Quickstart template not found at {subdir}")
 
         dest = project_name
         if os.path.exists(dest):
@@ -166,8 +168,9 @@ def _clone_quickstart(project_name: str) -> None:
 
         shutil.copytree(source, dest)
 
-        # Patch agent code to read port from APP_PORT env var
-        _patch_agent_port(dest)
+        # Patch agent code to read port from APP_PORT env var (dapr-agents only)
+        if framework == "dapr-agents":
+            _patch_agent_port(dest)
 
         # Initialize a fresh git repo
         try:

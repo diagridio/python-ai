@@ -105,7 +105,7 @@ async def main():
 
         # Process events as they come
         async for event in runner.run_async(
-            prompt="What's 2 + 2, and what's the weather in San Francisco?",
+            task="What's 2 + 2, and what's the weather in San Francisco?",
             session_id=session_id,
         ):
             event_type = event["type"]

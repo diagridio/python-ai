@@ -77,4 +77,11 @@ DEFAULT_HELM_CHART = "dapr-agents/dapr-agents"
 
 # Quickstart repo
 QUICKSTART_REPO_URL = "https://github.com/diagridio/catalyst-quickstarts"
-QUICKSTART_SUBDIR = "durable-agent/python"
+QUICKSTART_SUBDIRS = {
+    "dapr-agents": "agents/dapr-agents/durable-agent",
+    "langgraph": "agents/langgraph",
+    "strands": "agents/strands",
+    "openai-agents": "agents/openai-agents",
+    "crewai": "agents/crewai",
+    "adk": "agents/adk",
+}

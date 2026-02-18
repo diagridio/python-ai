@@ -614,6 +614,59 @@ class DaprWorkflowAgentRunner:
         self._workflow_client.purge_workflow(instance_id=workflow_id)
         logger.info(f"Purged workflow: {workflow_id}")
 
+    def serve(self, *, port: int = 5001, host: str = "0.0.0.0") -> None:
+        """Start an HTTP server exposing /agent/run endpoints.
+
+        Requires: pip install fastapi uvicorn
+
+        Args:
+            port: Port to listen on (default: 5001)
+            host: Host to bind to (default: 0.0.0.0)
+        """
+        try:
+            from fastapi import FastAPI, HTTPException
+            import uvicorn
+        except ImportError:
+            raise ImportError(
+                "fastapi and uvicorn are required for serve(). "
+                "Install them with: pip install fastapi uvicorn[standard]"
+            )
+
+        from crewai import Task
+
+        app = FastAPI()
+        self.start()
+
+        @app.post("/agent/run")
+        async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
+            session_id = request.get("session_id", uuid.uuid4().hex[:8])
+            task_description = request.get("task", "")
+            task = Task(
+                description=task_description,
+                expected_output="A helpful response",
+                agent=self._agent,
+            )
+            result: dict[str, Any] = {}
+            async for event in self.run_async(task=task, session_id=session_id):
+                if event["type"] == "workflow_started":
+                    result["instance_id"] = event["workflow_id"]
+                elif event["type"] == "workflow_completed":
+                    result.update(event)
+                    break
+                elif event["type"] == "workflow_failed":
+                    result.update(event)
+                    break
+            return result
+
+        @app.get("/agent/run/{workflow_id}")
+        async def get_status(workflow_id: str) -> dict:  # type: ignore[type-arg]
+            status = self.get_workflow_status(workflow_id)
+            if status is None:
+                raise HTTPException(status_code=404, detail="Workflow not found")
+            return status
+
+        uvicorn.run(app, host=host, port=port)
+
     @property
     def agent(self) -> "Agent":
         """The CrewAI agent being executed."""
