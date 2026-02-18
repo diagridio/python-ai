@@ -209,3 +209,5 @@ charts/*/charts/*.tgz
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+full-template.yaml
