@@ -333,16 +333,9 @@ def call_llm_activity(
             is_final=is_final,
         ).to_dict()
 
-    except Exception as e:
-        logger.error(f"Error calling LLM: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return CallLlmOutput(
-            message=Message(role=MessageRole.ASSISTANT),
-            is_final=True,
-            error=str(e),
-        ).to_dict()
+    except Exception:
+        logger.exception("Error calling LLM")
+        raise
 
 
 def _build_system_prompt(agent_config: AgentConfig, task_config: TaskConfig) -> str:
@@ -412,43 +405,28 @@ def execute_tool_activity(
             )
         ).to_dict()
 
-    try:
-        # Execute the tool based on its type
-        result = _execute_tool(tool, tool_call.args)
+    # Execute the tool based on its type
+    result = _execute_tool(tool, tool_call.args)
 
-        # Serialize result
-        if hasattr(result, "model_dump"):
-            result = result.model_dump()
-        elif hasattr(result, "to_dict"):
-            result = result.to_dict()
-        elif not isinstance(result, (str, int, float, bool, list, dict, type(None))):
-            result = str(result)
+    # Serialize result
+    if hasattr(result, "model_dump"):
+        result = result.model_dump()
+    elif hasattr(result, "to_dict"):
+        result = result.to_dict()
+    elif not isinstance(result, (str, int, float, bool, list, dict, type(None))):
+        result = str(result)
 
-        # Check if this tool's result should be the final answer
-        result_as_answer = tool_def.result_as_answer if tool_def else False
+    # Check if this tool's result should be the final answer
+    result_as_answer = tool_def.result_as_answer if tool_def else False
 
-        return ExecuteToolOutput(
-            tool_result=ToolResult(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                result=result,
-            ),
-            result_as_answer=result_as_answer,
-        ).to_dict()
-
-    except Exception as e:
-        logger.error(f"Error executing tool '{tool_call.name}': {e}")
-        import traceback
-
-        traceback.print_exc()
-        return ExecuteToolOutput(
-            tool_result=ToolResult(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                result=None,
-                error=str(e),
-            )
-        ).to_dict()
+    return ExecuteToolOutput(
+        tool_result=ToolResult(
+            tool_call_id=tool_call.id,
+            tool_name=tool_call.name,
+            result=result,
+        ),
+        result_as_answer=result_as_answer,
+    ).to_dict()
 
 
 def _execute_tool(tool: Any, args: dict[str, Any]) -> Any:

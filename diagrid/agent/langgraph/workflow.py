@@ -285,52 +285,41 @@ def execute_node_activity(
             error=f"Node '{node_name}' not found in registry",
         ).to_dict()
 
-    try:
-        # Reconstruct state from channel values
-        state = _reconstruct_state(node_input.channel_state)
+    # Reconstruct state from channel values
+    state = _reconstruct_state(node_input.channel_state)
 
-        # Execute the node function
-        # Node functions can have different signatures:
-        # - (state) -> updates
-        # - (state, config) -> updates
-        import inspect
+    # Execute the node function
+    # Node functions can have different signatures:
+    # - (state) -> updates
+    # - (state, config) -> updates
+    import inspect
 
-        sig = inspect.signature(node_func)
-        params = list(sig.parameters.keys())
+    sig = inspect.signature(node_func)
+    params = list(sig.parameters.keys())
 
-        if len(params) >= 2 and "config" in params:
-            result = node_func(state, config=node_input.config or {})
-        else:
-            result = node_func(state)
+    if len(params) >= 2 and "config" in params:
+        result = node_func(state, config=node_input.config or {})
+    else:
+        result = node_func(state)
 
-        # Handle async functions
-        import asyncio
+    # Handle async functions
+    import asyncio
 
-        if asyncio.iscoroutine(result):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(result)
-            finally:
-                loop.close()
+    if asyncio.iscoroutine(result):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(result)
+        finally:
+            loop.close()
 
-        # Convert result to writes
-        writes = _result_to_writes(result)
+    # Convert result to writes
+    writes = _result_to_writes(result)
 
-        return ExecuteNodeOutput(
-            node_name=node_name,
-            writes=writes,
-        ).to_dict()
-
-    except Exception as e:
-        logger.error(f"Error executing node '{node_name}': {e}")
-        import traceback
-
-        traceback.print_exc()
-        return ExecuteNodeOutput(
-            node_name=node_name,
-            error=str(e),
-        ).to_dict()
+    return ExecuteNodeOutput(
+        node_name=node_name,
+        writes=writes,
+    ).to_dict()
 
 
 def evaluate_condition_activity(
@@ -354,44 +343,34 @@ def evaluate_condition_activity(
             error=f"Condition '{cond_input.condition_name}' not found in registry",
         ).to_dict()
 
-    try:
-        # Reconstruct state from channel values
-        state = _reconstruct_state(cond_input.channel_state)
+    # Reconstruct state from channel values
+    state = _reconstruct_state(cond_input.channel_state)
 
-        # Evaluate the condition
-        result = cond_func(state)
+    # Evaluate the condition
+    result = cond_func(state)
 
-        # Handle async functions
-        import asyncio
+    # Handle async functions
+    import asyncio
 
-        if asyncio.iscoroutine(result):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(result)
-            finally:
-                loop.close()
+    if asyncio.iscoroutine(result):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(result)
+        finally:
+            loop.close()
 
-        # Result should be a node name or list of node names
-        if isinstance(result, str):
-            next_nodes = [result]
-        elif isinstance(result, (list, tuple)):
-            next_nodes = list(result)
-        else:
-            next_nodes = [str(result)]
+    # Result should be a node name or list of node names
+    if isinstance(result, str):
+        next_nodes = [result]
+    elif isinstance(result, (list, tuple)):
+        next_nodes = list(result)
+    else:
+        next_nodes = [str(result)]
 
-        return EvaluateConditionOutput(
-            next_nodes=next_nodes,
-        ).to_dict()
-
-    except Exception as e:
-        logger.error(f"Error evaluating condition '{cond_input.condition_name}': {e}")
-        import traceback
-
-        traceback.print_exc()
-        return EvaluateConditionOutput(
-            error=str(e),
-        ).to_dict()
+    return EvaluateConditionOutput(
+        next_nodes=next_nodes,
+    ).to_dict()
 
 
 def _get_triggered_nodes(
