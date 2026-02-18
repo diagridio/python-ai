@@ -27,8 +27,12 @@ adk = [
 strands = [
     "strands-agents>=1.26.0",
 ]
+openai_agents = [
+    "openai-agents>=0.1.0",
+    "openai>=1.0.0",
+]
 all = [
-    "diagrid[langgraph,crewai,adk,strands]",
+    "diagrid[langgraph,crewai,adk,strands,openai_agents]",
 ]
 
 [dependency-groups]
