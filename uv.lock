@@ -760,10 +760,12 @@ dependencies = [
 
 [package.optional-dependencies]
 adk = [
+    { name = "diagrid-agent-core" },
     { name = "google-adk" },
 ]
 all = [
     { name = "crewai" },
+    { name = "diagrid-agent-core" },
     { name = "google-adk" },
     { name = "langchain-core" },
     { name = "langgraph" },
@@ -774,17 +776,21 @@ all = [
 ]
 crewai = [
     { name = "crewai" },
+    { name = "diagrid-agent-core" },
     { name = "litellm" },
 ]
 langgraph = [
+    { name = "diagrid-agent-core" },
     { name = "langchain-core" },
     { name = "langgraph" },
 ]
 openai-agents = [
+    { name = "diagrid-agent-core" },
     { name = "openai" },
     { name = "openai-agents" },
 ]
 strands = [
+    { name = "diagrid-agent-core" },
     { name = "openai" },
     { name = "strands-agents" },
 ]
@@ -809,6 +815,11 @@ requires-dist = [
     { name = "dapr", specifier = ">=1.16.0" },
     { name = "dapr-ext-workflow", specifier = ">=1.16.0" },
     { name = "diagrid", extras = ["langgraph", "crewai", "adk", "strands", "openai-agents"], marker = "extra == 'all'" },
+    { name = "diagrid-agent-core", marker = "extra == 'adk'", editable = "diagrid/agent/core" },
+    { name = "diagrid-agent-core", marker = "extra == 'crewai'", editable = "diagrid/agent/core" },
+    { name = "diagrid-agent-core", marker = "extra == 'langgraph'", editable = "diagrid/agent/core" },
+    { name = "diagrid-agent-core", marker = "extra == 'openai-agents'", editable = "diagrid/agent/core" },
+    { name = "diagrid-agent-core", marker = "extra == 'strands'", editable = "diagrid/agent/core" },
     { name = "diagrid-cli", editable = "diagrid/cli" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.0.0" },
     { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=0.3.0" },

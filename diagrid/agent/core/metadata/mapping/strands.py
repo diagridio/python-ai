@@ -64,8 +64,12 @@ class StrandsMapper(BaseAgentMapper):
             if state:
                 # Convert to dict if it's JSONSerializableDict (which doesn't support .get(key, default))
                 state_dict = dict(state) if hasattr(state, "__iter__") else {}
-                metadata["role"] = str(state_dict.get("role") or metadata.get("name") or "Agent")
-                metadata["goal"] = str(state_dict.get("goal") or metadata.get("description") or "")
+                metadata["role"] = str(
+                    state_dict.get("role") or metadata.get("name") or "Agent"
+                )
+                metadata["goal"] = str(
+                    state_dict.get("goal") or metadata.get("description") or ""
+                )
                 metadata["instructions"] = state_dict.get("instructions") or []
                 metadata["max_iterations"] = state_dict.get("max_iterations")
             else:

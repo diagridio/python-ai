@@ -22,7 +22,10 @@ class AgentRegistryMixin:
     """Mixin to provide agent metadata registration functionality."""
 
     def _register_agent_metadata(
-        self, agent: Any, framework: Optional[str] = None, registry: Optional[Any] = None
+        self,
+        agent: Any,
+        framework: Optional[str] = None,
+        registry: Optional[Any] = None,
     ) -> None:
         """
         Register agent metadata with the registry.
