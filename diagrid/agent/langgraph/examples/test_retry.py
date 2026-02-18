@@ -199,7 +199,9 @@ def print_verification():
     log("VERIFICATION:")
     log(f"{'=' * 60}")
     log(f"Node 1 executions: {final_state['node1_count']} (expected: 1)")
-    log(f"Node 2 executions: {final_state['node2_count']} (expected: 3 = 2 failures + 1 success)")
+    log(
+        f"Node 2 executions: {final_state['node2_count']} (expected: 3 = 2 failures + 1 success)"
+    )
     log(f"Node 3 executions: {final_state['node3_count']} (expected: 1)")
 
     if (
@@ -214,7 +216,7 @@ def print_verification():
         log("\n>>> TEST FAILED: Node 2 errors were swallowed instead of retried.")
         log(">>> The workflow completed without Dapr retrying the failed activity.")
     else:
-        log(f"\n>>> UNEXPECTED: Check execution counts above.")
+        log("\n>>> UNEXPECTED: Check execution counts above.")
 
 
 if __name__ == "__main__":

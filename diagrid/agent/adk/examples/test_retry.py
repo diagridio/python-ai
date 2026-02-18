@@ -76,7 +76,9 @@ def step_one_initialize(input_data: str) -> str:
     attempt_state["tool1_count"] += 1
     save_state(attempt_state)
     log(f"\n>>> TOOL 1 EXECUTED (attempt #{attempt_state['tool1_count']})")
-    return f"Step 1 completed: Initialized with '{input_data}'. Now call step_two_process."
+    return (
+        f"Step 1 completed: Initialized with '{input_data}'. Now call step_two_process."
+    )
 
 
 def step_two_process(data: str) -> str:
@@ -113,7 +115,9 @@ def step_three_finalize(processed_data: str) -> str:
     attempt_state["tool3_count"] += 1
     save_state(attempt_state)
     log(f"\n>>> TOOL 3 EXECUTED (attempt #{attempt_state['tool3_count']})")
-    return f"Step 3 completed: Final result based on '{processed_data}'. All steps done!"
+    return (
+        f"Step 3 completed: Final result based on '{processed_data}'. All steps done!"
+    )
 
 
 # Create the agent
@@ -210,7 +214,9 @@ def print_verification():
     log("VERIFICATION:")
     log(f"{'=' * 60}")
     log(f"Tool 1 executions: {final_state['tool1_count']} (expected: 1)")
-    log(f"Tool 2 executions: {final_state['tool2_count']} (expected: 3 = 2 failures + 1 success)")
+    log(
+        f"Tool 2 executions: {final_state['tool2_count']} (expected: 3 = 2 failures + 1 success)"
+    )
     log(f"Tool 3 executions: {final_state['tool3_count']} (expected: 1)")
 
     if (
@@ -225,7 +231,7 @@ def print_verification():
         log("\n>>> TEST FAILED: Tool 2 errors were swallowed instead of retried.")
         log(">>> The workflow completed without Dapr retrying the failed activity.")
     else:
-        log(f"\n>>> UNEXPECTED: Check execution counts above.")
+        log("\n>>> UNEXPECTED: Check execution counts above.")
 
 
 if __name__ == "__main__":
