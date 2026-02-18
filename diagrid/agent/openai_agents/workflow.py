@@ -441,6 +441,4 @@ def _execute_tool(tool: Any, args: dict[str, Any]) -> Any:
                 loop.close()
         return result
 
-    raise TypeError(
-        f"Tool {tool} is not callable and has no on_invoke_tool attribute"
-    )
+    raise TypeError(f"Tool {tool} is not callable and has no on_invoke_tool attribute")
