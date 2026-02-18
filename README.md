@@ -2,7 +2,9 @@
 
 **Durable AI Agents with Diagrid Catalyst**
 
-The `diagrid` package is the primary SDK for building durable, fault-tolerant AI agents using Diagrid Catalyst. It integrates seamlessly with popular agent frameworks, wrapping them in Dapr Workflows to ensure your agents can recover from failures, persist state across restarts, and scale effectively.
+The `diagrid` package is the primary SDK for building durable, fault-tolerant AI agents using [Diagrid Catalyst](https://www.diagrid.io/catalyst). It integrates seamlessly with popular agent frameworks, wrapping them in Dapr Workflows to ensure your agents can recover from failures, persist state across restarts, and scale effectively.
+
+Get started with [Catalyst for free](https://diagrid.ws/get-catalyst).
 
 ## Features
 
