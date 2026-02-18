@@ -7,14 +7,14 @@ name = "diagrid"
 version = "0.1.0"
 description = "Diagrid namespace package"
 requires-python = ">=3.11"
-
-[project.scripts]
-diagridpy = "diagrid.cli.main:cli"
 dependencies = [
     "dapr>=1.16.0",
     "dapr-ext-workflow>=1.16.0",
     "diagrid-cli>=0.1.0",
 ]
+
+[project.scripts]
+diagridpy = "diagrid.cli.main:cli"
 
 [project.optional-dependencies]
 langgraph = [
