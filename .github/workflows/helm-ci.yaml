@@ -85,7 +85,7 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
 
       - name: Restore registry mirror cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/registry-mirror-cache
           key: mirror-cache-${{ hashFiles('charts/catalyst-agents/Chart.yaml', 'charts/catalyst-agents/values.yaml') }}
