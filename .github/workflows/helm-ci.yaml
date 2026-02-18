@@ -48,10 +48,10 @@ jobs:
         run: helm dependency update ./charts/catalyst-agents
 
       - name: Helm lint (full)
-        run: make test-lint
+        run: make helm-test-lint
 
       - name: Template validation (minimal - own templates only)
-        run: make test-template
+        run: make helm-test-template
 
   integration-test:
     name: Integration Test
@@ -88,8 +88,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/registry-mirror-cache
-          key: mirror-cache-${{ hashFiles('dapr-agents/Chart.yaml', 'dapr-agents/values.yaml') }}
+          key: mirror-cache-${{ hashFiles('charts/catalyst-agents/Chart.yaml', 'charts/catalyst-agents/values.yaml') }}
           restore-keys: mirror-cache-
 
       - name: Run integration tests
-        run: make test-chainsaw
+        run: make helm-test-chainsaw
