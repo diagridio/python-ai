@@ -48,7 +48,9 @@ SUPPORTED_FRAMEWORKS = list(QUICKSTART_SUBDIRS.keys())
     default="dapr-agents",
     help="Agent framework to use (default: dapr-agents)",
 )
+@click.pass_context
 def init(
+    ctx: click.Context,
     project_name: str,
     api_key: str | None,
     no_browser: bool,
@@ -59,12 +61,15 @@ def init(
     """Initialize a local agent development environment."""
     preflight_check()
 
+    api_url: str | None = ctx.obj.get("api_url") if ctx.obj else None
     total_steps = 7
 
     try:
         # Step 1: Authenticate
         console.step(1, total_steps, "Authenticating...")
-        auth = DeviceCodeAuth(api_key_flag=api_key, no_browser=no_browser)
+        auth = DeviceCodeAuth(
+            api_url=api_url, api_key_flag=api_key, no_browser=no_browser
+        )
         auth_ctx = auth.authenticate()
         console.success("Authenticated successfully")
 

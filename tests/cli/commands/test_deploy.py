@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from diagrid.cli.commands.deploy import deploy
+from diagrid.cli.main import cli
+from diagrid.core.config.constants import STAGING_API_URL
 
 _MOCK_CONN = {
     "app_id": "test-agent",
@@ -71,3 +73,32 @@ def test_deploy_default_options(
 
     assert result.exit_code == 0, result.output
     mock_build.assert_called_once_with("agent", "latest")
+
+
+@patch("diagrid.cli.commands.deploy.preflight_check")
+@patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
+@patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
+@patch("diagrid.cli.commands.deploy.build_image", return_value="agent:latest")
+@patch("diagrid.cli.commands.deploy.load_into_kind")
+@patch("diagrid.cli.commands.deploy.apply_stdin")
+def test_deploy_passes_api_url_from_context(
+    mock_apply: MagicMock,
+    mock_load: MagicMock,
+    mock_build: MagicMock,
+    mock_conn: MagicMock,
+    mock_auth: MagicMock,
+    mock_preflight: MagicMock,
+) -> None:
+    """Deploy passes the api_url from CLI context to DeviceCodeAuth."""
+    mock_auth.return_value.authenticate.return_value = MagicMock()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--env", "staging", "deploy", "--api-key", "fake-key"],
+    )
+
+    assert result.exit_code == 0, result.output
+    mock_auth.assert_called_once_with(
+        api_url=STAGING_API_URL, api_key_flag="fake-key", no_browser=False
+    )

@@ -20,7 +20,7 @@ from diagrid.core.config.constants import (
     TOKEN_REFRESH_BUFFER_SECONDS,
 )
 from diagrid.core.config.envs import EnvConfig, get_env_config_sync
-from diagrid.core.config.user_config import FileUserConfigStore, UserConfig
+from diagrid.core.config.user_config import FileUserConfigStore
 
 ORG_CLAIM_REGEX = re.compile(r"^https://diagrid\.io/org_([a-zA-Z0-9-]+)/roles$")
 DEFAULT_ORG_CLAIM = "https://diagrid.io/defaultOrg"
@@ -113,11 +113,10 @@ class DeviceCodeAuth:
         assert cred.env is not None
         assert cred.token_response is not None
 
-        domain = cred.env.auth_domain
         client_id = cred.env.auth_client_id
         refresh_token = cred.token_response.refresh_token
 
-        url = f"https://{domain}/oauth/token"
+        url = cred.env.token_endpoint
         data = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
@@ -176,7 +175,7 @@ class DeviceCodeAuth:
         return cred
 
     def _request_device_code(self, env: EnvConfig) -> DeviceCodeResponse:
-        url = f"https://{env.auth_domain}/oauth/device/code"
+        url = env.device_authorization_endpoint
         data = {
             "client_id": env.auth_client_id,
             "scope": AUTH_SCOPE,
@@ -194,7 +193,7 @@ class DeviceCodeAuth:
 
     def _poll_for_token(self, env: EnvConfig, dc: DeviceCodeResponse) -> TokenResponse:
         """Poll for token with backoff, matching Go CLI behavior."""
-        url = f"https://{env.auth_domain}/oauth/token"
+        url = env.token_endpoint
         interval = dc.interval
 
         with httpx.Client() as client:

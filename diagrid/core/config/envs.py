@@ -14,12 +14,29 @@ class EnvConfig(BaseModel):
     Field aliases match the Go CLI JSON field names exactly.
     """
 
-    api_url: str = Field(alias="apiUrl")
-    auth_audience: str = Field(alias="authAudience")
-    auth_client_id: str = Field(alias="authClientId")
-    auth_domain: str = Field(alias="authDomain")
+    api_url: str = Field(alias="apiUrl", default="")
+    auth_audience: str = Field(alias="authAudience", default="")
+    auth_client_id: str = Field(alias="authClientId", default="")
+    # Preferred field — present in current API responses
+    issuer_url: str = Field(alias="issuerUrl", default="")
+    # Legacy / deprecated
+    auth_domain: str = Field(alias="authDomain", default="")
 
     model_config = {"populate_by_name": True}
+
+    @property
+    def device_authorization_endpoint(self) -> str:
+        """Derive device code URL from issuerUrl (preferred) or legacy authDomain."""
+        if self.issuer_url:
+            return f"{self.issuer_url.rstrip('/')}/oauth/device/code"
+        return f"https://{self.auth_domain}/oauth/device/code"
+
+    @property
+    def token_endpoint(self) -> str:
+        """Derive token URL from issuerUrl (preferred) or legacy authDomain."""
+        if self.issuer_url:
+            return f"{self.issuer_url.rstrip('/')}/oauth/token"
+        return f"https://{self.auth_domain}/oauth/token"
 
 
 async def get_env_config(

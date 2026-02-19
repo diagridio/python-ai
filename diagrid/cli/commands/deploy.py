@@ -77,7 +77,9 @@ spec:
     default=None,
     help='Trigger the agent with a prompt after deploy (e.g. --trigger "Plan a trip to Paris")',
 )
+@click.pass_context
 def deploy(
+    ctx: click.Context,
     api_key: str | None,
     no_browser: bool,
     image: str,
@@ -92,13 +94,16 @@ def deploy(
     """Build and deploy an agent to the kind cluster."""
     preflight_check()
 
+    api_url: str | None = ctx.obj.get("api_url") if ctx.obj else None
     appid_name = app_id or f"{project}-agent"
     total_steps = 6 if trigger else 5
 
     try:
         # Step 1: Authenticate
         console.step(1, total_steps, "Authenticating...")
-        auth = DeviceCodeAuth(api_key_flag=api_key, no_browser=no_browser)
+        auth = DeviceCodeAuth(
+            api_url=api_url, api_key_flag=api_key, no_browser=no_browser
+        )
         auth_ctx = auth.authenticate()
         console.success("Authenticated")
 

@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DEFAULT_API_URL = "https://api.diagrid.io"
+DEFAULT_API_URL = "https://api.r1.diagrid.io"
+PROD_API_URL = "https://api.r1.diagrid.io"
+STAGING_API_URL = "https://catalyst.staging.diagrid.dev"
 
 DIAGRID_DIR = Path(os.environ.get("DIAGRID_HOME", Path.home() / ".diagrid"))
 CREDS_PATH = DIAGRID_DIR / "creds"
