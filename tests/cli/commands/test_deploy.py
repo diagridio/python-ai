@@ -16,6 +16,7 @@ _MOCK_CONN = {
 }
 
 
+@patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
 @patch("diagrid.cli.commands.deploy.build_image", return_value="agent:latest")
@@ -27,6 +28,7 @@ def test_deploy_full_flow(
     mock_build: MagicMock,
     mock_conn: MagicMock,
     mock_auth: MagicMock,
+    mock_preflight: MagicMock,
 ) -> None:
     """Deploy command runs all steps."""
     mock_auth.return_value.authenticate.return_value = MagicMock()
@@ -47,6 +49,7 @@ def test_deploy_full_flow(
     assert "DAPR_HTTP_ENDPOINT" in manifest
 
 
+@patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
 @patch("diagrid.cli.commands.deploy.build_image", return_value="agent:latest")
@@ -58,6 +61,7 @@ def test_deploy_default_options(
     mock_build: MagicMock,
     mock_conn: MagicMock,
     mock_auth: MagicMock,
+    mock_preflight: MagicMock,
 ) -> None:
     """Deploy with defaults uses agent:latest."""
     mock_auth.return_value.authenticate.return_value = MagicMock()

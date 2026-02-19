@@ -9,6 +9,7 @@ import tempfile
 import click
 
 from diagrid.cli.infra.helm import install_dapr_agents
+from diagrid.cli.utils.deps import preflight_check
 from diagrid.cli.infra.kind import cluster_exists, create_cluster, kind_available
 from diagrid.cli.utils import console
 from diagrid.cli.utils.process import CommandError, run, run_capture
@@ -56,6 +57,7 @@ def init(
     framework: str,
 ) -> None:
     """Initialize a local agent development environment."""
+    preflight_check()
 
     total_steps = 7
 

@@ -11,6 +11,7 @@ import click
 import httpx
 
 from diagrid.cli.infra.docker import build_image, load_into_kind
+from diagrid.cli.utils.deps import preflight_check
 from diagrid.cli.infra.kubectl import apply_stdin
 from diagrid.cli.utils import console
 from diagrid.cli.utils.process import CommandError, run, run_capture
@@ -89,6 +90,8 @@ def deploy(
     trigger: str | None,
 ) -> None:
     """Build and deploy an agent to the kind cluster."""
+    preflight_check()
+
     appid_name = app_id or f"{project}-agent"
     total_steps = 6 if trigger else 5
 
