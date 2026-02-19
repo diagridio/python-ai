@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 import sys
 import tarfile
 import zipfile
 from io import BytesIO
+
+import click
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -140,8 +143,6 @@ def test_docker_daemon_not_installed() -> None:
 
 
 def test_docker_daemon_timeout() -> None:
-    import subprocess
-
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker", 10)):
         assert _docker_daemon_running() is False
 
@@ -232,8 +233,6 @@ def test_preflight_check_install_still_fails_raises() -> None:
         ),
         patch("diagrid.cli.utils.deps._docker_daemon_running", return_value=True),
     ):
-        import click
-
         with pytest.raises(click.ClickException, match="Failed to install"):
             preflight_check()
 
@@ -326,8 +325,6 @@ def test_install_via_brew_kubectl_uses_formula_name() -> None:
 def test_install_via_brew_failure_raises() -> None:
     mock_result = MagicMock(returncode=1, stderr=b"error")
     with patch("subprocess.run", return_value=mock_result):
-        import click
-
         with pytest.raises(click.ClickException, match="brew install"):
             deps._install_via_brew("kind")
 
@@ -366,7 +363,8 @@ def test_download_kind_linux(tmp_path: Path) -> None:
     kind_bin = tmp_path / "kind"
     assert kind_bin.exists()
     assert kind_bin.read_bytes() == fake_binary
-    assert kind_bin.stat().st_mode & stat.S_IEXEC
+    if sys.platform != "win32":
+        assert kind_bin.stat().st_mode & stat.S_IEXEC
 
 
 def test_download_kubectl_linux(tmp_path: Path) -> None:
@@ -398,7 +396,8 @@ def test_download_kubectl_linux(tmp_path: Path) -> None:
     kubectl_bin = tmp_path / "kubectl"
     assert kubectl_bin.exists()
     assert kubectl_bin.read_bytes() == fake_binary
-    assert kubectl_bin.stat().st_mode & stat.S_IEXEC
+    if sys.platform != "win32":
+        assert kubectl_bin.stat().st_mode & stat.S_IEXEC
 
 
 def test_download_helm_linux(tmp_path: Path) -> None:
@@ -439,7 +438,8 @@ def test_download_helm_linux(tmp_path: Path) -> None:
     helm_bin = tmp_path / "helm"
     assert helm_bin.exists()
     assert helm_bin.read_bytes() == fake_binary
-    assert helm_bin.stat().st_mode & stat.S_IEXEC
+    if sys.platform != "win32":
+        assert helm_bin.stat().st_mode & stat.S_IEXEC
 
 
 def test_download_helm_windows(tmp_path: Path) -> None:
@@ -530,8 +530,6 @@ def test_start_or_wait_for_docker_prompts_if_timeout() -> None:
 
 
 def test_start_or_wait_for_docker_raises_if_still_not_running() -> None:
-    import click
-
     with (
         patch.object(sys, "platform", "darwin"),
         patch("subprocess.run"),

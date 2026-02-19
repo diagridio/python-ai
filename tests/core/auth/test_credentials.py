@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import base64
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 from diagrid.core.auth.credentials import Credential, FileCredentialStore
 from diagrid.core.auth.token import TokenResponse
@@ -70,9 +73,11 @@ def test_credential_empty_file(tmp_path: Path) -> None:
 
 
 def test_credential_file_permissions(tmp_path: Path) -> None:
-    """Credential file must have 0600 permissions."""
+    """Credential file must have 0600 permissions (Unix only)."""
     store = FileCredentialStore(tmp_path / "creds")
     store.set(Credential())
+    if sys.platform == "win32":
+        pytest.skip("Windows does not support Unix file permission bits")
     mode = (tmp_path / "creds").stat().st_mode & 0o777
     assert mode == 0o600
 

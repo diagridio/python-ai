@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+import pytest
 
 from diagrid.core.config.user_config import FileUserConfigStore, UserConfig
 
@@ -54,7 +57,9 @@ def test_user_config_empty_file(tmp_path: Path) -> None:
 
 
 def test_user_config_file_permissions(tmp_path: Path) -> None:
-    """Config file must have 0600 permissions."""
+    """Config file must have 0600 permissions (Unix only)."""
+    if sys.platform == "win32":
+        pytest.skip("Windows does not support Unix file permission bits")
     store = FileUserConfigStore(tmp_path / "config.json")
     store.set(UserConfig())
     mode = (tmp_path / "config.json").stat().st_mode & 0o777
