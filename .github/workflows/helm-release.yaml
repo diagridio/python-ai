@@ -89,6 +89,9 @@ jobs:
       - name: Install ORAS
         uses: oras-project/setup-oras@v1
 
+      - name: Log in to GHCR (ORAS)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
       - name: Push ArtifactHub repo metadata
         run: |
           oras push \
