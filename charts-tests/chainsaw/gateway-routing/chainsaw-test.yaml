@@ -22,9 +22,6 @@ spec:
               echo "$BODY"
               echo "$BODY" | grep "catalyst-agents gateway"
 
-              echo "Checking Kagent UI routing (HTTP 200)..."
-              curl -sf -o /dev/null http://kagent.localhost:$PORT
-
               echo "Checking Grafana routing (HTTP 200)..."
               curl -sf -o /dev/null http://grafana.localhost:$PORT
 

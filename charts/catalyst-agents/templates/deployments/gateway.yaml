@@ -11,23 +11,6 @@
 
       server {
         listen 80;
-        server_name kagent.localhost;
-        location / {
-          proxy_pass http://kagent-ui.{{ .Release.Namespace }}.svc.cluster.local:8080;
-          proxy_set_header Host $host;
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-        }
-        # Kagent API/Workflows
-        location /api/ {
-          proxy_pass http://kagent-controller.{{ .Release.Namespace }}.svc.cluster.local:8083/api/;
-          proxy_set_header Host $host;
-        }
-      }
-
-      server {
-        listen 80;
         server_name grafana.localhost;
         location / {
           proxy_pass http://catalyst-agents-grafana.{{ .Release.Namespace }}.svc.cluster.local;
@@ -68,7 +51,6 @@
         location / {
           default_type text/html;
           return 200 '<html><body><h2>catalyst-agents gateway (Subdomains)</h2><ul>
-            <li><a href="http://kagent.localhost:8080">Kagent UI</a></li>
             <li><a href="http://grafana.localhost:8080">Grafana</a></li>
             <li><a href="http://redis.localhost:8080">Redis Insight</a></li>
             <li><a href="http://diagrid.localhost:8080">Diagrid Dashboard</a></li>
