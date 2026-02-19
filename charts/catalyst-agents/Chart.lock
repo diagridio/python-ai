@@ -14,8 +14,5 @@ dependencies:
 - name: dapr
   repository: https://dapr.github.io/helm-charts/
   version: 1.17.0-rc.3
-- name: kagent
-  repository: oci://ghcr.io/kagent-dev/kagent/helm
-  version: 0.7.14
-digest: sha256:311006a3ff59ce54445dba0a843c60751e523154084e6bae6d5d31d924020daa
-generated: "2026-02-14T17:29:00.542912+01:00"
+digest: sha256:11519600aacb20cdb2a53171228957ef890874774a601bc72610b618c9ecaaac
+generated: "2026-02-19T08:00:40.488209+01:00"

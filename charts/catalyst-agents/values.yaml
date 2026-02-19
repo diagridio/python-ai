@@ -119,69 +119,6 @@ opentelemetry-collector:
     metrics: { enabled: true, containerPort: 8888, servicePort: 8888, protocol: TCP }
 
 # ------------------------------------------------------------------------------
-# 2. KAGENT & KMCP
-# ------------------------------------------------------------------------------
-kagent:
-  enabled: true
-  fullnameOverride: kagent
-  controller:
-    service: { type: NodePort, ports: { nodePort: 30083 } }
-  ui:
-    service: { type: NodePort, ports: { nodePort: 30081 } }
-  kmcp:
-    enabled: true
-    image: { tag: "0.2.2" }
-    service: { type: NodePort, nodePort: 30082 }
-  # Ensure sub-components have stable names for agent references
-  grafana-mcp:
-    fullnameOverride: kagent-grafana-mcp
-    grafana:
-      url: "http://catalyst-agents-grafana.catalyst-agents.svc.cluster.local"
-  kagent-tools:
-    fullnameOverride: kagent-tools
-    tools:
-      prometheus:
-        url: "http://catalyst-agents-kube-prometheu-prometheus.catalyst-agents.svc.cluster.local:9090"
-      grafana:
-        url: "http://catalyst-agents-grafana.catalyst-agents.svc.cluster.local"
-  providers:
-    default: ollama
-    openAI:
-      apiKey: "" # This will be overridden by --set llm.apiKey during install
-    ollama:
-      provider: Ollama
-      model: "llama3.2:latest"
-      config:
-        host: "http://host.docker.internal:11434"
-  # Standard Agents toggles
-  agents:
-    promql-agent: { enabled: true }
-    observability-agent: { enabled: true }
-    k8s-agent: { enabled: false }
-    kgateway-agent: { enabled: false }
-    istio-agent: { enabled: false }
-    argo-rollouts-agent: { enabled: false }
-    helm-agent: { enabled: false }
-    cilium-policy-agent: { enabled: false }
-    cilium-manager-agent: { enabled: false }
-    cilium-debug-agent: { enabled: false }
-
-  # OpenTelemetry configuration for Kagent components
-  otel:
-    tracing:
-      enabled: true
-      exporter:
-        otlp:
-          endpoint: "http://catalyst-agents-opentelemetry-collector.catalyst-agents.svc.cluster.local:4317"
-          insecure: true
-    logging:
-      enabled: true
-      exporter:
-        otlp:
-          endpoint: "http://catalyst-agents-opentelemetry-collector.catalyst-agents.svc.cluster.local:4317"
-          insecure: true
-
-# ------------------------------------------------------------------------------
 # 3. DAPR CONTROL PLANE
 # ------------------------------------------------------------------------------
 dapr:

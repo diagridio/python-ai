@@ -19,10 +19,7 @@ spec:
               - -c
               - |
                 SKIP="CustomResourceDefinition"
-                SKIP="$SKIP,Component,HTTPEndpoint"
-                SKIP="$SKIP,Agent,Memory,ModelConfig"
-                SKIP="$SKIP,RemoteMCPServer,ToolServer"
-                SKIP="$SKIP,MCPServer,Configuration"
+                SKIP="$SKIP,Component,Configuration"
 
                 helm template catalyst-agents ../../../charts/catalyst-agents \
                   --namespace catalyst-agents \
@@ -43,10 +40,7 @@ spec:
               - -c
               - |
                 SKIP="CustomResourceDefinition"
-                SKIP="$SKIP,Component,HTTPEndpoint"
-                SKIP="$SKIP,Agent,Memory,ModelConfig"
-                SKIP="$SKIP,RemoteMCPServer,ToolServer"
-                SKIP="$SKIP,MCPServer,Configuration"
+                SKIP="$SKIP,Component,Configuration"
 
                 helm template catalyst-agents ../../../charts/catalyst-agents \
                   --namespace catalyst-agents \
@@ -66,15 +60,12 @@ spec:
               - -c
               - |
                 SKIP="CustomResourceDefinition"
-                SKIP="$SKIP,Component,HTTPEndpoint"
+                SKIP="$SKIP,Component,Configuration"
                 SKIP="$SKIP,ServiceMonitor,Alertmanager"
                 SKIP="$SKIP,AlertmanagerConfig,PodMonitor"
                 SKIP="$SKIP,Probe,PrometheusAgent"
                 SKIP="$SKIP,Prometheus,PrometheusRule"
                 SKIP="$SKIP,ScrapeConfig,ThanosRuler"
-                SKIP="$SKIP,Agent,Memory,ModelConfig"
-                SKIP="$SKIP,RemoteMCPServer,ToolServer"
-                SKIP="$SKIP,MCPServer,Configuration"
 
                 helm template catalyst-agents ../../../charts/catalyst-agents \
                   --namespace catalyst-agents \
@@ -86,7 +77,6 @@ spec:
                   -skip "$SKIP" < full-template.yaml
 
                 # Verify gateway subdomain links
-                grep "kagent.localhost" full-template.yaml
                 grep "grafana.localhost" full-template.yaml
                 grep "redis.localhost" full-template.yaml
                 grep "diagrid.localhost" full-template.yaml
