@@ -9,6 +9,7 @@ from click.testing import CliRunner
 from diagrid.cli.commands.init import init
 
 
+@patch("diagrid.cli.commands.init.preflight_check")
 @patch("diagrid.cli.commands.init.DeviceCodeAuth")
 @patch("diagrid.cli.commands.init.CatalystClient")
 @patch("diagrid.cli.commands.init.create_project")
@@ -24,6 +25,7 @@ def test_init_full_flow(
     mock_create_project: MagicMock,
     mock_catalyst_client: MagicMock,
     mock_auth: MagicMock,
+    mock_preflight: MagicMock,
 ) -> None:
     """Init command runs all steps in order."""
     mock_auth_instance = MagicMock()
@@ -48,8 +50,11 @@ def test_init_full_flow(
     mock_create_appid.assert_called_once()
 
 
+@patch("diagrid.cli.commands.init.preflight_check")
 @patch("diagrid.cli.commands.init.DeviceCodeAuth")
-def test_init_missing_openai_key_prompts(mock_auth: MagicMock) -> None:
+def test_init_missing_openai_key_prompts(
+    mock_auth: MagicMock, mock_preflight: MagicMock
+) -> None:
     """Init prompts for OpenAI key if not provided."""
     mock_auth.return_value.authenticate.return_value = MagicMock()
 

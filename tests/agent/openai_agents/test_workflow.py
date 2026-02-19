@@ -12,6 +12,7 @@
 """Tests for workflow and activities."""
 
 import asyncio
+import json
 import pytest
 
 from diagrid.agent.openai_agents.workflow import (
@@ -87,7 +88,6 @@ class TestExecuteTool:
 
     def test_execute_tool_with_on_invoke_tool(self):
         """Simulate a FunctionTool with on_invoke_tool callback."""
-        import json
 
         def on_invoke_tool(ctx, input_json):
             args = json.loads(input_json)
@@ -103,7 +103,6 @@ class TestExecuteTool:
 
     def test_execute_tool_with_async_on_invoke_tool(self):
         """Simulate a FunctionTool with async on_invoke_tool callback."""
-        import json
 
         async def on_invoke_tool(ctx, input_json):
             args = json.loads(input_json)

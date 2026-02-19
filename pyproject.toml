@@ -62,6 +62,9 @@ test = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+    "integration: marks tests requiring real network access or live infra (excluded from default run)",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
