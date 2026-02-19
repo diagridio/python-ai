@@ -9,6 +9,10 @@ Each tool execution in an agent runs as a separate Dapr Workflow activity, provi
 - **Durability**: Agent state is persisted and can survive process restarts
 - **Observability**: Full visibility into agent execution through Dapr's workflow APIs
 
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
+
 ## Installation
 
 ```bash
@@ -70,7 +74,3 @@ DaprAgentWorkflow (orchestrates the agent loop)
 - Dapr >= 1.16.0
 - Google ADK >= 1.0.0
 - A Dapr state store component configured
-
-## Community
-
-Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.

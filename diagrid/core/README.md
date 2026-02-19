@@ -4,6 +4,10 @@
 
 **Note:** This package is primarily intended for internal use by `diagrid` and `diagrid-cli`, or for advanced users building custom integrations with the Diagrid Catalyst API.
 
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
+
 ## Installation
 
 ```bash
@@ -23,7 +27,3 @@ pip install diagrid-core
 - `httpx`
 - `pydantic`
 - `pyjwt`
-
-## Community
-
-Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.

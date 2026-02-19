@@ -1,7 +1,18 @@
-# catalyst-agents Helm Chart
+# Catalyst Agents Helm Chart
 
-A Helm chart for the **Catalyst Agents** developer inner-loop stack — a batteries-included local
-Kubernetes environment for building, running, and observing Dapr-based AI agents.
+**Durable AI Agents with Diagrid Catalyst**
+
+The `catalyst-agents` chart is a batteries-included Helm chart for developing durable, fault-tolerant AI agents using [Diagrid Catalyst](https://www.diagrid.io/catalyst). It deploys a complete local Kubernetes environment — including Dapr, observability tooling, and an LLM backend — so your agents can recover from failures, persist state across restarts, and scale effectively.
+
+Coupled with the [Diagrid Python package](https://pypi.org/project/diagrid/) you'll have everything at hand to get started in no time.
+
+See the [Diagrid QuickStarts repository](https://github.com/diagridio/catalyst-quickstarts) for getting started with building AI Agents with Catalyst.
+
+Get started with [Catalyst for free](https://diagrid.ws/get-catalyst).
+
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
 
 ## Description
 
@@ -107,7 +118,3 @@ For the full set of values (including all sub-chart tunables), see
 | kube-prometheus-stack | 82.1.0 | https://prometheus-community.github.io/helm-charts |
 | opentelemetry-collector | 0.145.0 | https://open-telemetry.github.io/opentelemetry-helm-charts |
 | dapr | 1.17.0-rc.3 | https://dapr.github.io/helm-charts/ |
-
-## Community
-
-Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.

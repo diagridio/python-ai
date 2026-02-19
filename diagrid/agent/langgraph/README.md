@@ -9,6 +9,10 @@ Each node execution in a graph runs as a separate Dapr Workflow activity, provid
 - **Durability**: Graph state is persisted and can survive process restarts
 - **Observability**: Full visibility into graph execution through Dapr's workflow APIs
 
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
+
 ## Installation
 
 ```bash
@@ -118,10 +122,6 @@ Each node execution is a durable Dapr Workflow activity with:
 - Dapr >= 1.16.0
 - LangGraph >= 1.0.0
 - Running Dapr sidecar
-
-## Community
-
-Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
 
 ## Links
 

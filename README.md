@@ -6,6 +6,10 @@ The `diagrid` package is the primary SDK for building durable, fault-tolerant AI
 
 Get started with [Catalyst for free](https://diagrid.ws/get-catalyst).
 
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
+
 ## Features
 
 - **Multi-Framework Support:** Native integrations for LangGraph, CrewAI, Google ADK, Strands, and OpenAI Agents.
@@ -38,6 +42,51 @@ pip install "diagrid[openai_agents]"
 
 - **Python:** 3.11 or higher
 - **Dapr:** [Dapr CLI](https://docs.dapr.io/getting-started/install-dapr-cli/) installed and initialized (`dapr init`).
+
+## CLI
+
+The `diagrid` package includes the `diagridpy` CLI — a tool for setting up your local development environment and deploying agents to Kubernetes with a single command.
+
+### `diagridpy init`
+
+Bootstraps a complete local development environment in one step:
+
+1. **Authenticates** with Diagrid Catalyst (browser-based device code flow or API key)
+2. **Creates a Catalyst project** to manage your agent's AppID and connection details
+3. **Clones a quickstart template** for your chosen framework into a new directory
+4. **Provisions a local Kubernetes cluster** using [kind](https://kind.sigs.k8s.io/)
+5. **Installs the `catalyst-agents` Helm chart** — Dapr, observability stack, Redis, and LLM backend
+6. **Creates a Catalyst AppID** with a provisioned API token
+
+```bash
+# Initialize with the default framework (dapr-agents)
+diagridpy init my-project
+
+# Initialize with a specific framework
+diagridpy init my-project --framework langgraph
+
+# Use an API key instead of browser auth
+diagridpy init my-project --framework crewai --api-key <YOUR_KEY>
+```
+
+Supported frameworks: `dapr-agents`, `langgraph`, `crewai`, `adk`, `strands`, `openai-agents`
+
+### `diagridpy deploy`
+
+Builds your agent image, loads it into the local cluster, and deploys it with the correct Catalyst connection details automatically injected as environment variables.
+
+```bash
+# Build and deploy from the current directory (requires a Dockerfile)
+diagridpy deploy
+
+# Deploy and immediately trigger the agent with a prompt
+diagridpy deploy --trigger "Plan a trip to Paris"
+
+# Override image name, tag, or target project
+diagridpy deploy --image my-agent --tag v1 --project my-project
+```
+
+Run `diagridpy --help` or `diagridpy <command> --help` to see all available options.
 
 ## Quick Start
 
@@ -218,7 +267,3 @@ This SDK leverages [Dapr Workflows](https://docs.dapr.io/developing-applications
 1.  **Orchestration:** The agent's control loop is modeled as a workflow.
 2.  **Activities:** Each tool execution or LLM call is modeled as a durable activity.
 3.  **State Store:** Dapr saves the workflow state to a configured state store (e.g., Redis, CosmosDB) after every step.
-
-## Community
-
-Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
