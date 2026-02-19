@@ -2,7 +2,7 @@ name: Helm Release
 
 on:
   workflow_run:
-    workflows: ["Helm CI"]
+    workflows: ["Helm CI", "Release Python Packages"]
     types: [completed]
     branches: [main]
 
