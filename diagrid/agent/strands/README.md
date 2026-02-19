@@ -89,6 +89,6 @@ agent = Agent(
 )
 ```
 
-## License
+## Community
 
-Apache License 2.0
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.

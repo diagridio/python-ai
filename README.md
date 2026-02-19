@@ -218,3 +218,7 @@ This SDK leverages [Dapr Workflows](https://docs.dapr.io/developing-applications
 1.  **Orchestration:** The agent's control loop is modeled as a workflow.
 2.  **Activities:** Each tool execution or LLM call is modeled as a durable activity.
 3.  **State Store:** Dapr saves the workflow state to a configured state store (e.g., Redis, CosmosDB) after every step.
+
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.

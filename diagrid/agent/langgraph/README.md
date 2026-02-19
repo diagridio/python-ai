@@ -119,6 +119,10 @@ Each node execution is a durable Dapr Workflow activity with:
 - LangGraph >= 1.0.0
 - Running Dapr sidecar
 
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
+
 ## Links
 
 - [LangGraph](https://langchain-ai.github.io/langgraph/)

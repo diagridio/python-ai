@@ -48,3 +48,7 @@ The CLI manages configuration and authentication contexts.
 
 - **Authentication:** Supports API key and device code authentication flows for connecting to Diagrid Catalyst.
 - **Contexts:** Switch between different environments (e.g., local, dev, prod).
+
+## Community
+
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
