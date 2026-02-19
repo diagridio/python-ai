@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid-agent-core"
-version = "0.1.7"
+version = "0.1.8"
 description = "Diagrid Agent Core - Metadata and introspection for AI agents"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
