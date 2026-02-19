@@ -86,6 +86,16 @@ jobs:
           helm push catalyst-agents-${{ needs.detect-version.outputs.version }}.tgz \
             oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
 
+      - name: Install ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Push ArtifactHub repo metadata
+        run: |
+          oras push \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/catalyst-agents:artifacthub.io \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
+
       - name: Create git tag
         run: |
           git config user.name "github-actions[bot]"
