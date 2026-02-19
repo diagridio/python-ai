@@ -1,23 +1,69 @@
-name: Publish to PyPI
+name: Release Python Packages
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version to release (e.g. 0.1.5)"
+        required: true
+        type: string
 
 permissions:
-  id-token: write
-  contents: read
+  id-token: write      # for PyPI OIDC publishing
+  contents: write      # for committing + tagging + creating GH release
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     environment: pypi
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          fetch-depth: 0
+
       - uses: astral-sh/setup-uv@v7
+
+      - name: Bump versions in all pyproject.toml files
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          for f in pyproject.toml diagrid/core/pyproject.toml diagrid/cli/pyproject.toml diagrid/agent/core/pyproject.toml; do
+            sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$f"
+          done
+
+      - name: Auto-increment chart version patch and sync appVersion
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          CHART_VERSION=$(grep '^version:' charts/catalyst-agents/Chart.yaml | awk '{print $2}')
+          IFS='.' read -r major minor patch <<< "$CHART_VERSION"
+          NEW_CHART_VERSION="$major.$minor.$((patch + 1))"
+          sed -i "s/^version: .*/version: $NEW_CHART_VERSION/" charts/catalyst-agents/Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"$VERSION\"/" charts/catalyst-agents/Chart.yaml
+
+      - name: Update uv.lock
+        run: uv lock --no-upgrade
+
+      - name: Commit and push version bump
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml diagrid/core/pyproject.toml diagrid/cli/pyproject.toml \
+            diagrid/agent/core/pyproject.toml charts/catalyst-agents/Chart.yaml uv.lock
+          git commit -m "chore: release v$VERSION"
+          git push origin main
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: "v${{ github.event.inputs.version }}"
+          generate_release_notes: true
 
       - name: Build diagrid-core
         run: uv build --package diagrid-core --out-dir dist-core/
