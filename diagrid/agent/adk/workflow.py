@@ -12,15 +12,24 @@
 """Dapr Workflow definitions for durable ADK agent execution."""
 
 import asyncio
+import json
 import logging
 from datetime import timedelta
-from typing import Any, Generator, Optional
+from typing import Any, Callable, Generator, Optional
 
 from dapr.ext.workflow import (
     DaprWorkflowContext,
     WorkflowActivityContext,
     RetryPolicy,
     when_all,
+)
+
+from diagrid.agent.core.chat import (
+    DaprChatClient,
+    ChatMessage,
+    ChatRole,
+    ChatToolCall,
+    ChatToolDefinition,
 )
 
 from .models import (
@@ -41,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 # Global tool registry - tools are registered by the runner
 _tool_registry: dict[str, Any] = {}
+_default_workflow_input_factory: Optional[Callable[[str], dict[str, Any]]] = None
 
 
 def register_tool(name: str, tool: Any) -> None:
@@ -53,9 +63,19 @@ def get_registered_tool(name: str) -> Optional[Any]:
     return _tool_registry.get(name)
 
 
+def set_default_workflow_input_factory(
+    factory: Callable[[str], dict[str, Any]],
+) -> None:
+    """Store a factory that builds AgentWorkflowInput dicts from a task string."""
+    global _default_workflow_input_factory
+    _default_workflow_input_factory = factory
+
+
 def clear_tool_registry() -> None:
     """Clear all registered tools."""
+    global _default_workflow_input_factory
     _tool_registry.clear()
+    _default_workflow_input_factory = None
 
 
 def agent_workflow(
@@ -77,8 +97,19 @@ def agent_workflow(
     Returns:
         AgentWorkflowOutput as a dictionary
     """
-    # Deserialize input
-    workflow_input = AgentWorkflowInput.from_dict(input_data)
+    # Deserialize input - handle orchestrator calls with {"task": "..."}
+    if "agent_config" in input_data:
+        workflow_input = AgentWorkflowInput.from_dict(input_data)
+    elif _default_workflow_input_factory is not None:
+        task = input_data.get("task", "")
+        workflow_input = AgentWorkflowInput.from_dict(
+            _default_workflow_input_factory(task)
+        )
+    else:
+        raise ValueError(
+            "Received input without 'agent_config' and no default factory is set. "
+            "Ensure the runner has been started before the workflow is invoked."
+        )
 
     # Retry policy for activities
     retry_policy = RetryPolicy(
@@ -173,10 +204,96 @@ def agent_workflow(
     ).to_dict()
 
 
+def _call_llm_via_dapr(llm_input: CallLlmInput) -> dict[str, Any]:
+    """Route LLM call through Dapr Conversation API."""
+    chat_messages = []
+
+    # Add system instruction
+    if llm_input.agent_config.system_instruction:
+        chat_messages.append(
+            ChatMessage(
+                role=ChatRole.SYSTEM,
+                content=llm_input.agent_config.system_instruction,
+            )
+        )
+
+    for msg in llm_input.messages:
+        if msg.role == MessageRole.USER:
+            # ADK puts tool results on USER messages
+            if msg.tool_results:
+                for tr in msg.tool_results:
+                    result_content = (
+                        json.dumps({"result": tr.result})
+                        if tr.error is None
+                        else json.dumps({"error": tr.error})
+                    )
+                    chat_messages.append(
+                        ChatMessage(
+                            role=ChatRole.TOOL,
+                            content=result_content,
+                            tool_call_id=tr.tool_call_id,
+                            name=tr.tool_name,
+                        )
+                    )
+            elif msg.content:
+                chat_messages.append(
+                    ChatMessage(role=ChatRole.USER, content=msg.content)
+                )
+        elif msg.role == MessageRole.MODEL:
+            tool_calls = [
+                ChatToolCall(id=tc.id, name=tc.name, arguments=json.dumps(tc.args))
+                for tc in msg.tool_calls
+            ]
+            chat_messages.append(
+                ChatMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=msg.content,
+                    tool_calls=tool_calls,
+                )
+            )
+
+    tools = [
+        ChatToolDefinition(
+            name=td.name,
+            description=td.description,
+            parameters=td.parameters,
+        )
+        for td in llm_input.agent_config.tool_definitions
+    ] or None
+
+    client = DaprChatClient(component_name=llm_input.agent_config.component_name)
+    try:
+        response = client.chat(messages=chat_messages, tools=tools)
+    finally:
+        client.close()
+
+    # Convert back to ADK format (MODEL role)
+    tool_calls_out = []
+    for tc in response.tool_calls:
+        try:
+            args = json.loads(tc.arguments)
+        except (json.JSONDecodeError, TypeError):
+            args = {}
+        tool_calls_out.append(ToolCall(id=tc.id, name=tc.name, args=args))
+
+    output_message = Message(
+        role=MessageRole.MODEL,
+        content=response.content,
+        tool_calls=tool_calls_out,
+    )
+
+    return CallLlmOutput(
+        message=output_message,
+        is_final=response.is_final,
+    ).to_dict()
+
+
 def call_llm_activity(
     ctx: WorkflowActivityContext, input_data: dict[str, Any]
 ) -> dict[str, Any]:
     """Activity that calls the LLM model using Google's genai client.
+
+    If a component_name is set, routes through the Dapr Conversation API instead.
 
     Args:
         ctx: The workflow activity context
@@ -185,6 +302,12 @@ def call_llm_activity(
     Returns:
         CallLlmOutput as a dictionary
     """
+    llm_input = CallLlmInput.from_dict(input_data)
+
+    # Route through Dapr if component_name is set
+    if llm_input.agent_config.component_name:
+        return _call_llm_via_dapr(llm_input)
+
     try:
         from google.genai import Client
         from google.genai import types
@@ -195,8 +318,6 @@ def call_llm_activity(
             is_final=True,
             error=f"Google genai not installed: {e}",
         ).to_dict()
-
-    llm_input = CallLlmInput.from_dict(input_data)
 
     try:
         # Convert messages to genai Content format
@@ -430,6 +551,13 @@ def execute_tool_activity(
             )
         ).to_dict()
 
-    except Exception:
+    except Exception as e:
         logger.exception("Error executing tool '%s'", tool_call.name)
-        raise
+        return ExecuteToolOutput(
+            tool_result=ToolResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                result=None,
+                error=str(e),
+            )
+        ).to_dict()

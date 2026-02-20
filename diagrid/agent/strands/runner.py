@@ -20,6 +20,14 @@ from typing import Any, AsyncIterator, Generator, Optional, TYPE_CHECKING
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
 from diagrid.agent.core import AgentRegistryMixin
+from diagrid.agent.core.chat import (
+    DaprChatClient,
+    ChatMessage,
+    ChatRole,
+    ChatToolCall,
+    ChatToolDefinition,
+)
+
 from .workflow import WorkflowOutput
 
 if TYPE_CHECKING:
@@ -88,6 +96,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         port: Optional[str] = None,
         max_iterations: Optional[int] = None,
         registry_config: Optional[Any] = None,
+        component_name: Optional[str] = None,
     ):
         """Initialize the runner.
 
@@ -97,30 +106,177 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations (default: 25)
             registry_config: Optional registry configuration for metadata extraction
+            component_name: Dapr conversation component name. If provided, always
+                uses Dapr Conversation API. If None and agent has no model configured,
+                auto-detects a conversation component.
         """
         self._agent = agent
         self._host = host
         self._port = port
         self._max_iterations = max_iterations or 25
+        self._component_name = component_name
+        self._dapr_chat_client = None
+
+        # Auto-detect: if user provided no model on the agent, resolve a component
+        if self._component_name is None and not self._agent_has_model():
+            self._dapr_chat_client = DaprChatClient()
+            self._component_name = self._dapr_chat_client.component_name
+            logger.info(
+                "No model configured on agent; using Dapr conversation component: %s",
+                self._component_name,
+            )
+        elif self._component_name is not None:
+            self._dapr_chat_client = DaprChatClient(component_name=self._component_name)
 
         # Register metadata
         self._register_agent_metadata(
             agent=self._agent, framework="strands", registry=registry_config
         )
 
+        self._setup_workflow(host, port)
+
+    def _agent_has_model(self) -> bool:
+        """Check if the agent has an explicit model configured."""
+        model = getattr(self._agent, "model", None)
+        return model is not None
+
+    def _setup_workflow(self, host: Optional[str], port: Optional[str]) -> None:
+        """Set up the workflow runtime, activities, and workflow."""
         # Create workflow runtime
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
 
-        # Store reference for closures
+        # Store references for closures
         agent_ref = self._agent
+        component_name_ref = self._component_name
 
         # ============================================================
         # Activity: Call the model (LLM)
         # ============================================================
+        def _call_model_via_dapr(messages: list, system_prompt: str) -> dict:  # type: ignore[type-arg]
+            """Route model call through Dapr Conversation API."""
+            chat_messages = []
+            if system_prompt:
+                chat_messages.append(
+                    ChatMessage(role=ChatRole.SYSTEM, content=system_prompt)
+                )
+
+            for msg in messages:
+                role = msg.get("role", "user")
+                content_blocks = msg.get("content", [])
+
+                if role == "user":
+                    # Check for tool results
+                    has_tool_results = False
+                    for block in content_blocks:
+                        if isinstance(block, dict) and "toolResult" in block:
+                            has_tool_results = True
+                            tr = block["toolResult"]
+                            result_text = ""
+                            for c in tr.get("content", []):
+                                if isinstance(c, dict) and "text" in c:
+                                    result_text += c["text"]
+                            chat_messages.append(
+                                ChatMessage(
+                                    role=ChatRole.TOOL,
+                                    content=result_text,
+                                    tool_call_id=tr.get("toolUseId", ""),
+                                    name="",
+                                )
+                            )
+                    if not has_tool_results:
+                        text_parts = []
+                        for block in content_blocks:
+                            if isinstance(block, dict) and "text" in block:
+                                text_parts.append(block["text"])
+                        chat_messages.append(
+                            ChatMessage(
+                                role=ChatRole.USER,
+                                content="".join(text_parts),
+                            )
+                        )
+                elif role == "assistant":
+                    tool_calls = []
+                    text_parts = []
+                    for block in content_blocks:
+                        if isinstance(block, dict):
+                            if "toolUse" in block:
+                                tu = block["toolUse"]
+                                tool_calls.append(
+                                    ChatToolCall(
+                                        id=tu.get("toolUseId", ""),
+                                        name=tu.get("name", ""),
+                                        arguments=json.dumps(tu.get("input", {})),
+                                    )
+                                )
+                            elif "text" in block:
+                                text_parts.append(block["text"])
+                    chat_messages.append(
+                        ChatMessage(
+                            role=ChatRole.ASSISTANT,
+                            content="".join(text_parts) if text_parts else None,
+                            tool_calls=tool_calls,
+                        )
+                    )
+
+            # Build tool definitions from agent's tool registry
+            tools = None
+            tool_specs = [
+                tool.tool_spec for tool in agent_ref.tool_registry.registry.values()
+            ]
+            if tool_specs:
+                tools = []
+                for spec in tool_specs:
+                    tools.append(
+                        ChatToolDefinition(
+                            name=spec.get("name", ""),
+                            description=spec.get("description", ""),
+                            parameters=spec.get("inputSchema"),
+                        )
+                    )
+
+            client = DaprChatClient(component_name=component_name_ref)
+            try:
+                response = client.chat(messages=chat_messages, tools=tools or None)
+            finally:
+                client.close()
+
+            # Convert back to Strands format
+            content_out: list[Any] = []
+            tool_uses: list[Any] = []
+
+            if response.content:
+                content_out.append({"text": response.content})
+
+            for tc in response.tool_calls:
+                try:
+                    args = json.loads(tc.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                tu = {
+                    "name": tc.name,
+                    "toolUseId": tc.id,
+                    "input": args,
+                }
+                tool_uses.append(tu)
+                content_out.append({"toolUse": tu})
+
+            stop_reason = "tool_use" if tool_uses else "end_turn"
+
+            return {
+                "tool_uses": tool_uses,
+                "text": response.content or "",
+                "stop_reason": stop_reason,
+                "content": content_out,
+            }
+
         def call_model_activity(ctx: Any, input_data: dict) -> dict:  # type: ignore[type-arg]
             """Activity that calls the LLM model."""
             messages = input_data.get("messages", [])
             system_prompt = input_data.get("system_prompt", "")
+
+            # Route through Dapr if component_name is set
+            if component_name_ref:
+                return _call_model_via_dapr(messages, system_prompt)
 
             try:
                 tool_specs = [
@@ -362,6 +518,9 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             return
 
         self._workflow_runtime.shutdown()
+        if self._dapr_chat_client:
+            self._dapr_chat_client.close()
+            self._dapr_chat_client = None
         self._started = False
         logger.info("Dapr Workflow runtime stopped")
 

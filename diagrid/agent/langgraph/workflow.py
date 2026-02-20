@@ -42,6 +42,9 @@ _node_registry: Dict[str, Callable] = {}
 _condition_registry: Dict[str, Callable] = {}
 _channel_reducers: Dict[str, Callable] = {}
 _serializer: Optional[Any] = None
+_default_graph_config: Optional["GraphConfig"] = None
+_default_input_mapper: Optional[Callable] = None
+_default_max_steps: int = 100
 
 # Special node names
 START = "__start__"
@@ -89,13 +92,29 @@ def get_serializer() -> Optional[Any]:
     return _serializer
 
 
+def set_default_graph_config(
+    config: "GraphConfig",
+    *,
+    input_mapper: Optional[Callable] = None,
+    max_steps: int = 100,
+) -> None:
+    """Store the default graph config for orchestrator-initiated calls."""
+    global _default_graph_config, _default_input_mapper, _default_max_steps
+    _default_graph_config = config
+    _default_input_mapper = input_mapper
+    _default_max_steps = max_steps
+
+
 def clear_registries() -> None:
     """Clear all registries."""
     _node_registry.clear()
     _condition_registry.clear()
     _channel_reducers.clear()
-    global _serializer
+    global _serializer, _default_graph_config, _default_input_mapper, _default_max_steps
     _serializer = None
+    _default_graph_config = None
+    _default_input_mapper = None
+    _default_max_steps = 100
 
 
 def agent_workflow(
@@ -116,7 +135,38 @@ def agent_workflow(
     Returns:
         GraphWorkflowOutput as a dictionary
     """
-    workflow_input = GraphWorkflowInput.from_dict(input_data)
+    if "graph_config" in input_data:
+        # Normal internal call with full GraphWorkflowInput
+        workflow_input = GraphWorkflowInput.from_dict(input_data)
+    else:
+        # Orchestrator call with simple {"task": "..."} input
+        if _default_graph_config is None:
+            raise ValueError(
+                "Received simple task input but no default graph config is set. "
+                "Ensure the runner has been started before the workflow is invoked."
+            )
+        # Build graph input from the task using the stored mapper
+        if _default_input_mapper:
+            graph_input = _default_input_mapper(input_data)
+        elif "task" in input_data:
+            graph_input = {
+                "messages": [{"role": "user", "content": input_data["task"]}]
+            }
+        else:
+            graph_input = input_data
+
+        channel_state = ChannelState(
+            values=_serialize_input(graph_input),
+            versions={k: 1 for k in graph_input.keys()},
+            updated_channels=list(graph_input.keys()),
+        )
+        workflow_input = GraphWorkflowInput(
+            graph_config=_default_graph_config,
+            channel_state=channel_state,
+            step=0,
+            max_steps=_default_max_steps,
+        )
+
     graph_config = workflow_input.graph_config
     channel_state = workflow_input.channel_state
     max_steps = workflow_input.max_steps
@@ -399,6 +449,11 @@ def _get_triggered_nodes(
         return pending_nodes
 
     return []
+
+
+def _serialize_input(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize input values for channel storage."""
+    return {k: _serialize_value(v) for k, v in input_data.items()}
 
 
 def _extract_output(

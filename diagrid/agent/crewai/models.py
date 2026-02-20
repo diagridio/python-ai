@@ -164,6 +164,7 @@ class AgentConfig:
     system_template: Optional[str] = None
     prompt_template: Optional[str] = None
     response_template: Optional[str] = None
+    component_name: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -179,6 +180,7 @@ class AgentConfig:
             "system_template": self.system_template,
             "prompt_template": self.prompt_template,
             "response_template": self.response_template,
+            "component_name": self.component_name,
         }
 
     @classmethod
@@ -198,6 +200,7 @@ class AgentConfig:
             system_template=data.get("system_template"),
             prompt_template=data.get("prompt_template"),
             response_template=data.get("response_template"),
+            component_name=data.get("component_name"),
         )
 
 

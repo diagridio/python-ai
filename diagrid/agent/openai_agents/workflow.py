@@ -14,13 +14,21 @@
 import json
 import logging
 from datetime import timedelta
-from typing import Any, Generator, Optional
+from typing import Any, Callable, Generator, Optional
 
 from dapr.ext.workflow import (
     DaprWorkflowContext,
     WorkflowActivityContext,
     RetryPolicy,
     when_all,
+)
+
+from diagrid.agent.core.chat import (
+    DaprChatClient,
+    ChatMessage,
+    ChatRole,
+    ChatToolCall,
+    ChatToolDefinition,
 )
 
 from .models import (
@@ -44,6 +52,7 @@ logger = logging.getLogger(__name__)
 # Global tool registry - tools are registered by the runner
 _tool_registry: dict[str, Any] = {}
 _tool_definitions: dict[str, ToolDefinition] = {}
+_default_workflow_input_factory: Optional[Callable[[str], dict[str, Any]]] = None
 
 
 def register_tool(
@@ -71,10 +80,20 @@ def get_tool_definition(name: str) -> Optional[ToolDefinition]:
     return _tool_definitions.get(name)
 
 
+def set_default_workflow_input_factory(
+    factory: Callable[[str], dict[str, Any]],
+) -> None:
+    """Store a factory that builds AgentWorkflowInput dicts from a task string."""
+    global _default_workflow_input_factory
+    _default_workflow_input_factory = factory
+
+
 def clear_tool_registry() -> None:
     """Clear all registered tools."""
+    global _default_workflow_input_factory
     _tool_registry.clear()
     _tool_definitions.clear()
+    _default_workflow_input_factory = None
 
 
 def agent_workflow(
@@ -97,8 +116,19 @@ def agent_workflow(
     Returns:
         AgentWorkflowOutput as a dictionary
     """
-    # Deserialize input
-    workflow_input = AgentWorkflowInput.from_dict(input_data)
+    # Deserialize input - handle orchestrator calls with {"task": "..."}
+    if "agent_config" in input_data:
+        workflow_input = AgentWorkflowInput.from_dict(input_data)
+    elif _default_workflow_input_factory is not None:
+        task = input_data.get("task", "")
+        workflow_input = AgentWorkflowInput.from_dict(
+            _default_workflow_input_factory(task)
+        )
+    else:
+        raise ValueError(
+            "Received input without 'agent_config' and no default factory is set. "
+            "Ensure the runner has been started before the workflow is invoked."
+        )
 
     # Retry policy for activities
     retry_policy = RetryPolicy(
@@ -166,16 +196,22 @@ def agent_workflow(
         tool_output_tasks = [t for _, t in tool_tasks]
         tool_outputs_data = yield when_all(tool_output_tasks)
 
-        # Append tool result messages
+        # Append tool result messages — include error text so the
+        # LLM can see what went wrong and self-correct.
         for i, tool_output_data in enumerate(tool_outputs_data):
             tool_output = ExecuteToolOutput.from_dict(tool_output_data)
+            tr = tool_output.tool_result
+            if tr.error:
+                content = f"Error: {tr.error}"
+            elif tr.result is not None:
+                content = str(tr.result)
+            else:
+                content = ""
             tool_result_message = Message(
                 role=MessageRole.TOOL,
-                content=str(tool_output.tool_result.result)
-                if tool_output.tool_result.result
-                else None,
-                tool_call_id=tool_output.tool_result.tool_call_id,
-                name=tool_output.tool_result.tool_name,
+                content=content,
+                tool_call_id=tr.tool_call_id,
+                name=tr.tool_name,
             )
             workflow_input.messages.append(tool_result_message)
 
@@ -192,6 +228,81 @@ def agent_workflow(
     ).to_dict()
 
 
+def _call_llm_via_dapr(llm_input: CallLlmInput) -> dict[str, Any]:
+    """Route LLM call through Dapr Conversation API."""
+    chat_messages = []
+
+    # Add system message
+    if llm_input.agent_config.instructions:
+        chat_messages.append(
+            ChatMessage(
+                role=ChatRole.SYSTEM,
+                content=_build_system_prompt(llm_input.agent_config),
+            )
+        )
+
+    for msg in llm_input.messages:
+        if msg.role == MessageRole.USER:
+            chat_messages.append(
+                ChatMessage(role=ChatRole.USER, content=msg.content or "")
+            )
+        elif msg.role == MessageRole.ASSISTANT:
+            tool_calls = [
+                ChatToolCall(id=tc.id, name=tc.name, arguments=json.dumps(tc.args))
+                for tc in msg.tool_calls
+            ]
+            chat_messages.append(
+                ChatMessage(
+                    role=ChatRole.ASSISTANT,
+                    content=msg.content,
+                    tool_calls=tool_calls,
+                )
+            )
+        elif msg.role == MessageRole.TOOL:
+            chat_messages.append(
+                ChatMessage(
+                    role=ChatRole.TOOL,
+                    content=msg.content or "",
+                    tool_call_id=msg.tool_call_id,
+                    name=msg.name,
+                )
+            )
+
+    tools = [
+        ChatToolDefinition(
+            name=td.name,
+            description=td.description,
+            parameters=td.parameters or {"type": "object", "properties": {}},
+        )
+        for td in llm_input.agent_config.tool_definitions
+    ] or None
+
+    client = DaprChatClient(component_name=llm_input.agent_config.component_name)
+    try:
+        response = client.chat(messages=chat_messages, tools=tools)
+    finally:
+        client.close()
+
+    tool_calls_out = []
+    for tc in response.tool_calls:
+        try:
+            args = json.loads(tc.arguments)
+        except (json.JSONDecodeError, TypeError):
+            args = {}
+        tool_calls_out.append(ToolCall(id=tc.id, name=tc.name, args=args))
+
+    output_message = Message(
+        role=MessageRole.ASSISTANT,
+        content=response.content,
+        tool_calls=tool_calls_out,
+    )
+
+    return CallLlmOutput(
+        message=output_message,
+        is_final=response.is_final,
+    ).to_dict()
+
+
 def call_llm_activity(
     ctx: WorkflowActivityContext, input_data: dict[str, Any]
 ) -> dict[str, Any]:
@@ -199,7 +310,8 @@ def call_llm_activity(
 
     This activity uses openai.OpenAI().chat.completions.create() directly
     (not Runner.run()) to call the configured model with the conversation
-    history and tool definitions.
+    history and tool definitions. If a component_name is set, routes through
+    the Dapr Conversation API instead.
 
     Args:
         ctx: The workflow activity context
@@ -209,6 +321,10 @@ def call_llm_activity(
         CallLlmOutput as a dictionary
     """
     llm_input = CallLlmInput.from_dict(input_data)
+
+    # Route through Dapr if component_name is set
+    if llm_input.agent_config.component_name:
+        return _call_llm_via_dapr(llm_input)
 
     try:
         import openai

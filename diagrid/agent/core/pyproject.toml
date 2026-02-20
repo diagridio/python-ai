@@ -17,9 +17,13 @@ dependencies = [
     "langgraph>=0.3.6",
 ]
 
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.2.0"]
+
 [tool.setuptools]
 packages = [
     "diagrid.agent.core",
+    "diagrid.agent.core.chat",
     "diagrid.agent.core.metadata",
     "diagrid.agent.core.metadata.mapping",
     "diagrid.agent.core.types",

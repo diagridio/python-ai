@@ -129,6 +129,7 @@ class AgentConfig:
     model: str
     system_instruction: Optional[str] = None
     tool_definitions: list[ToolDefinition] = field(default_factory=list)
+    component_name: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -137,6 +138,7 @@ class AgentConfig:
             "model": self.model,
             "system_instruction": self.system_instruction,
             "tool_definitions": [td.to_dict() for td in self.tool_definitions],
+            "component_name": self.component_name,
         }
 
     @classmethod
@@ -149,6 +151,7 @@ class AgentConfig:
             tool_definitions=[
                 ToolDefinition.from_dict(td) for td in data.get("tool_definitions", [])
             ],
+            component_name=data.get("component_name"),
         )
 
 

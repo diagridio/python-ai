@@ -19,6 +19,8 @@ from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
 
 from diagrid.agent.core import AgentRegistryMixin
+from diagrid.agent.core.chat import DaprChatClient
+
 from .models import (
     AgentConfig,
     AgentWorkflowInput,
@@ -34,6 +36,7 @@ from .workflow import (
     execute_tool_activity,
     register_tool,
     clear_tool_registry,
+    set_default_workflow_input_factory,
 )
 
 if TYPE_CHECKING:
@@ -104,6 +107,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         port: Optional[str] = None,
         max_iterations: Optional[int] = None,
         registry_config: Optional[Any] = None,
+        component_name: Optional[str] = None,
     ):
         """Initialize the runner.
 
@@ -114,6 +118,9 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             max_iterations: Maximum number of LLM call iterations
                            (default: uses agent's max_iter)
             registry_config: Optional registry configuration for metadata extraction
+            component_name: Dapr conversation component name. If provided, always
+                uses Dapr Conversation API. If None and agent has no LLM configured,
+                auto-detects a conversation component.
         """
         self._agent = agent
         self._max_iterations: int = max_iterations or int(
@@ -121,6 +128,19 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         )
         self._host = host
         self._port = port
+        self._component_name = component_name
+        self._dapr_chat_client = None
+
+        # Auto-detect: if user provided no LLM on the agent, resolve a component
+        if self._component_name is None and not self._agent_has_llm():
+            self._dapr_chat_client = DaprChatClient()
+            self._component_name = self._dapr_chat_client.component_name
+            logger.info(
+                "No LLM configured on agent; using Dapr conversation component: %s",
+                self._component_name,
+            )
+        elif self._component_name is not None:
+            self._dapr_chat_client = DaprChatClient(component_name=self._component_name)
 
         # Register metadata
         self._register_agent_metadata(
@@ -145,6 +165,16 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         # Create workflow client (for starting/managing workflows)
         self._workflow_client: Optional[DaprWorkflowClient] = None
         self._started = False
+
+    def _agent_has_llm(self) -> bool:
+        """Check if the agent has an explicit LLM configured."""
+        llm = getattr(self._agent, "llm", None)
+        if llm is None:
+            return False
+        # CrewAI uses _NotSpecified sentinel for unset fields
+        if type(llm).__name__ == "_NotSpecified":
+            return False
+        return True
 
     def _register_agent_tools(self) -> None:
         """Register the agent's tools in the global tool registry."""
@@ -280,6 +310,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             response_template=self._safe_str(
                 getattr(self._agent, "response_template", None)
             ),
+            component_name=self._component_name,
         )
 
     def _get_task_config(self, task: "Task") -> TaskConfig:
@@ -346,6 +377,9 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             return
 
         self._workflow_runtime.shutdown()
+        if self._dapr_chat_client:
+            self._dapr_chat_client.close()
+            self._dapr_chat_client = None
         self._started = False
         logger.info("Dapr Workflow runtime stopped")
 
@@ -641,6 +675,34 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         from crewai import Task
 
         app = FastAPI()
+
+        # Store factory so agent_workflow can handle orchestrator calls
+        agent_config = self._get_agent_config()
+
+        def _build_workflow_input(task_str: str) -> dict[str, Any]:
+            task_config = TaskConfig(
+                description=task_str,
+                expected_output="A helpful response",
+            )
+            return AgentWorkflowInput(
+                agent_config=agent_config,
+                task_config=task_config,
+                messages=[
+                    Message(
+                        role=MessageRole.USER,
+                        content=(
+                            f"Please complete the following task:\n\n{task_str}\n\n"
+                            f"Expected output: A helpful response"
+                        ),
+                    )
+                ],
+                session_id=uuid.uuid4().hex[:8],
+                iteration=0,
+                max_iterations=self._max_iterations,
+            ).to_dict()
+
+        set_default_workflow_input_factory(_build_workflow_input)
+
         self.start()
 
         @app.post("/agent/run")

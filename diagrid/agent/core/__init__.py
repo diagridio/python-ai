@@ -14,6 +14,7 @@ from .types import (
     SupportedFrameworks,
     ToolMetadata,
 )
+from .chat import DaprChatClient
 
 __all__ = [
     "SupportedFrameworks",
@@ -28,4 +29,5 @@ __all__ = [
     "find_agent_in_stack",
     "detect_framework",
     "AgentRegistryMixin",
+    "DaprChatClient",
 ]

@@ -34,6 +34,7 @@ from .workflow import (
     register_node,
     register_condition,
     register_channel_reducer,
+    set_default_graph_config,
     set_serializer,
     clear_registries,
     START,
@@ -102,6 +103,8 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         port: Optional[str] = None,
         max_steps: int = 100,
         name: Optional[str] = None,
+        role: Optional[str] = None,
+        goal: Optional[str] = None,
         registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
@@ -112,6 +115,8 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             port: Dapr sidecar port (default: 50001)
             max_steps: Maximum number of steps before stopping (default: 100)
             name: Optional name for the graph (inferred if not provided)
+            role: Optional role description for registry (e.g. "Schedule Planner")
+            goal: Optional goal description for registry
             registry_config: Optional registry configuration for metadata extraction
         """
         self._graph = graph
@@ -119,6 +124,14 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         self._host = host
         self._port = port
         self._name = name or self._infer_graph_name()
+
+        # Attach metadata hints for the registry mapper
+        if name:
+            self._graph._diagrid_name = name  # type: ignore[attr-defined]
+        if role:
+            self._graph._diagrid_role = role  # type: ignore[attr-defined]
+        if goal:
+            self._graph._diagrid_goal = goal  # type: ignore[attr-defined]
 
         # Register metadata
         self._register_agent_metadata(
@@ -699,6 +712,14 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
 
         mapper = input_mapper or (lambda req: req)
         app = FastAPI()
+
+        # Store graph config so agent_workflow can handle orchestrator calls
+        set_default_graph_config(
+            self._graph_config,
+            input_mapper=input_mapper,
+            max_steps=self._max_steps,
+        )
+
         self.start()
 
         @app.post("/agent/run")

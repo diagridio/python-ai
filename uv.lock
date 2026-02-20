@@ -962,15 +962,22 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.optional-dependencies]
+langchain = [
+    { name = "langchain-core" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "dapr", specifier = ">=1.17.0rc3" },
     { name = "dapr-agents", specifier = ">=0.10.6" },
     { name = "dapr-ext-langgraph", specifier = ">=1.17.0rc3" },
     { name = "dapr-ext-strands", specifier = ">=1.17.0rc3" },
+    { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=0.3.6" },
     { name = "pydantic", specifier = ">=2.12.5" },
 ]
+provides-extras = ["langchain"]
 
 [[package]]
 name = "diagrid-cli"
