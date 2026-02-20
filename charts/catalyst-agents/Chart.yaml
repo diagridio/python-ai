@@ -2,8 +2,8 @@ apiVersion: v2
 name: catalyst-agents
 description: A Helm chart for Catalyst Agents developer inner-loop
 type: application
-version: 0.1.8
-appVersion: "0.1.8"
+version: 0.1.9
+appVersion: "0.1.9"
 icon: https://cdn.prod.website-files.com/66965adecd57031ed9ad181e/6840d4036c65c72bca49e87a_logo-catalyst.svg
 dependencies:
   - name: loki
