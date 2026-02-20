@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 
 
 class CommandNotFoundError(Exception):
@@ -79,8 +80,6 @@ def run(
         kwargs["text"] = True
     else:
         # Verbose: stream to terminal.
-        import sys
-
         kwargs["stdout"] = sys.stdout
         kwargs["stderr"] = sys.stderr
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_API_URL = "https://api.r1.diagrid.io"
@@ -51,6 +52,9 @@ nodes:
   - containerPort: 30443
     hostPort: 8443
     protocol: TCP
+  - containerPort: 30317
+    hostPort: 30317
+    protocol: TCP
 - role: worker
   image: {node_image}
 containerdConfigPatches:
@@ -85,4 +89,35 @@ QUICKSTART_SUBDIRS = {
     "openai-agents": "agents/openai-agents",
     "crewai": "agents/crewai",
     "adk": "agents/adk",
+    "orchestrator": "agents",
 }
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator agents
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OrchestratorAgent:
+    app_id: str
+    directory: str
+    port: int
+
+
+ORCHESTRATOR_AGENTS: tuple[OrchestratorAgent, ...] = (
+    OrchestratorAgent("crewai-agent", "crewai", 8001),
+    OrchestratorAgent("openai-agent", "openai-agents", 8002),
+    OrchestratorAgent("adk-agent", "adk", 8003),
+    OrchestratorAgent("strands-agent", "strands", 8004),
+    OrchestratorAgent("langgraph-agent", "langgraph", 8005),
+    OrchestratorAgent("dapr-agent", "dapr-agents/durable-agent", 8006),
+    OrchestratorAgent("event-orchestrator", "dapr-agents/orchestrator", 8007),
+)
+
+# OTEL collector
+OTEL_COLLECTOR_ENDPOINT = (
+    "http://catalyst-agents-opentelemetry-collector"
+    ".catalyst-agents.svc.cluster.local:4317"
+)
+OTEL_COLLECTOR_NODEPORT_GRPC = 30317

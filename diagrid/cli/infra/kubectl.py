@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 
 from diagrid.cli.utils.process import CommandError, is_verbose, run, run_capture
 
@@ -27,8 +28,6 @@ def apply_stdin(manifest: str, *, namespace: str | None = None) -> None:
         args.extend(["-n", namespace])
 
     if is_verbose():
-        import sys
-
         proc = subprocess.run(
             args, input=manifest, text=True, stdout=sys.stdout, stderr=sys.stderr
         )

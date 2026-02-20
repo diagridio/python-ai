@@ -18,7 +18,7 @@ The following tools are required for local development:
 ```bash
 git clone <repo>
 cd ai-python
-uv sync --all-packages --group test --group dev
+uv sync --all-packages --extra all --group test --group dev
 ```
 
 ## Running unit tests

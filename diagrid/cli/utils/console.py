@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import Generator
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+
+from diagrid.cli.utils.process import is_verbose
 
 console = Console()
 error_console = Console(stderr=True)
@@ -33,6 +38,24 @@ def error(message: str) -> None:
 def step(number: int, total: int, message: str) -> None:
     """Print a numbered step."""
     console.print(f"[bold cyan][{number}/{total}][/bold cyan] {message}")
+
+
+@contextmanager
+def spinner(number: int, total: int, message: str) -> Generator[None, None, None]:
+    """Show a numbered step with a spinner while the block executes.
+
+    In verbose mode, prints the step text and yields without a spinner
+    so that subprocess output can stream to the terminal uninterrupted.
+    """
+    if is_verbose():
+        step(number, total, message)
+        yield
+    else:
+        with console.status(
+            f"[bold cyan][{number}/{total}][/bold cyan] {message}",
+            spinner="dots",
+        ):
+            yield
 
 
 def print_summary(title: str, lines: list[str]) -> None:

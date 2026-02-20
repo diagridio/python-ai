@@ -109,7 +109,7 @@ def test_missing_binaries_none_missing() -> None:
 
 def test_missing_binaries_all_missing() -> None:
     with patch("diagrid.cli.utils.deps.shutil.which", return_value=None):
-        assert _missing_binaries() == ["docker", "kind", "kubectl", "helm"]
+        assert _missing_binaries() == ["docker", "kind", "kubectl", "helm", "piko"]
 
 
 def test_missing_binaries_subset_missing() -> None:

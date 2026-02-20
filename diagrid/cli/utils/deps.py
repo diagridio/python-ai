@@ -21,7 +21,7 @@ import click
 from diagrid.cli.utils import console
 
 
-REQUIRED_BINARIES = ["docker", "kind", "kubectl", "helm"]
+REQUIRED_BINARIES = ["docker", "kind", "kubectl", "helm", "piko"]
 
 _BREW_FORMULAS = {
     "kind": "kind",
@@ -171,9 +171,9 @@ def _install_binary(name: str) -> None:
         _install_docker()
         return
 
-    if _is_mac() and shutil.which("brew"):
+    if _is_mac() and shutil.which("brew") and name in _BREW_FORMULAS:
         _install_via_brew(name)
-    elif _is_windows() and shutil.which("winget"):
+    elif _is_windows() and shutil.which("winget") and name in _WINGET_IDS:
         _install_via_winget(name)
     else:
         _install_via_download(name)
@@ -221,6 +221,8 @@ def _install_via_download(name: str) -> None:
         _download_kubectl(install_dir, arch)
     elif name == "helm":
         _download_helm(install_dir, arch)
+    elif name == "piko":
+        _download_piko(install_dir, arch)
     else:
         raise click.ClickException(f"No download strategy for '{name}'")
 
@@ -307,6 +309,17 @@ def _download_helm(install_dir: Path, arch: str) -> None:
                             dest.write_bytes(fileobj.read())
                             _make_executable(dest)
                         break
+
+
+def _download_piko(install_dir: Path, arch: str) -> None:
+    """Download the piko binary from GitHub releases."""
+    version = _github_latest_tag("andydunstall/piko")
+    os_name = "darwin" if _is_mac() else "linux"
+    filename = f"piko-{os_name}-{arch}"
+    url = f"https://github.com/andydunstall/piko/releases/download/{version}/{filename}"
+    dest = install_dir / "piko"
+    urllib.request.urlretrieve(url, dest)  # noqa: S310
+    _make_executable(dest)
 
 
 # ---------------------------------------------------------------------------

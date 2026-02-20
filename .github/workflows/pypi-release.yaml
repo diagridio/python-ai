@@ -26,7 +26,7 @@ jobs:
       - name: Bump versions in all pyproject.toml files
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          for f in pyproject.toml diagrid/core/pyproject.toml diagrid/cli/pyproject.toml diagrid/agent/core/pyproject.toml; do
+          for f in pyproject.toml diagrid/core/pyproject.toml diagrid/cli/pyproject.toml; do
             sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$f"
           done
 
@@ -48,7 +48,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml diagrid/core/pyproject.toml diagrid/cli/pyproject.toml \
-            diagrid/agent/core/pyproject.toml charts/catalyst-agents/Chart.yaml uv.lock
+            charts/catalyst-agents/Chart.yaml uv.lock
           git commit -m "chore: release v$VERSION"
           git push origin main
 

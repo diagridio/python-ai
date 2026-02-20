@@ -64,7 +64,7 @@ jobs:
       with:
         version: "latest"
     - name: Install dependencies
-      run: uv sync --all-packages --group test
+      run: uv sync --all-packages --extra all --group test
     - name: Check Typing
       run: uv run mypy --config-file mypy.ini
     - name: Run Tests

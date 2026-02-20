@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 
@@ -16,10 +17,11 @@ from diagrid.cli.utils.process import CommandError, run, run_capture
 from diagrid.core.auth.device_code import DeviceCodeAuth
 from diagrid.core.catalyst.appids import create_appid
 from diagrid.core.catalyst.client import CatalystAPIError, CatalystClient
-from diagrid.core.catalyst.projects import create_project
+from diagrid.core.catalyst.projects import create_project, list_projects
 from diagrid.core.config.constants import (
     DEFAULT_KIND_CLUSTER,
     ENV_OPENAI_API_KEY,
+    ORCHESTRATOR_AGENTS,
     QUICKSTART_REPO_URL,
     QUICKSTART_SUBDIRS,
 )
@@ -48,6 +50,18 @@ SUPPORTED_FRAMEWORKS = list(QUICKSTART_SUBDIRS.keys())
     default="dapr-agents",
     help="Agent framework to use (default: dapr-agents)",
 )
+@click.option(
+    "--existing-path",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to an existing agent project (skips clone step)",
+)
+@click.option(
+    "--existing-project",
+    is_flag=True,
+    default=False,
+    help="Select an existing Catalyst project instead of creating a new one",
+)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -57,8 +71,15 @@ def init(
     openai_api_key: str | None,
     google_api_key: str | None,
     framework: str,
+    existing_path: str | None,
+    existing_project: bool,
 ) -> None:
     """Initialize a local agent development environment."""
+    if existing_path and framework != "dapr-agents":
+        raise click.ClickException(
+            "--existing-path and --framework cannot be used together"
+        )
+
     preflight_check()
 
     api_url: str | None = ctx.obj.get("api_url") if ctx.obj else None
@@ -75,36 +96,79 @@ def init(
 
         # Step 2: Get LLM API key
         console.step(2, total_steps, "Checking LLM API key...")
-        if framework == "adk":
+        if framework == "orchestrator":
+            # Orchestrator runs all frameworks; OpenAI key is required, Google is optional
+            llm_key = openai_api_key or os.environ.get(ENV_OPENAI_API_KEY)
+            if not llm_key:
+                llm_key = click.prompt("Enter your OPENAI_API_KEY", hide_input=True)
+            google_key = google_api_key or os.environ.get("GOOGLE_API_KEY")
+            if not google_key:
+                console.warning(
+                    "GOOGLE_API_KEY not set — ADK agent will use OpenAI via Dapr conversation API"
+                )
+            console.success("LLM API key(s) configured")
+        elif framework == "adk":
             key_name = "GOOGLE_API_KEY"
             llm_key = google_api_key or os.environ.get("GOOGLE_API_KEY")
+            if llm_key:
+                console.success("LLM API key found")
+            else:
+                llm_key = click.prompt(f"Enter your {key_name}", hide_input=True)
+                if not llm_key:
+                    raise click.ClickException(f"{key_name} is required")
+                console.success("LLM API key configured")
         else:
             key_name = "OPENAI_API_KEY"
             llm_key = openai_api_key or os.environ.get(ENV_OPENAI_API_KEY)
-        if llm_key:
-            console.success("LLM API key found")
-        else:
-            llm_key = click.prompt(f"Enter your {key_name}", hide_input=True)
-            if not llm_key:
-                raise click.ClickException(f"{key_name} is required")
-            console.success("LLM API key configured")
-
-        # Step 3: Create project
-        console.step(3, total_steps, f"Creating project '{project_name}'...")
-        client = CatalystClient(auth_ctx)
-        try:
-            create_project(client, project_name, agent_infrastructure_enabled=True)
-            console.success(f"Project '{project_name}' created")
-        except CatalystAPIError as exc:
-            if exc.status_code == 409:
-                console.info(f"Project '{project_name}' already exists, continuing")
+            if llm_key:
+                console.success("LLM API key found")
             else:
-                raise
+                llm_key = click.prompt(f"Enter your {key_name}", hide_input=True)
+                if not llm_key:
+                    raise click.ClickException(f"{key_name} is required")
+                console.success("LLM API key configured")
 
-        # Step 4: Clone quickstart
-        console.step(4, total_steps, "Cloning quickstart template...")
-        _clone_quickstart(project_name, framework)
-        console.success(f"Quickstart cloned to ./{project_name}/")
+        # Step 3: Create or select project
+        client = CatalystClient(auth_ctx)
+        if existing_project:
+            console.step(3, total_steps, "Listing existing projects...")
+            projects = list_projects(client)
+            if not projects:
+                raise click.ClickException(
+                    "No existing projects found. Run without --existing-project "
+                    "to create a new one."
+                )
+            project_names = [
+                p.metadata.name for p in projects if p.metadata and p.metadata.name
+            ]
+            if not project_names:
+                raise click.ClickException("No projects found with valid names.")
+            project_name = click.prompt(
+                "Select a project",
+                type=click.Choice(project_names, case_sensitive=False),
+            )
+            console.success(f"Using existing project '{project_name}'")
+        else:
+            console.step(3, total_steps, f"Creating project '{project_name}'...")
+            try:
+                create_project(client, project_name, agent_infrastructure_enabled=True)
+                console.success(f"Project '{project_name}' created")
+            except CatalystAPIError as exc:
+                if exc.status_code == 409:
+                    console.info(f"Project '{project_name}' already exists, continuing")
+                else:
+                    raise
+
+        # Step 4: Clone quickstart (or use existing path)
+        if existing_path:
+            console.step(4, total_steps, "Using existing project...")
+            project_dir = existing_path
+            console.success(f"Using existing project at {project_dir}")
+        else:
+            console.step(4, total_steps, "Cloning quickstart template...")
+            _clone_quickstart(project_name, framework)
+            project_dir = project_name
+            console.success(f"Quickstart cloned to ./{project_name}/")
 
         # Step 5: Provision cluster
         console.step(5, total_steps, "Provisioning Kubernetes cluster...")
@@ -115,29 +179,52 @@ def init(
         install_dapr_agents(llm_key)
         console.success("Helm chart installed")
 
-        # Step 7: Create AppID
-        console.step(7, total_steps, "Creating AppID...")
-        try:
-            create_appid(client, project_name, f"{project_name}-agent")
-            console.success("AppID created")
-        except CatalystAPIError as exc:
-            if exc.status_code == 409:
-                console.info("AppID already exists, continuing")
-            else:
-                raise
+        # Step 7: Create AppID(s)
+        if framework == "orchestrator":
+            console.step(7, total_steps, "Creating AppIDs...")
+            for agent in ORCHESTRATOR_AGENTS:
+                try:
+                    create_appid(client, project_name, agent.app_id)
+                except CatalystAPIError as exc:
+                    if exc.status_code != 409:
+                        raise
+            console.success(f"Created {len(ORCHESTRATOR_AGENTS)} AppIDs")
+        else:
+            console.step(7, total_steps, "Creating AppID...")
+            try:
+                create_appid(client, project_name, f"{project_name}-agent")
+                console.success("AppID created")
+            except CatalystAPIError as exc:
+                if exc.status_code == 409:
+                    console.info("AppID already exists, continuing")
+                else:
+                    raise
 
         # Print summary
-        console.print_summary(
-            "Initialization Complete",
-            [
-                f"Project: {project_name}",
-                f"Directory: ./{project_name}/",
-                "",
-                "Next steps:",
-                f"  cd {project_name}",
-                "  diagridpy deploy",
-            ],
-        )
+        if framework == "orchestrator":
+            console.print_summary(
+                "Initialization Complete",
+                [
+                    f"Project: {project_name}",
+                    f"Directory: ./{project_dir}/",
+                    "",
+                    "Next steps:",
+                    f"  cd {project_dir}",
+                    "  diagrid dev run -f dev-python-orchestration.yaml",
+                ],
+            )
+        else:
+            console.print_summary(
+                "Initialization Complete",
+                [
+                    f"Project: {project_name}",
+                    f"Directory: ./{project_dir}/",
+                    "",
+                    "Next steps:",
+                    f"  cd {project_dir}",
+                    "  diagridpy deploy",
+                ],
+            )
 
     except CommandError as exc:
         console.error(str(exc))
@@ -198,8 +285,6 @@ def _patch_agent_port(dest: str) -> None:
     # Replace hardcoded port with env var lookup
     # e.g. runner.serve(travel_assistant, port=5001)
     # becomes runner.serve(travel_assistant, port=int(os.environ.get("APP_PORT", "5001")))
-    import re
-
     content = re.sub(
         r"(runner\.serve\([^)]*port=)\d+(\))",
         r'\1int(os.environ.get("APP_PORT", "5001"))\2',

@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+from diagrid.cli.infra.kubectl import apply_stdin
 from diagrid.cli.utils.process import has_command, run, run_capture
 from diagrid.core.config.constants import (
     DEFAULT_KIND_CLUSTER,
@@ -166,8 +167,6 @@ def _apply_registry_configmap() -> None:
         f'    host: "localhost:{KIND_REGISTRY_PORT}"\n'
         '    help: "https://kind.sigs.k8s.io/docs/user/local-registry/"\n'
     )
-    from diagrid.cli.infra.kubectl import apply_stdin
-
     apply_stdin(configmap)
 
 

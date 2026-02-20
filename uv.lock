@@ -9,7 +9,6 @@ resolution-markers = [
 [manifest]
 members = [
     "diagrid",
-    "diagrid-agent-core",
     "diagrid-cli",
     "diagrid-core",
 ]
@@ -863,39 +862,82 @@ dependencies = [
 
 [package.optional-dependencies]
 adk = [
-    { name = "diagrid-agent-core" },
+    { name = "dapr-agents" },
+    { name = "dapr-ext-langgraph" },
+    { name = "dapr-ext-strands" },
+    { name = "fastapi" },
     { name = "google-adk" },
+    { name = "langgraph" },
+    { name = "pydantic" },
+    { name = "uvicorn" },
+]
+agent-core = [
+    { name = "dapr-agents" },
+    { name = "dapr-ext-langgraph" },
+    { name = "dapr-ext-strands" },
+    { name = "fastapi" },
+    { name = "langgraph" },
+    { name = "pydantic" },
+    { name = "uvicorn" },
 ]
 all = [
     { name = "crewai" },
-    { name = "diagrid-agent-core" },
+    { name = "dapr-agents" },
+    { name = "dapr-ext-langgraph" },
+    { name = "dapr-ext-strands" },
+    { name = "fastapi" },
     { name = "google-adk" },
     { name = "langchain-core" },
     { name = "langgraph" },
     { name = "litellm" },
     { name = "openai" },
     { name = "openai-agents" },
+    { name = "pydantic" },
     { name = "strands-agents" },
+    { name = "uvicorn" },
 ]
 crewai = [
     { name = "crewai" },
-    { name = "diagrid-agent-core" },
+    { name = "dapr-agents" },
+    { name = "dapr-ext-langgraph" },
+    { name = "dapr-ext-strands" },
+    { name = "fastapi" },
+    { name = "langgraph" },
     { name = "litellm" },
+    { name = "pydantic" },
+    { name = "uvicorn" },
 ]
 langgraph = [
-    { name = "diagrid-agent-core" },
+    { name = "dapr-agents" },
+    { name = "dapr-ext-langgraph" },
+    { name = "dapr-ext-strands" },
+    { name = "fastapi" },
     { name = "langchain-core" },
     { name = "langgraph" },
+    { name = "pydantic" },
+    { name = "uvicorn" },
 ]
 openai-agents = [
-    { name = "diagrid-agent-core" },
+    { name = "dapr-agents" },
+    { name = "dapr-ext-langgraph" },
+    { name = "dapr-ext-strands" },
+    { name = "fastapi" },
+    { name = "langgraph" },
     { name = "openai" },
     { name = "openai-agents" },
+    { name = "pydantic" },
+    { name = "uvicorn" },
 ]
 strands = [
-    { name = "diagrid-agent-core" },
+    { name = "dapr-agents" },
+    { name = "dapr-ext-langgraph" },
+    { name = "dapr-ext-strands" },
+    { name = "fastapi" },
+    { name = "langgraph" },
     { name = "openai" },
+    { name = "pydantic" },
     { name = "strands-agents" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -916,24 +958,31 @@ test = [
 requires-dist = [
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.6.1" },
     { name = "dapr", specifier = ">=1.16.0" },
+    { name = "dapr-agents", marker = "extra == 'agent-core'", specifier = ">=0.10.6" },
+    { name = "dapr-ext-langgraph", marker = "extra == 'agent-core'", specifier = ">=1.17.0rc3" },
+    { name = "dapr-ext-strands", marker = "extra == 'agent-core'", specifier = ">=1.17.0rc3" },
     { name = "dapr-ext-workflow", specifier = ">=1.16.0" },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'adk'" },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'crewai'" },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'langgraph'" },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'openai-agents'" },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'strands'" },
     { name = "diagrid", extras = ["langgraph", "crewai", "adk", "strands", "openai-agents"], marker = "extra == 'all'" },
-    { name = "diagrid-agent-core", marker = "extra == 'adk'", editable = "diagrid/agent/core" },
-    { name = "diagrid-agent-core", marker = "extra == 'crewai'", editable = "diagrid/agent/core" },
-    { name = "diagrid-agent-core", marker = "extra == 'langgraph'", editable = "diagrid/agent/core" },
-    { name = "diagrid-agent-core", marker = "extra == 'openai-agents'", editable = "diagrid/agent/core" },
-    { name = "diagrid-agent-core", marker = "extra == 'strands'", editable = "diagrid/agent/core" },
     { name = "diagrid-cli", editable = "diagrid/cli" },
+    { name = "fastapi", marker = "extra == 'agent-core'", specifier = ">=0.129.0" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.0.0" },
     { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=0.3.0" },
+    { name = "langgraph", marker = "extra == 'agent-core'", specifier = ">=0.3.6" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=1.0.8" },
     { name = "litellm", marker = "extra == 'crewai'", specifier = ">=1.0.0" },
     { name = "openai", marker = "extra == 'openai-agents'", specifier = ">=1.0.0" },
     { name = "openai", marker = "extra == 'strands'", specifier = ">=2.21.0" },
     { name = "openai-agents", marker = "extra == 'openai-agents'", specifier = ">=0.1.0" },
+    { name = "pydantic", marker = "extra == 'agent-core'", specifier = ">=2.12.5" },
     { name = "strands-agents", marker = "extra == 'strands'", specifier = ">=1.26.0" },
+    { name = "uvicorn", marker = "extra == 'agent-core'", specifier = ">=0.41.0" },
 ]
-provides-extras = ["langgraph", "crewai", "adk", "strands", "openai-agents", "all"]
+provides-extras = ["agent-core", "langgraph", "crewai", "adk", "strands", "openai-agents", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -948,36 +997,6 @@ test = [
     { name = "pytest", specifier = ">=7.0.0,<10.0.0" },
     { name = "pytest-cov", specifier = ">=4.0.0,<8.0.0" },
 ]
-
-[[package]]
-name = "diagrid-agent-core"
-version = "0.1.8"
-source = { editable = "diagrid/agent/core" }
-dependencies = [
-    { name = "dapr" },
-    { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
-    { name = "langgraph" },
-    { name = "pydantic" },
-]
-
-[package.optional-dependencies]
-langchain = [
-    { name = "langchain-core" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dapr", specifier = ">=1.17.0rc3" },
-    { name = "dapr-agents", specifier = ">=0.10.6" },
-    { name = "dapr-ext-langgraph", specifier = ">=1.17.0rc3" },
-    { name = "dapr-ext-strands", specifier = ">=1.17.0rc3" },
-    { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=0.2.0" },
-    { name = "langgraph", specifier = ">=0.3.6" },
-    { name = "pydantic", specifier = ">=2.12.5" },
-]
-provides-extras = ["langchain"]
 
 [[package]]
 name = "diagrid-cli"

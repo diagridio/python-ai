@@ -2,25 +2,40 @@
 
 from __future__ import annotations
 
-import json
+import atexit
+import base64
+import os
+import shutil
 import socket
 import subprocess
+import tempfile
+import threading
 import time
+from pathlib import Path
 
 import click
 import httpx
 
 from diagrid.cli.infra.docker import build_image, load_into_kind
-from diagrid.cli.utils.deps import preflight_check
 from diagrid.cli.infra.kubectl import apply_stdin
 from diagrid.cli.utils import console
-from diagrid.cli.utils.process import CommandError, run, run_capture
+from diagrid.cli.utils.deps import preflight_check
+from diagrid.cli.utils.process import CommandError, run
 from diagrid.core.auth.device_code import DeviceCodeAuth
-from diagrid.core.catalyst.appids import get_appid
-from diagrid.core.catalyst.client import CatalystClient
+from diagrid.core.catalyst.appids import create_appid, get_appid
+from diagrid.core.catalyst.client import CatalystAPIError, CatalystClient
 from diagrid.core.catalyst.projects import get_project
-from diagrid.core.config.constants import DEFAULT_KIND_CLUSTER, DEFAULT_NAMESPACE
+from diagrid.core.config.constants import (
+    DEFAULT_KIND_CLUSTER,
+    DEFAULT_NAMESPACE,
+    OTEL_COLLECTOR_ENDPOINT,
+    OTEL_COLLECTOR_NODEPORT_GRPC,
+    ORCHESTRATOR_AGENTS,
+    OrchestratorAgent,
+)
 
+# Dapr-agents AppIDs that use the dapr-agents OTEL env var convention
+_DAPR_AGENTS_APP_IDS = {"dapr-agent", "event-orchestrator"}
 
 DEPLOYMENT_TEMPLATE = """\
 apiVersion: apps/v1
@@ -55,7 +70,44 @@ spec:
           value: "{http_endpoint}"
         - name: DAPR_GRPC_ENDPOINT
           value: "{grpc_endpoint}"
+{otel_env_block}\
 """
+
+_OTEL_STANDARD_BLOCK = """\
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "{otel_endpoint}"
+        - name: OTEL_SERVICE_NAME
+          value: "{app_id}"
+"""
+
+_OTEL_DAPR_AGENTS_BLOCK = """\
+        - name: OTEL_ENABLED
+          value: "true"
+        - name: OTEL_ENDPOINT
+          value: "{otel_endpoint}"
+        - name: OTEL_TRACING_ENABLED
+          value: "true"
+        - name: OTEL_LOGGING_ENABLED
+          value: "true"
+        - name: OTEL_TRACING_EXPORTER
+          value: "otlp_grpc"
+        - name: OTEL_LOGGING_EXPORTER
+          value: "otlp_grpc"
+"""
+
+
+def _otel_env_block(app_id: str, otel_endpoint: str) -> str:
+    """Return the OTEL env var block for a given agent."""
+    if app_id in _DAPR_AGENTS_APP_IDS:
+        return _OTEL_DAPR_AGENTS_BLOCK.format(
+            otel_endpoint=otel_endpoint, app_id=app_id
+        )
+    return _OTEL_STANDARD_BLOCK.format(otel_endpoint=otel_endpoint, app_id=app_id)
+
+
+# ---------------------------------------------------------------------------
+# CLI command
+# ---------------------------------------------------------------------------
 
 
 @click.command()
@@ -95,39 +147,121 @@ def deploy(
     preflight_check()
 
     api_url: str | None = ctx.obj.get("api_url") if ctx.obj else None
+
+    if kube_context:
+        run("kubectl", "config", "use-context", kube_context)
+
+    try:
+        if _is_orchestrator_project():
+            _deploy_orchestrator(
+                api_url=api_url,
+                api_key=api_key,
+                no_browser=no_browser,
+                tag=tag,
+                namespace=namespace,
+                project=project,
+            )
+        else:
+            _deploy_single_agent(
+                api_url=api_url,
+                api_key=api_key,
+                no_browser=no_browser,
+                image=image,
+                tag=tag,
+                namespace=namespace,
+                project=project,
+                app_id=app_id,
+                port=port,
+                trigger=trigger,
+            )
+    except CommandError as exc:
+        console.error(str(exc))
+        raise SystemExit(1) from exc
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        console.error(f"Deployment failed: {exc}")
+        raise SystemExit(1) from exc
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator auto-detection
+# ---------------------------------------------------------------------------
+
+
+def _is_orchestrator_project() -> bool:
+    """Detect if the current directory is an orchestrator project.
+
+    Heuristic: ``shared-resources/`` dir exists and >= 3 sibling
+    directories contain a Dockerfile.
+    """
+    cwd = Path.cwd()
+    if not (cwd / "shared-resources").is_dir():
+        return False
+    dockerfile_count = sum(
+        1
+        for child in cwd.iterdir()
+        if child.is_dir()
+        and child.name != "shared-resources"
+        and (child / "Dockerfile").exists()
+    )
+    # Also count nested dirs (e.g. dapr-agents/durable-agent)
+    for child in cwd.iterdir():
+        if child.is_dir() and child.name != "shared-resources":
+            for grandchild in child.iterdir():
+                if grandchild.is_dir() and (grandchild / "Dockerfile").exists():
+                    dockerfile_count += 1
+    return dockerfile_count >= 3
+
+
+# ---------------------------------------------------------------------------
+# Single-agent deploy (existing flow)
+# ---------------------------------------------------------------------------
+
+
+def _deploy_single_agent(
+    *,
+    api_url: str | None,
+    api_key: str | None,
+    no_browser: bool,
+    image: str,
+    tag: str,
+    namespace: str,
+    project: str,
+    app_id: str | None,
+    port: int,
+    trigger: str | None,
+) -> None:
+    """Build and deploy a single agent (the original deploy flow)."""
     appid_name = app_id or f"{project}-agent"
     total_steps = 6 if trigger else 5
 
-    try:
-        # Step 1: Authenticate
-        console.step(1, total_steps, "Authenticating...")
+    # Step 1: Authenticate
+    with console.spinner(1, total_steps, "Authenticating..."):
         auth = DeviceCodeAuth(
             api_url=api_url, api_key_flag=api_key, no_browser=no_browser
         )
         auth_ctx = auth.authenticate()
-        console.success("Authenticated")
+    console.success("Authenticated")
 
-        # Step 2: Fetch Catalyst connection details
-        console.step(2, total_steps, "Fetching Catalyst connection details...")
+    # Step 2: Fetch Catalyst connection details
+    with console.spinner(2, total_steps, "Fetching Catalyst connection details..."):
         client = CatalystClient(auth_ctx)
         conn = _get_connection_details(client, project, appid_name)
-        console.success(f"AppID '{appid_name}' ready")
+    console.success(f"AppID '{appid_name}' ready")
 
-        # Step 3: Build Docker image
-        console.step(3, total_steps, f"Building Docker image {image}:{tag}...")
+    # Step 3: Build Docker image
+    with console.spinner(3, total_steps, f"Building Docker image {image}:{tag}..."):
         full_tag = build_image(image, tag)
-        console.success(f"Image built: {full_tag}")
+    console.success(f"Image built: {full_tag}")
 
-        # Step 4: Load into kind
-        console.step(4, total_steps, "Loading image into kind cluster...")
+    # Step 4: Load into kind
+    with console.spinner(4, total_steps, "Loading image into kind cluster..."):
         load_into_kind(full_tag, DEFAULT_KIND_CLUSTER)
-        console.success("Image loaded into kind")
+    console.success("Image loaded into kind")
 
-        # Step 5: Apply Kubernetes manifest
-        console.step(5, total_steps, "Deploying to Kubernetes...")
-        if kube_context:
-            run("kubectl", "config", "use-context", kube_context)
-
+    # Step 5: Apply Kubernetes manifest
+    with console.spinner(5, total_steps, "Deploying to Kubernetes..."):
         manifest = DEPLOYMENT_TEMPLATE.format(
             name=image,
             namespace=namespace,
@@ -137,35 +271,387 @@ def deploy(
             api_token=conn["api_token"],
             http_endpoint=conn["http_endpoint"],
             grpc_endpoint=conn["grpc_endpoint"],
+            otel_env_block="",
         )
         apply_stdin(manifest, namespace=namespace)
-        console.success("Agent deployed")
+    console.success("Agent deployed")
 
-        # Step 6 (optional): Trigger the agent
-        if trigger:
-            console.step(6, total_steps, "Triggering agent...")
+    # Step 6 (optional): Trigger the agent
+    if trigger:
+        with console.spinner(6, total_steps, "Triggering agent..."):
             result = _trigger_agent(image, namespace, trigger, container_port=port)
-            console.success("Agent triggered")
-            console.info(f"Instance ID: {result.get('instance_id', 'N/A')}")
+        console.success("Agent triggered")
+        console.info(f"Instance ID: {result.get('instance_id', 'N/A')}")
 
-        summary_lines = [
-            f"Image: {full_tag}",
-            f"Namespace: {namespace}",
-            f"Deployment: {image}",
-            f"AppID: {appid_name}",
-        ]
-        if trigger:
-            summary_lines.append("")
-            summary_lines.append(f'Prompt: "{trigger}"')
+    summary_lines = [
+        f"Image: {full_tag}",
+        f"Namespace: {namespace}",
+        f"Deployment: {image}",
+        f"AppID: {appid_name}",
+    ]
+    if trigger:
+        summary_lines.append("")
+        summary_lines.append(f'Prompt: "{trigger}"')
 
-        console.print_summary("Deployment Complete", summary_lines)
+    console.print_summary("Deployment Complete", summary_lines)
 
-    except CommandError as exc:
-        console.error(str(exc))
-        raise SystemExit(1) from exc
-    except Exception as exc:
-        console.error(f"Deployment failed: {exc}")
-        raise SystemExit(1) from exc
+
+# ---------------------------------------------------------------------------
+# Orchestrator deploy
+# ---------------------------------------------------------------------------
+
+
+def _generate_compose_yaml(
+    agents: tuple[OrchestratorAgent, ...], base_dir: str = "."
+) -> str:
+    """Generate a docker-compose.yaml (build-only, no runtime config)."""
+    lines = ["services:"]
+    for agent in agents:
+        lines.extend(
+            [
+                f"  {agent.app_id}:",
+                f"    build: {base_dir}/{agent.directory}",
+                f"    image: {agent.app_id}:latest",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _deploy_orchestrator(
+    *,
+    api_url: str | None,
+    api_key: str | None,
+    no_browser: bool,
+    tag: str,
+    namespace: str,
+    project: str,
+) -> None:
+    """Build and deploy all orchestrator agents."""
+    total_steps = 7
+    agents = ORCHESTRATOR_AGENTS
+
+    # Step 1: Authenticate
+    with console.spinner(1, total_steps, "Authenticating..."):
+        auth = DeviceCodeAuth(
+            api_url=api_url, api_key_flag=api_key, no_browser=no_browser
+        )
+        auth_ctx = auth.authenticate()
+    console.success("Authenticated")
+
+    # Step 2: Fetch connection details for all agents
+    with console.spinner(2, total_steps, "Fetching Catalyst connection details..."):
+        client = CatalystClient(auth_ctx)
+        connections: dict[str, dict[str, str]] = {}
+        for agent in agents:
+            conn = _get_connection_details(client, project, agent.app_id)
+            connections[agent.app_id] = conn
+    console.success(f"Connection details fetched for {len(agents)} agents")
+
+    # Step 3: Build all images via docker compose
+    with console.spinner(3, total_steps, f"Building {len(agents)} Docker images..."):
+        compose_yaml = _generate_compose_yaml(agents)
+        compose_path = Path.cwd() / "docker-compose.yaml"
+        compose_existed = compose_path.exists()
+        compose_backup = None
+        if compose_existed:
+            compose_backup = compose_path.read_text()
+        compose_path.write_text(compose_yaml)
+        try:
+            run("docker", "compose", "build")
+        finally:
+            # Restore or remove the generated compose file
+            if compose_backup is not None:
+                compose_path.write_text(compose_backup)
+            elif not compose_existed:
+                compose_path.unlink(missing_ok=True)
+    console.success("All images built")
+
+    # Step 4: Load images into kind
+    with console.spinner(4, total_steps, "Loading images into kind cluster..."):
+        for agent in agents:
+            image_tag = f"{agent.app_id}:{tag}"
+            load_into_kind(image_tag, DEFAULT_KIND_CLUSTER)
+    console.success("All images loaded into kind")
+
+    # Step 5: Deploy K8s manifests
+    with console.spinner(5, total_steps, "Deploying to Kubernetes..."):
+        for agent in agents:
+            conn = connections[agent.app_id]
+            otel_block = _otel_env_block(agent.app_id, OTEL_COLLECTOR_ENDPOINT)
+            manifest = DEPLOYMENT_TEMPLATE.format(
+                name=agent.app_id,
+                namespace=namespace,
+                image=f"{agent.app_id}:{tag}",
+                port=agent.port,
+                app_id=conn["app_id"],
+                api_token=conn["api_token"],
+                http_endpoint=conn["http_endpoint"],
+                grpc_endpoint=conn["grpc_endpoint"],
+                otel_env_block=otel_block,
+            )
+            apply_stdin(manifest, namespace=namespace)
+    console.success(f"Deployed {len(agents)} agents")
+
+    # Step 6: Set up piko tunnel for remote traces
+    with console.spinner(6, total_steps, "Setting up OTEL trace tunnel..."):
+        piko_proc = _setup_piko_tunnel(client, project)
+    if piko_proc:
+        console.success("Piko tunnel running for remote trace collection")
+    else:
+        console.warning("Tunnel setup skipped — traces will only be collected locally")
+
+    # Step 7: Configure Dapr tracing on Catalyst
+    with console.spinner(7, total_steps, "Configuring Dapr tracing..."):
+        _configure_dapr_tracing(client, project)
+    console.success("Dapr tracing configured")
+
+    summary_lines = [
+        f"Project: {project}",
+        f"Namespace: {namespace}",
+        f"Agents deployed: {len(agents)}",
+        "",
+    ]
+    for agent in agents:
+        summary_lines.append(f"  - {agent.app_id} (port {agent.port})")
+    if piko_proc:
+        summary_lines.append("")
+        summary_lines.append("Piko tunnel: running (remote traces → local Grafana)")
+
+    console.print_summary("Orchestrator Deployment Complete", summary_lines)
+
+
+# ---------------------------------------------------------------------------
+# Piko tunnel for remote trace collection
+# ---------------------------------------------------------------------------
+
+
+def _setup_piko_tunnel(client: CatalystClient, project: str) -> subprocess.Popen | None:  # type: ignore[type-arg]
+    """Create an otel-collector AppID and start a piko tunnel.
+
+    Returns the piko subprocess, or None if tunnel setup fails.
+    """
+    otel_appid = "otel-collector"
+
+    # Ensure the otel-collector AppID exists
+    try:
+        create_appid(client, project, otel_appid)
+    except CatalystAPIError as exc:
+        if exc.status_code != 409:
+            console.warning(f"Could not create otel-collector AppID: {exc}")
+            return None
+
+    # Request tunnel credentials
+    try:
+        resp = client.post(
+            f"/projects/{project}/appids/{otel_appid}/tunnels",
+            json_data={"appTunnelProvider": "piko"},
+        )
+        tunnel_data = resp.json()
+    except (CatalystAPIError, Exception) as exc:
+        console.warning(f"Could not get tunnel credentials: {exc}")
+        return None
+
+    # Extract tunnel info
+    endpoint = tunnel_data.get("endpoint", "")
+    credentials = tunnel_data.get("credentials", {})
+    cert_bundle = tunnel_data.get("certBundle", {})
+    tunnel_id = credentials.get("id", "")
+    token = credentials.get("token", "")
+
+    if not endpoint or not tunnel_id or not token:
+        console.warning("Incomplete tunnel credentials — skipping tunnel")
+        return None
+
+    # Write mTLS cert files to temp dir
+    cert_dir = tempfile.mkdtemp(prefix="diagrid-piko-")
+    cert_path = _write_b64_file(cert_dir, "cert.pem", cert_bundle.get("cert", ""))
+    key_path = _write_b64_file(cert_dir, "key.pem", cert_bundle.get("key", ""))
+    ca_path = _write_b64_file(cert_dir, "ca.pem", cert_bundle.get("ca", ""))
+
+    # Build piko command
+    cmd = [
+        "piko",
+        "agent",
+        "listen",
+        "--endpoint",
+        endpoint,
+        "--token",
+        token,
+        "--endpoint-id",
+        tunnel_id,
+        "--upstream-addr",
+        f"localhost:{OTEL_COLLECTOR_NODEPORT_GRPC}",
+    ]
+    if cert_path and key_path and ca_path:
+        cmd.extend(
+            ["--tls-cert", cert_path, "--tls-key", key_path, "--tls-ca", ca_path]
+        )
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        console.warning("piko binary not found — skipping tunnel")
+        return None
+
+    # Register cleanup on exit
+    def _cleanup() -> None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        # Clean up temp cert files
+        shutil.rmtree(cert_dir, ignore_errors=True)
+
+    atexit.register(_cleanup)
+
+    # Start token refresh thread
+    _start_token_refresh(client, project, otel_appid, proc, cmd, cert_dir)
+
+    return proc
+
+
+def _write_b64_file(directory: str, filename: str, b64_data: str) -> str:
+    """Decode base64 data and write to a file. Returns the file path."""
+    if not b64_data:
+        return ""
+    path = os.path.join(directory, filename)
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(b64_data))
+    return path
+
+
+def _start_token_refresh(
+    client: CatalystClient,
+    project: str,
+    otel_appid: str,
+    proc: subprocess.Popen,  # type: ignore[type-arg]
+    cmd: list[str],
+    cert_dir: str,
+) -> None:
+    """Start a daemon thread that refreshes the tunnel token every 10 minutes."""
+
+    def _refresh_loop() -> None:
+        while True:
+            time.sleep(600)  # 10 minutes
+            if proc.poll() is not None:
+                return  # piko has exited
+
+            try:
+                resp = client.post(
+                    f"/projects/{project}/appids/{otel_appid}/tunnels",
+                    json_data={"appTunnelProvider": "piko"},
+                )
+                tunnel_data = resp.json()
+                new_token = tunnel_data.get("credentials", {}).get("token", "")
+                new_endpoint = tunnel_data.get("endpoint", "")
+                new_id = tunnel_data.get("credentials", {}).get("id", "")
+
+                if not new_token:
+                    continue
+
+                # Update cert files if provided
+                new_bundle = tunnel_data.get("certBundle", {})
+                if new_bundle.get("cert"):
+                    _write_b64_file(cert_dir, "cert.pem", new_bundle["cert"])
+                if new_bundle.get("key"):
+                    _write_b64_file(cert_dir, "key.pem", new_bundle["key"])
+                if new_bundle.get("ca"):
+                    _write_b64_file(cert_dir, "ca.pem", new_bundle["ca"])
+
+                # Rebuild command with new token
+                new_cmd = list(cmd)
+                for i, arg in enumerate(new_cmd):
+                    if arg == "--token" and i + 1 < len(new_cmd):
+                        new_cmd[i + 1] = new_token
+                    if arg == "--endpoint" and i + 1 < len(new_cmd) and new_endpoint:
+                        new_cmd[i + 1] = new_endpoint
+                    if arg == "--endpoint-id" and i + 1 < len(new_cmd) and new_id:
+                        new_cmd[i + 1] = new_id
+
+                # Restart piko with new credentials
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+                subprocess.Popen(
+                    new_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                # Swap reference (the atexit handler still holds the old ref,
+                # but that's acceptable — worst case double-terminate)
+                # Update the outer proc reference via nonlocal isn't possible
+                # in a clean way, so we just let atexit handle the old one.
+
+            except Exception:
+                # Refresh failed — keep the existing tunnel alive
+                pass
+
+    thread = threading.Thread(target=_refresh_loop, daemon=True)
+    thread.start()
+
+
+# ---------------------------------------------------------------------------
+# Dapr tracing configuration
+# ---------------------------------------------------------------------------
+
+
+def _configure_dapr_tracing(client: CatalystClient, project: str) -> None:
+    """Create a Dapr tracing Configuration on the Catalyst project."""
+    # Get the otel-collector AppID endpoint
+    try:
+        get_appid(client, project, "otel-collector")
+    except CatalystAPIError:
+        console.warning(
+            "Could not fetch otel-collector AppID — skipping tracing config"
+        )
+        return
+
+    # Build the OTEL tunnel endpoint from project endpoints
+    proj = get_project(client, project)
+    otel_endpoint = ""
+    if proj.status and proj.status.endpoints:
+        if proj.status.endpoints.grpc and proj.status.endpoints.grpc.url:
+            otel_endpoint = proj.status.endpoints.grpc.url
+
+    if not otel_endpoint:
+        console.warning("No gRPC endpoint available — skipping tracing config")
+        return
+
+    tracing_config = {
+        "apiVersion": "dapr.diagrid.io/v1beta1",
+        "kind": "Configuration",
+        "metadata": {"name": "tracing"},
+        "spec": {
+            "tracing": {
+                "samplingRate": "1",
+                "otel": {
+                    "endpointAddress": otel_endpoint,
+                    "protocol": "grpc",
+                    "isSecure": False,
+                },
+            }
+        },
+    }
+    try:
+        client.post(f"/projects/{project}/configurations", json_data=tracing_config)
+    except CatalystAPIError as exc:
+        if exc.status_code == 409:
+            console.info("Tracing configuration already exists")
+        else:
+            console.warning(f"Could not create tracing config: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 
 def _get_connection_details(
@@ -277,8 +763,6 @@ def _post_with_retry(
     startup_timeout: int = 60,
 ) -> dict:  # type: ignore[type-arg]
     """POST to the agent, retrying until the server is ready."""
-    from diagrid.cli.utils import console
-
     deadline = time.monotonic() + startup_timeout
     last_error: Exception | None = None
 
