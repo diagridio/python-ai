@@ -16,7 +16,12 @@ from pathlib import Path
 import click
 import httpx
 
-from diagrid.cli.infra.docker import build_image, load_into_kind
+from diagrid.cli.infra.docker import (
+    build_image,
+    load_into_kind,
+    push_to_registry,
+    push_to_registry_parallel,
+)
 from diagrid.cli.infra.kubectl import apply_stdin
 from diagrid.cli.utils import console
 from diagrid.cli.utils.deps import preflight_check
@@ -26,7 +31,6 @@ from diagrid.core.catalyst.appids import create_appid, get_appid
 from diagrid.core.catalyst.client import CatalystAPIError, CatalystClient
 from diagrid.core.catalyst.projects import get_project
 from diagrid.core.config.constants import (
-    DEFAULT_KIND_CLUSTER,
     DEFAULT_NAMESPACE,
     OTEL_COLLECTOR_ENDPOINT,
     OTEL_COLLECTOR_NODEPORT_GRPC,
@@ -160,6 +164,7 @@ def deploy(
                 tag=tag,
                 namespace=namespace,
                 project=project,
+                trigger=trigger,
             )
         else:
             _deploy_single_agent(
@@ -255,17 +260,17 @@ def _deploy_single_agent(
         full_tag = build_image(image, tag)
     console.success(f"Image built: {full_tag}")
 
-    # Step 4: Load into kind
-    with console.spinner(4, total_steps, "Loading image into kind cluster..."):
-        load_into_kind(full_tag, DEFAULT_KIND_CLUSTER)
-    console.success("Image loaded into kind")
+    # Step 4: Push to local registry
+    with console.spinner(4, total_steps, "Pushing image to local registry..."):
+        registry_tag = push_to_registry(full_tag)
+    console.success("Image pushed to local registry")
 
     # Step 5: Apply Kubernetes manifest
     with console.spinner(5, total_steps, "Deploying to Kubernetes..."):
         manifest = DEPLOYMENT_TEMPLATE.format(
             name=image,
             namespace=namespace,
-            image=full_tag,
+            image=registry_tag,
             port=port,
             app_id=conn["app_id"],
             api_token=conn["api_token"],
@@ -302,18 +307,37 @@ def _deploy_single_agent(
 
 
 def _generate_compose_yaml(
-    agents: tuple[OrchestratorAgent, ...], base_dir: str = "."
+    agents: tuple[OrchestratorAgent, ...],
+    base_dir: str = ".",
+    base_image: str | None = None,
 ) -> str:
-    """Generate a docker-compose.yaml (build-only, no runtime config)."""
+    """Generate a docker-compose.yaml (build-only, no runtime config).
+
+    When *base_image* is set, framework agents (non-dapr-agents) get the
+    ``BASE_IMAGE`` build arg so they reuse the pre-built base layer.
+    """
     lines = ["services:"]
     for agent in agents:
-        lines.extend(
-            [
-                f"  {agent.app_id}:",
-                f"    build: {base_dir}/{agent.directory}",
-                f"    image: {agent.app_id}:latest",
-            ]
-        )
+        is_framework = not agent.directory.startswith("dapr-agents")
+        if base_image and is_framework:
+            lines.extend(
+                [
+                    f"  {agent.app_id}:",
+                    "    build:",
+                    f"      context: {base_dir}/{agent.directory}",
+                    "      args:",
+                    f"        BASE_IMAGE: {base_image}",
+                    f"    image: {agent.app_id}:latest",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f"  {agent.app_id}:",
+                    f"    build: {base_dir}/{agent.directory}",
+                    f"    image: {agent.app_id}:latest",
+                ]
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -325,10 +349,12 @@ def _deploy_orchestrator(
     tag: str,
     namespace: str,
     project: str,
+    trigger: str | None = None,
 ) -> None:
     """Build and deploy all orchestrator agents."""
-    total_steps = 7
+    total_steps = 7 if trigger else 6
     agents = ORCHESTRATOR_AGENTS
+    base_image_name = "diagrid-agent-base:latest"
 
     # Step 1: Authenticate
     with console.spinner(1, total_steps, "Authenticating..."):
@@ -347,9 +373,14 @@ def _deploy_orchestrator(
             connections[agent.app_id] = conn
     console.success(f"Connection details fetched for {len(agents)} agents")
 
-    # Step 3: Build all images via docker compose
-    with console.spinner(3, total_steps, f"Building {len(agents)} Docker images..."):
-        compose_yaml = _generate_compose_yaml(agents)
+    # Step 3: Build shared base image
+    with console.spinner(3, total_steps, "Building shared base image..."):
+        run("docker", "build", "-t", base_image_name, "base")
+    console.success("Shared base image built")
+
+    # Step 4: Build all agent images via docker compose
+    with console.spinner(4, total_steps, f"Building {len(agents)} Docker images..."):
+        compose_yaml = _generate_compose_yaml(agents, base_image=base_image_name)
         compose_path = Path.cwd() / "docker-compose.yaml"
         compose_existed = compose_path.exists()
         compose_backup = None
@@ -366,22 +397,24 @@ def _deploy_orchestrator(
                 compose_path.unlink(missing_ok=True)
     console.success("All images built")
 
-    # Step 4: Load images into kind
-    with console.spinner(4, total_steps, "Loading images into kind cluster..."):
-        for agent in agents:
-            image_tag = f"{agent.app_id}:{tag}"
-            load_into_kind(image_tag, DEFAULT_KIND_CLUSTER)
-    console.success("All images loaded into kind")
+    # Step 5: Push images to local registry (parallel)
+    with console.spinner(5, total_steps, "Pushing images to local registry..."):
+        image_tags = [f"{agent.app_id}:{tag}" for agent in agents]
+        registry_tags = push_to_registry_parallel(image_tags)
+        # Build a map from original tag to registry tag
+        registry_map = dict(zip(image_tags, registry_tags))
+    console.success("All images pushed to local registry")
 
-    # Step 5: Deploy K8s manifests
-    with console.spinner(5, total_steps, "Deploying to Kubernetes..."):
+    # Step 6: Deploy K8s manifests
+    with console.spinner(6, total_steps, "Deploying to Kubernetes..."):
         for agent in agents:
             conn = connections[agent.app_id]
             otel_block = _otel_env_block(agent.app_id, OTEL_COLLECTOR_ENDPOINT)
+            agent_image = registry_map[f"{agent.app_id}:{tag}"]
             manifest = DEPLOYMENT_TEMPLATE.format(
                 name=agent.app_id,
                 namespace=namespace,
-                image=f"{agent.app_id}:{tag}",
+                image=agent_image,
                 port=agent.port,
                 app_id=conn["app_id"],
                 api_token=conn["api_token"],
@@ -392,18 +425,21 @@ def _deploy_orchestrator(
             apply_stdin(manifest, namespace=namespace)
     console.success(f"Deployed {len(agents)} agents")
 
-    # Step 6: Set up piko tunnel for remote traces
-    with console.spinner(6, total_steps, "Setting up OTEL trace tunnel..."):
-        piko_proc = _setup_piko_tunnel(client, project)
-    if piko_proc:
-        console.success("Piko tunnel running for remote trace collection")
-    else:
-        console.warning("Tunnel setup skipped — traces will only be collected locally")
+    # TODO: Re-enable once Catalyst cloud supports these endpoints.
+    # # Step N: Set up piko tunnel for remote traces
+    # piko_proc = _setup_piko_tunnel(client, project)
+    # # Step N+1: Configure Dapr tracing on Catalyst
+    # _configure_dapr_tracing(client, project)
+    piko_proc = None
 
-    # Step 7: Configure Dapr tracing on Catalyst
-    with console.spinner(7, total_steps, "Configuring Dapr tracing..."):
-        _configure_dapr_tracing(client, project)
-    console.success("Dapr tracing configured")
+    # Step 7 (optional): Trigger the orchestrator agent
+    if trigger:
+        with console.spinner(total_steps, total_steps, "Triggering agent..."):
+            result = _trigger_agent(
+                "event-orchestrator", namespace, trigger, container_port=8007
+            )
+        console.success("Agent triggered")
+        console.info(f"Instance ID: {result.get('instance_id', 'N/A')}")
 
     summary_lines = [
         f"Project: {project}",
@@ -416,6 +452,9 @@ def _deploy_orchestrator(
     if piko_proc:
         summary_lines.append("")
         summary_lines.append("Piko tunnel: running (remote traces → local Grafana)")
+    if trigger:
+        summary_lines.append("")
+        summary_lines.append(f'Prompt: "{trigger}"')
 
     console.print_summary("Orchestrator Deployment Complete", summary_lines)
 
@@ -440,11 +479,13 @@ def _setup_piko_tunnel(client: CatalystClient, project: str) -> subprocess.Popen
             console.warning(f"Could not create otel-collector AppID: {exc}")
             return None
 
-    # Request tunnel credentials
+    # Request tunnel credentials (body required — Go CLI sends {"appHealthCheck": null})
     try:
         resp = client.post(
-            f"/projects/{project}/appids/{otel_appid}/tunnels",
-            json_data={"appTunnelProvider": "piko"},
+            f"/projects/{project}/apptunnels/{otel_appid}/connect",
+            json_data={},
+            params={"appTunnelProvider": "piko"},
+            timeout=60.0,
         )
         tunnel_data = resp.json()
     except (CatalystAPIError, Exception) as exc:
@@ -543,8 +584,10 @@ def _start_token_refresh(
 
             try:
                 resp = client.post(
-                    f"/projects/{project}/appids/{otel_appid}/tunnels",
-                    json_data={"appTunnelProvider": "piko"},
+                    f"/projects/{project}/apptunnels/{otel_appid}/connect",
+                    json_data={},
+                    params={"appTunnelProvider": "piko"},
+                    timeout=60.0,
                 )
                 tunnel_data = resp.json()
                 new_token = tunnel_data.get("credentials", {}).get("token", "")
@@ -603,8 +646,11 @@ def _start_token_refresh(
 # ---------------------------------------------------------------------------
 
 
-def _configure_dapr_tracing(client: CatalystClient, project: str) -> None:
-    """Create a Dapr tracing Configuration on the Catalyst project."""
+def _configure_dapr_tracing(client: CatalystClient, project: str) -> bool:
+    """Create a Dapr tracing Configuration on the Catalyst project.
+
+    Returns ``True`` on success (or if already exists), ``False`` on failure.
+    """
     # Get the otel-collector AppID endpoint
     try:
         get_appid(client, project, "otel-collector")
@@ -612,7 +658,7 @@ def _configure_dapr_tracing(client: CatalystClient, project: str) -> None:
         console.warning(
             "Could not fetch otel-collector AppID — skipping tracing config"
         )
-        return
+        return False
 
     # Build the OTEL tunnel endpoint from project endpoints
     proj = get_project(client, project)
@@ -623,7 +669,7 @@ def _configure_dapr_tracing(client: CatalystClient, project: str) -> None:
 
     if not otel_endpoint:
         console.warning("No gRPC endpoint available — skipping tracing config")
-        return
+        return False
 
     tracing_config = {
         "apiVersion": "dapr.diagrid.io/v1beta1",
@@ -641,12 +687,18 @@ def _configure_dapr_tracing(client: CatalystClient, project: str) -> None:
         },
     }
     try:
-        client.post(f"/projects/{project}/configurations", json_data=tracing_config)
+        client.post(
+            f"/projects/{project}/configurations",
+            json_data=tracing_config,
+            api_group=CatalystClient.DAPR_API_GROUP,
+        )
     except CatalystAPIError as exc:
         if exc.status_code == 409:
             console.info("Tracing configuration already exists")
-        else:
-            console.warning(f"Could not create tracing config: {exc}")
+            return True
+        console.warning(f"Could not create tracing config: {exc}")
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -658,8 +710,25 @@ def _get_connection_details(
     client: CatalystClient, project_name: str, appid_name: str
 ) -> dict[str, str]:
     """Fetch the Dapr connection env vars from Catalyst."""
-    proj = get_project(client, project_name)
-    appid = get_appid(client, project_name, appid_name)
+    try:
+        proj = get_project(client, project_name)
+    except CatalystAPIError as exc:
+        if exc.status_code == 404:
+            raise click.ClickException(
+                f"Project '{project_name}' not found. Create it with: diagridpy init"
+            ) from exc
+        raise
+
+    try:
+        appid = get_appid(client, project_name, appid_name)
+    except CatalystAPIError as exc:
+        if exc.status_code == 404:
+            raise click.ClickException(
+                f"AppID '{appid_name}' not found in project '{project_name}'. "
+                f"Use --app-id to specify an existing AppID, "
+                f"or create it with: diagridpy init"
+            ) from exc
+        raise
 
     http_endpoint = ""
     grpc_endpoint = ""

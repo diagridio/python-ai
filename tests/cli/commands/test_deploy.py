@@ -22,11 +22,14 @@ _MOCK_CONN = {
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
 @patch("diagrid.cli.commands.deploy.build_image", return_value="agent:latest")
-@patch("diagrid.cli.commands.deploy.load_into_kind")
+@patch(
+    "diagrid.cli.commands.deploy.push_to_registry",
+    return_value="localhost:5001/agent:latest",
+)
 @patch("diagrid.cli.commands.deploy.apply_stdin")
 def test_deploy_full_flow(
     mock_apply: MagicMock,
-    mock_load: MagicMock,
+    mock_push: MagicMock,
     mock_build: MagicMock,
     mock_conn: MagicMock,
     mock_auth: MagicMock,
@@ -43,23 +46,28 @@ def test_deploy_full_flow(
 
     assert result.exit_code == 0, result.output
     mock_build.assert_called_once_with("my-agent", "v1")
-    mock_load.assert_called_once()
+    mock_push.assert_called_once()
     mock_apply.assert_called_once()
     # Verify the manifest contains Dapr env vars
     manifest = mock_apply.call_args[0][0]
     assert "DAPR_API_TOKEN" in manifest
     assert "DAPR_HTTP_ENDPOINT" in manifest
+    # Verify the manifest uses the registry-qualified image
+    assert "localhost:5001/agent:latest" in manifest
 
 
 @patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
 @patch("diagrid.cli.commands.deploy.build_image", return_value="agent:latest")
-@patch("diagrid.cli.commands.deploy.load_into_kind")
+@patch(
+    "diagrid.cli.commands.deploy.push_to_registry",
+    return_value="localhost:5001/agent:latest",
+)
 @patch("diagrid.cli.commands.deploy.apply_stdin")
 def test_deploy_default_options(
     mock_apply: MagicMock,
-    mock_load: MagicMock,
+    mock_push: MagicMock,
     mock_build: MagicMock,
     mock_conn: MagicMock,
     mock_auth: MagicMock,
@@ -79,11 +87,14 @@ def test_deploy_default_options(
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
 @patch("diagrid.cli.commands.deploy.build_image", return_value="agent:latest")
-@patch("diagrid.cli.commands.deploy.load_into_kind")
+@patch(
+    "diagrid.cli.commands.deploy.push_to_registry",
+    return_value="localhost:5001/agent:latest",
+)
 @patch("diagrid.cli.commands.deploy.apply_stdin")
 def test_deploy_passes_api_url_from_context(
     mock_apply: MagicMock,
-    mock_load: MagicMock,
+    mock_push: MagicMock,
     mock_build: MagicMock,
     mock_conn: MagicMock,
     mock_auth: MagicMock,

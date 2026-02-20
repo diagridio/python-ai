@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
+
+# Environment passed to subprocesses — strip macOS MallocStackLogging noise.
+_CLEAN_ENV = {k: v for k, v in os.environ.items() if k != "MallocStackLogging"}
 
 
 class CommandNotFoundError(Exception):
@@ -72,7 +76,7 @@ def run(
             f"'{args[0]}' not found. Please install it and try again."
         )
 
-    kwargs: dict = {"cwd": cwd}  # type: ignore[type-arg]
+    kwargs: dict = {"cwd": cwd, "env": _CLEAN_ENV}  # type: ignore[type-arg]
 
     if capture or not _verbose:
         # Capture output — either to return it or to suppress it.
