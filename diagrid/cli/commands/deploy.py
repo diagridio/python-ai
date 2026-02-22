@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import base64
+import json
 import os
 import shutil
 import socket
@@ -18,20 +19,26 @@ import httpx
 
 from diagrid.cli.infra.docker import (
     build_image,
-    load_into_kind,
     push_to_registry,
     push_to_registry_parallel,
+)
+from diagrid.cli.infra.kind import (
+    cluster_exists,
+    ensure_registry_config,
+    kind_available,
 )
 from diagrid.cli.infra.kubectl import apply_stdin
 from diagrid.cli.utils import console
 from diagrid.cli.utils.deps import preflight_check
-from diagrid.cli.utils.process import CommandError, run
+from diagrid.cli.utils.process import CommandError, run, run_capture
 from diagrid.core.auth.device_code import DeviceCodeAuth
 from diagrid.core.catalyst.appids import create_appid, get_appid
 from diagrid.core.catalyst.client import CatalystAPIError, CatalystClient
 from diagrid.core.catalyst.projects import get_project
 from diagrid.core.config.constants import (
+    DEFAULT_KIND_CLUSTER,
     DEFAULT_NAMESPACE,
+    KIND_REGISTRY_PORT,
     OTEL_COLLECTOR_ENDPOINT,
     OTEL_COLLECTOR_NODEPORT_GRPC,
     ORCHESTRATOR_AGENTS,
@@ -74,7 +81,7 @@ spec:
           value: "{http_endpoint}"
         - name: DAPR_GRPC_ENDPOINT
           value: "{grpc_endpoint}"
-{otel_env_block}\
+{otel_env_block}{secret_env_block}\
 """
 
 _OTEL_STANDARD_BLOCK = """\
@@ -109,6 +116,143 @@ def _otel_env_block(app_id: str, otel_endpoint: str) -> str:
     return _OTEL_STANDARD_BLOCK.format(otel_endpoint=otel_endpoint, app_id=app_id)
 
 
+_SECRET_ENV_ENTRY = """\
+        - name: {env_name}
+          valueFrom:
+            secretKeyRef:
+              name: llm-secret
+              key: {secret_key}
+              optional: true
+"""
+
+
+def _secret_env_block(agent: OrchestratorAgent) -> str:
+    """Return secretKeyRef env entries for an agent's required LLM keys."""
+    if not agent.secret_env:
+        return ""
+    return "".join(
+        _SECRET_ENV_ENTRY.format(env_name=name, secret_key=key)
+        for name, key in agent.secret_env
+    )
+
+
+# ---------------------------------------------------------------------------
+# Registry health check
+# ---------------------------------------------------------------------------
+
+
+def _ensure_registry_healthy() -> None:
+    """Ensure the local registry is reachable; auto-repair Kind node config."""
+    if kind_available() and cluster_exists(DEFAULT_KIND_CLUSTER):
+        console.info("Ensuring registry config on Kind nodes...")
+        ensure_registry_config(DEFAULT_KIND_CLUSTER)
+
+    # Verify the registry is actually responding
+    url = f"http://localhost:{KIND_REGISTRY_PORT}/v2/"
+    try:
+        resp = httpx.get(url, timeout=5.0)
+        resp.raise_for_status()
+    except Exception:
+        raise click.ClickException(
+            f"Local registry not reachable at localhost:{KIND_REGISTRY_PORT}. "
+            "Ensure 'kind-registry' container is running:\n"
+            "  docker ps | grep kind-registry\n"
+            "Or re-run: diagridpy init"
+        )
+
+
+# ---------------------------------------------------------------------------
+# LLM key resolution
+# ---------------------------------------------------------------------------
+
+
+def _read_secret_key(namespace: str, secret_name: str, key: str) -> str:
+    """Read a single key from a Kubernetes secret. Returns '' on failure."""
+    try:
+        raw = run_capture(
+            "kubectl",
+            "get",
+            "secret",
+            secret_name,
+            "-n",
+            namespace,
+            "-o",
+            f"jsonpath={{.data.{key}}}",
+        )
+        if raw.strip():
+            return base64.b64decode(raw.strip()).decode()
+    except (CommandError, Exception):
+        pass
+    return ""
+
+
+def _resolve_llm_keys(
+    openai_flag: str | None,
+    google_flag: str | None,
+    namespace: str,
+) -> dict[str, str]:
+    """Resolve LLM API keys. Priority: CLI flag -> env var -> K8s secret -> prompt."""
+    # OpenAI
+    openai_key = (
+        openai_flag
+        or os.environ.get("OPENAI_API_KEY")
+        or _read_secret_key(namespace, "llm-secret", "apiKey")
+    )
+    if not openai_key:
+        openai_key = click.prompt(
+            "Enter your OPENAI_API_KEY", hide_input=True, default=""
+        )
+
+    # Google
+    google_key = (
+        google_flag
+        or os.environ.get("GOOGLE_API_KEY")
+        or _read_secret_key(namespace, "llm-secret", "googleApiKey")
+    )
+    if not google_key:
+        google_key = click.prompt(
+            "Enter your GOOGLE_API_KEY (required for ADK agent)",
+            hide_input=True,
+            default="",
+        )
+
+    return {"OPENAI_API_KEY": openai_key, "GOOGLE_API_KEY": google_key}
+
+
+def _patch_llm_secret(namespace: str, resolved_keys: dict[str, str]) -> None:
+    """Patch llm-secret with resolved keys so they persist for future deploys."""
+    # Map of resolved key name -> secret data key
+    key_map = {
+        "OPENAI_API_KEY": "apiKey",
+        "GOOGLE_API_KEY": "googleApiKey",
+    }
+    patch_data: dict[str, str] = {}
+    for env_name, secret_key in key_map.items():
+        value = resolved_keys.get(env_name, "")
+        if value:
+            patch_data[secret_key] = base64.b64encode(value.encode()).decode()
+
+    if not patch_data:
+        return
+
+    patch_json = json.dumps({"data": patch_data})
+    try:
+        run(
+            "kubectl",
+            "patch",
+            "secret",
+            "llm-secret",
+            "-n",
+            namespace,
+            "--type",
+            "merge",
+            "-p",
+            patch_json,
+        )
+    except CommandError:
+        console.warning("Could not patch llm-secret — keys may not persist")
+
+
 # ---------------------------------------------------------------------------
 # CLI command
 # ---------------------------------------------------------------------------
@@ -133,6 +277,16 @@ def _otel_env_block(app_id: str, otel_endpoint: str) -> str:
     default=None,
     help='Trigger the agent with a prompt after deploy (e.g. --trigger "Plan a trip to Paris")',
 )
+@click.option(
+    "--openai-api-key",
+    default=None,
+    help="OpenAI API key (or set OPENAI_API_KEY env)",
+)
+@click.option(
+    "--google-api-key",
+    default=None,
+    help="Google API key for ADK (or set GOOGLE_API_KEY env)",
+)
 @click.pass_context
 def deploy(
     ctx: click.Context,
@@ -146,6 +300,8 @@ def deploy(
     app_id: str | None,
     port: int,
     trigger: str | None,
+    openai_api_key: str | None,
+    google_api_key: str | None,
 ) -> None:
     """Build and deploy an agent to the kind cluster."""
     preflight_check()
@@ -156,7 +312,14 @@ def deploy(
         run("kubectl", "config", "use-context", kube_context)
 
     try:
+        # Ensure local registry is healthy before building images
+        _ensure_registry_healthy()
+
         if _is_orchestrator_project():
+            # Resolve LLM keys for orchestrator deploys
+            resolved_keys = _resolve_llm_keys(openai_api_key, google_api_key, namespace)
+            _patch_llm_secret(namespace, resolved_keys)
+
             _deploy_orchestrator(
                 api_url=api_url,
                 api_key=api_key,
@@ -277,6 +440,7 @@ def _deploy_single_agent(
             http_endpoint=conn["http_endpoint"],
             grpc_endpoint=conn["grpc_endpoint"],
             otel_env_block="",
+            secret_env_block="",
         )
         apply_stdin(manifest, namespace=namespace)
     console.success("Agent deployed")
@@ -384,14 +548,15 @@ def _deploy_orchestrator(
         if compose_path.exists():
             # Use existing compose file, pass BASE_IMAGE as build arg
             run(
-                "docker", "compose", "build",
-                "--build-arg", f"BASE_IMAGE={base_image_name}",
+                "docker",
+                "compose",
+                "build",
+                "--build-arg",
+                f"BASE_IMAGE={base_image_name}",
             )
         else:
             # Generate a temporary compose file
-            compose_yaml = _generate_compose_yaml(
-                agents, base_image=base_image_name
-            )
+            compose_yaml = _generate_compose_yaml(agents, base_image=base_image_name)
             compose_path.write_text(compose_yaml)
             try:
                 run("docker", "compose", "build")
@@ -412,6 +577,7 @@ def _deploy_orchestrator(
         for agent in agents:
             conn = connections[agent.app_id]
             otel_block = _otel_env_block(agent.app_id, OTEL_COLLECTOR_ENDPOINT)
+            secret_block = _secret_env_block(agent)
             agent_image = registry_map[f"{agent.app_id}:{tag}"]
             manifest = DEPLOYMENT_TEMPLATE.format(
                 name=agent.app_id,
@@ -423,6 +589,7 @@ def _deploy_orchestrator(
                 http_endpoint=conn["http_endpoint"],
                 grpc_endpoint=conn["grpc_endpoint"],
                 otel_env_block=otel_block,
+                secret_env_block=secret_block,
             )
             apply_stdin(manifest, namespace=namespace)
     console.success(f"Deployed {len(agents)} agents")

@@ -45,7 +45,8 @@ helm install catalyst-agents \
   oci://ghcr.io/diagridio/charts/catalyst-agents \
   --version <VERSION> \
   --namespace catalyst-agents --create-namespace \
-  --set llm.apiKey=<YOUR_KEY>
+  --set llm.apiKey=<YOUR_KEY> \
+  --set llm.googleApiKey=<YOUR_GOOGLE_KEY>
 ```
 
 ### Full install with overrides
@@ -59,6 +60,7 @@ helm install catalyst-agents \
   --set llm.provider=openAI \
   --set llm.openAI.model=gpt-4o \
   --set llm.apiKey=<YOUR_OPENAI_KEY> \
+  --set llm.googleApiKey=<YOUR_GOOGLE_KEY> \
   --set monitoring.enabled=true \
   --set redisInsight.enabled=true \
   --set diagridDashboard.enabled=true \
@@ -99,6 +101,7 @@ helm uninstall catalyst-agents --namespace catalyst-agents
 | `llm.ollama.endpoint` | `http://host.docker.internal:11434/v1` | Ollama API endpoint |
 | `llm.openAI.model` | `gpt-4o-mini` | OpenAI model to use when `llm.provider=openAI` |
 | `llm.apiKey` | `dummy-key` | API key passed to the LLM provider |
+| `llm.googleApiKey` | `""` | Google API key for ADK agent |
 | `opentelemetry.enabled` | `true` | Enable OpenTelemetry export from agents |
 | `opentelemetry.endpoint` | `…opentelemetry-collector…:4317` | OTLP gRPC collector endpoint |
 | `opentelemetry.protocol` | `grpc` | OTLP transport protocol (`grpc` or `http`) |

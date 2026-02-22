@@ -11,7 +11,12 @@ import click
 
 from diagrid.cli.infra.helm import install_dapr_agents
 from diagrid.cli.utils.deps import preflight_check
-from diagrid.cli.infra.kind import cluster_exists, create_cluster, kind_available
+from diagrid.cli.infra.kind import (
+    cluster_exists,
+    create_cluster,
+    ensure_registry_config,
+    kind_available,
+)
 from diagrid.cli.utils import console
 from diagrid.cli.utils.process import CommandError, run, run_capture
 from diagrid.core.auth.device_code import DeviceCodeAuth
@@ -96,12 +101,13 @@ def init(
 
         # Step 2: Get LLM API key
         console.step(2, total_steps, "Checking LLM API key...")
+        google_key = ""
         if framework == "orchestrator":
             # Orchestrator runs all frameworks; OpenAI key is required, Google is optional
             llm_key = openai_api_key or os.environ.get(ENV_OPENAI_API_KEY)
             if not llm_key:
                 llm_key = click.prompt("Enter your OPENAI_API_KEY", hide_input=True)
-            google_key = google_api_key or os.environ.get("GOOGLE_API_KEY")
+            google_key = google_api_key or os.environ.get("GOOGLE_API_KEY") or ""
             if not google_key:
                 console.warning(
                     "GOOGLE_API_KEY not set — ADK agent will use OpenAI via Dapr conversation API"
@@ -111,11 +117,13 @@ def init(
             key_name = "GOOGLE_API_KEY"
             llm_key = google_api_key or os.environ.get("GOOGLE_API_KEY")
             if llm_key:
+                google_key = llm_key
                 console.success("LLM API key found")
             else:
                 llm_key = click.prompt(f"Enter your {key_name}", hide_input=True)
                 if not llm_key:
                     raise click.ClickException(f"{key_name} is required")
+                google_key = llm_key
                 console.success("LLM API key configured")
         else:
             key_name = "OPENAI_API_KEY"
@@ -176,7 +184,7 @@ def init(
 
         # Step 6: Deploy helm chart
         console.step(6, total_steps, "Installing catalyst-agents helm chart...")
-        install_dapr_agents(llm_key)
+        install_dapr_agents(llm_key, google_api_key=google_key)
         console.success("Helm chart installed")
 
         # Step 7: Create AppID(s)
@@ -307,6 +315,7 @@ def _provision_cluster() -> None:
             create_cluster(DEFAULT_KIND_CLUSTER)
         else:
             console.info(f"Kind cluster '{DEFAULT_KIND_CLUSTER}' already exists")
+            ensure_registry_config(DEFAULT_KIND_CLUSTER)
         run(
             "kubectl",
             "config",

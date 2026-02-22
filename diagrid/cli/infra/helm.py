@@ -13,13 +13,14 @@ from diagrid.core.config.constants import (
 def install_dapr_agents(
     llm_api_key: str,
     *,
+    google_api_key: str = "",
     chart: str = DEFAULT_HELM_OCI_CHART,
     version: str = DEFAULT_HELM_CHART_VERSION,
     namespace: str = DEFAULT_NAMESPACE,
     release_name: str = "catalyst-agents",
 ) -> None:
     """Install the catalyst-agents Helm chart from OCI registry."""
-    run(
+    args = [
         "helm",
         "upgrade",
         "--install",
@@ -32,4 +33,7 @@ def install_dapr_agents(
         "--create-namespace",
         "--set",
         f"llm.apiKey={llm_api_key}",
-    )
+    ]
+    if google_api_key:
+        args.extend(["--set", f"llm.googleApiKey={google_api_key}"])
+    run(*args)

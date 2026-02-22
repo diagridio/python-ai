@@ -38,14 +38,17 @@ def push_to_registry(image_tag: str) -> str:
 def push_to_registry_parallel(image_tags: list[str]) -> list[str]:
     """Push multiple images to the local kind registry in parallel.
 
-    Returns the registry-qualified image references.
+    Returns the registry-qualified image references in the same order
+    as the input *image_tags*.
     """
     with ThreadPoolExecutor() as executor:
         futures = {executor.submit(push_to_registry, tag): tag for tag in image_tags}
-        results = []
+        # Collect results keyed by original tag so order is preserved.
+        tag_to_result: dict[str, str] = {}
         for future in as_completed(futures):
-            results.append(future.result())
-        return results
+            original_tag = futures[future]
+            tag_to_result[original_tag] = future.result()
+        return [tag_to_result[tag] for tag in image_tags]
 
 
 def load_into_kind(

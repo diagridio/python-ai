@@ -103,14 +103,28 @@ class OrchestratorAgent:
     app_id: str
     directory: str
     port: int
+    secret_env: tuple[tuple[str, str], ...] = ()  # (env_var_name, secret_key)
 
 
 ORCHESTRATOR_AGENTS: tuple[OrchestratorAgent, ...] = (
-    OrchestratorAgent("crewai-agent", "crewai", 8001),
-    OrchestratorAgent("openai-agent", "openai-agents", 8002),
-    OrchestratorAgent("adk-agent", "adk", 8003),
-    OrchestratorAgent("strands-agent", "strands", 8004),
-    OrchestratorAgent("langgraph-agent", "langgraph", 8005),
+    OrchestratorAgent(
+        "crewai-agent", "crewai", 8001, secret_env=(("OPENAI_API_KEY", "apiKey"),)
+    ),
+    OrchestratorAgent(
+        "openai-agent",
+        "openai-agents",
+        8002,
+        secret_env=(("OPENAI_API_KEY", "apiKey"),),
+    ),
+    OrchestratorAgent(
+        "adk-agent", "adk", 8003, secret_env=(("GOOGLE_API_KEY", "googleApiKey"),)
+    ),
+    OrchestratorAgent(
+        "strands-agent", "strands", 8004, secret_env=(("OPENAI_API_KEY", "apiKey"),)
+    ),
+    OrchestratorAgent(
+        "langgraph-agent", "langgraph", 8005, secret_env=(("OPENAI_API_KEY", "apiKey"),)
+    ),
     OrchestratorAgent("dapr-agent", "dapr-agents/durable-agent", 8006),
     OrchestratorAgent("event-orchestrator", "dapr-agents/orchestrator", 8007),
 )

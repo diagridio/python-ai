@@ -170,6 +170,18 @@ def _apply_registry_configmap() -> None:
     apply_stdin(configmap)
 
 
+def ensure_registry_config(name: str = DEFAULT_KIND_CLUSTER) -> None:
+    """Ensure local registry is running, connected, and configured on all nodes.
+
+    Idempotent — safe to call on existing clusters.
+    """
+    _ensure_registry()
+    _ensure_mirrors()
+    _configure_registry_on_nodes(name)
+    _connect_registries_to_network(name)
+    _apply_registry_configmap()
+
+
 def create_cluster(name: str = DEFAULT_KIND_CLUSTER) -> None:
     """Create a kind cluster with port mappings, local registry, and mirrors."""
     if cluster_exists(name):

@@ -161,6 +161,7 @@ llm:
   openAI:
     model: gpt-4o-mini
   apiKey: "dummy-key"
+  googleApiKey: ""
 
 externalWebhook: { url: "http://localhost:8000" }
 
