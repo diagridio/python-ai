@@ -380,20 +380,22 @@ def _deploy_orchestrator(
 
     # Step 4: Build all agent images via docker compose
     with console.spinner(4, total_steps, f"Building {len(agents)} Docker images..."):
-        compose_yaml = _generate_compose_yaml(agents, base_image=base_image_name)
         compose_path = Path.cwd() / "docker-compose.yaml"
-        compose_existed = compose_path.exists()
-        compose_backup = None
-        if compose_existed:
-            compose_backup = compose_path.read_text()
-        compose_path.write_text(compose_yaml)
-        try:
-            run("docker", "compose", "build")
-        finally:
-            # Restore or remove the generated compose file
-            if compose_backup is not None:
-                compose_path.write_text(compose_backup)
-            elif not compose_existed:
+        if compose_path.exists():
+            # Use existing compose file, pass BASE_IMAGE as build arg
+            run(
+                "docker", "compose", "build",
+                "--build-arg", f"BASE_IMAGE={base_image_name}",
+            )
+        else:
+            # Generate a temporary compose file
+            compose_yaml = _generate_compose_yaml(
+                agents, base_image=base_image_name
+            )
+            compose_path.write_text(compose_yaml)
+            try:
+                run("docker", "compose", "build")
+            finally:
                 compose_path.unlink(missing_ok=True)
     console.success("All images built")
 
