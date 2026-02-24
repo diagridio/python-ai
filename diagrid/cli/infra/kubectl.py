@@ -21,6 +21,14 @@ def apply_manifest(path: str, *, namespace: str | None = None) -> None:
     run(*args)
 
 
+def rollout_restart(name: str, *, namespace: str | None = None) -> None:
+    """Restart a deployment to force pulling updated images."""
+    args = ["kubectl", "rollout", "restart", f"deployment/{name}"]
+    if namespace:
+        args.extend(["-n", namespace])
+    run(*args)
+
+
 def apply_stdin(manifest: str, *, namespace: str | None = None) -> None:
     """Apply a Kubernetes manifest from a string via stdin."""
     args = ["kubectl", "apply", "-f", "-"]
