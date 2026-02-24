@@ -1,0 +1,217 @@
+name: Claude PR Review
+
+on:
+  workflow_run:
+    workflows: ["Lint and Build"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: claude-pr-review-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.pull_requests[0] != null &&
+      github.event.workflow_run.actor.login != 'claude[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR info and check conditions
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.workflow_run.pull_requests[0].number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            // Skip draft PRs
+            if (pr.draft) {
+              core.setOutput('skip', 'true');
+              core.info('Skipping draft PR');
+              return;
+            }
+
+            // Check if latest commit is from claude[bot] implementing suggestions
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            const latestCommit = commits[commits.length - 1];
+            const commitAuthor = latestCommit.author?.login || latestCommit.commit.author?.name || '';
+            if (commitAuthor === 'claude[bot]') {
+              core.setOutput('skip', 'true');
+              core.info('Skipping review — latest commit is from Claude (implementation cycle)');
+              return;
+            }
+
+            core.setOutput('skip', 'false');
+            core.setOutput('number', prNumber);
+            core.setOutput('ref', pr.head.ref);
+
+      - name: Clean up fix attempt labels
+        if: steps.pr.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.pr.outputs.number }};
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            for (const label of labels) {
+              if (label.name.startsWith('claude-fix-attempt-')) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name: label.name,
+                });
+              }
+            }
+
+      - name: Checkout PR branch
+        if: steps.pr.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Run Claude PR Review
+        if: steps.pr.outputs.skip != 'true'
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          max_turns: 8
+          use_sticky_comment: true
+          pr_number: ${{ steps.pr.outputs.number }}
+          prompt: |
+            You are the Review Agent. Review the PR changes and provide structured feedback.
+
+            ## Instructions
+            1. Run `git diff origin/main...HEAD` to see all changes in this PR.
+            2. Run `git log origin/main...HEAD --oneline` to see the commit history.
+            3. Analyze the changes for: correctness, type safety, test coverage, security, and consistency with existing patterns.
+            4. Categorize each suggestion as either **architectural** or **non_architectural**.
+
+            ### Architectural suggestions (require human decision):
+            - New design patterns or abstractions
+            - Changes to public APIs in diagrid/core/
+            - New dependencies or significant restructuring
+            - Changes that affect multiple packages
+
+            ### Non-architectural suggestions (can be auto-implemented):
+            - Missing type annotations on new/changed functions
+            - Inconsistent naming (not matching existing conventions)
+            - Missing error handling on external calls
+            - Test coverage gaps for new code paths
+            - Minor code quality issues (unused variables, redundant logic)
+
+            ## Output Format
+            Structure your review comment as follows:
+
+            ### 🏗️ Architectural (Human Decision Needed)
+            List architectural suggestions here, or "None" if there are no architectural concerns.
+
+            ### 🔧 Non-Architectural (Auto-Implementable)
+            List non-architectural suggestions here as a numbered list. Be specific about file paths and what to change. Or "None" if the code looks good.
+
+            ### ✅ Summary
+            Brief overall assessment of the PR quality.
+
+            ## Rules
+            - Be constructive and specific. Reference file paths and line numbers.
+            - Do NOT suggest changes to: pyproject.toml, uv.lock, mypy.ini, charts/, .github/workflows/
+            - Do NOT suggest adding new dependencies.
+            - Focus on the diff — don't review unchanged code.
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Bash(git diff*)",
+                  "Bash(git log*)",
+                  "Bash(git show*)",
+                  "Bash(git status*)",
+                  "Read",
+                  "Glob",
+                  "Grep"
+                ],
+                "deny": [
+                  "Edit",
+                  "Write",
+                  "Bash(git add*)",
+                  "Bash(git commit*)",
+                  "Bash(git push*)"
+                ]
+              }
+            }
+
+      - name: Dispatch implementation if needed
+        if: steps.pr.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Read the review comment to check for non-architectural suggestions
+            const prNumber = ${{ steps.pr.outputs.number }};
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            // Find the latest Claude review comment
+            const claudeComments = comments.filter(c =>
+              c.user?.login === 'github-actions[bot]' &&
+              c.body?.includes('Non-Architectural')
+            );
+
+            if (claudeComments.length === 0) {
+              core.info('No review comment found, skipping dispatch');
+              return;
+            }
+
+            const latestReview = claudeComments[claudeComments.length - 1];
+            const body = latestReview.body;
+
+            // Extract the non-architectural section
+            const nonArchMatch = body.match(/### 🔧 Non-Architectural.*?\n([\s\S]*?)(?=### ✅|$)/);
+            if (!nonArchMatch) {
+              core.info('Could not parse non-architectural section');
+              return;
+            }
+
+            const nonArchSection = nonArchMatch[1].trim();
+
+            // Skip if "None" or empty
+            if (nonArchSection.toLowerCase() === 'none' || nonArchSection.length === 0) {
+              core.info('No non-architectural suggestions to implement');
+              return;
+            }
+
+            // Dispatch implementation event
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event_type: 'claude-implement',
+              client_payload: {
+                pr_number: prNumber,
+                suggestions: nonArchSection,
+              },
+            });
+
+            core.info(`Dispatched claude-implement for PR #${prNumber}`);
