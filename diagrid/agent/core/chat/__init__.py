@@ -11,7 +11,7 @@
 
 """Dapr Conversation API chat client and types."""
 
-from .client import DaprChatClient
+from .client import DaprChatClient, close_chat_clients, get_chat_client
 from .types import (
     ChatMessage,
     ChatResponse,
@@ -22,6 +22,8 @@ from .types import (
 
 __all__ = [
     "DaprChatClient",
+    "close_chat_clients",
+    "get_chat_client",
     "ChatMessage",
     "ChatResponse",
     "ChatRole",

@@ -25,10 +25,14 @@ from diagrid.agent.openai_agents.models import (
     ToolDefinition,
 )
 from diagrid.agent.openai_agents.workflow import _call_llm_via_dapr
+from diagrid.agent.core.chat.client import _chat_client_cache
 
 
 class TestOpenAICallLlmViaDapr(unittest.TestCase):
     """Test _call_llm_via_dapr for OpenAI Agents framework."""
+
+    def setUp(self):
+        _chat_client_cache.clear()
 
     @mock.patch("diagrid.agent.core.chat.client.DaprClient")
     def test_basic_chat(self, mock_dapr_cls):

@@ -25,11 +25,11 @@ from dapr.ext.workflow import (
 )
 
 from diagrid.agent.core.chat import (
-    DaprChatClient,
     ChatMessage,
     ChatRole,
     ChatToolCall,
     ChatToolDefinition,
+    get_chat_client,
 )
 
 from .models import (
@@ -261,11 +261,8 @@ def _call_llm_via_dapr(llm_input: CallLlmInput) -> dict[str, Any]:
         for td in llm_input.agent_config.tool_definitions
     ] or None
 
-    client = DaprChatClient(component_name=llm_input.agent_config.component_name)
-    try:
-        response = client.chat(messages=chat_messages, tools=tools)
-    finally:
-        client.close()
+    client = get_chat_client(llm_input.agent_config.component_name)
+    response = client.chat(messages=chat_messages, tools=tools)
 
     # Convert back to ADK format (MODEL role)
     tool_calls_out = []
@@ -495,7 +492,6 @@ def execute_tool_activity(
         from google.adk.tools.tool_context import ToolContext
         from google.adk.agents.invocation_context import InvocationContext
         from google.adk.sessions.in_memory_session_service import InMemorySessionService
-        from google.adk.sessions.session import Session
         from google.adk.events.event_actions import EventActions
         from google.adk.agents.llm_agent import LlmAgent
 

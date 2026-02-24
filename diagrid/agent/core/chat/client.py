@@ -11,7 +11,6 @@
 
 """DaprChatClient - Routes LLM calls through the Dapr Conversation API."""
 
-import json
 import logging
 from typing import Any, Optional
 
@@ -259,3 +258,25 @@ class DaprChatClient:
             finish_reason=choice.finish_reason or "stop",
             context_id=context_id,
         )
+
+
+_chat_client_cache: dict[str, DaprChatClient] = {}
+
+
+def get_chat_client(component_name: str | None = None) -> DaprChatClient:
+    """Get or create a persistent DaprChatClient for the given component.
+
+    Reuses existing clients to avoid gRPC channel churn that conflicts
+    with OTEL instrumentation.
+    """
+    key = component_name or ""
+    if key not in _chat_client_cache:
+        _chat_client_cache[key] = DaprChatClient(component_name=component_name)
+    return _chat_client_cache[key]
+
+
+def close_chat_clients() -> None:
+    """Close all cached chat clients. Called during shutdown."""
+    for client in _chat_client_cache.values():
+        client.close()
+    _chat_client_cache.clear()

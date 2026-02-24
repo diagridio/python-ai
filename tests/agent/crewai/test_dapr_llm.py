@@ -27,10 +27,14 @@ from diagrid.agent.crewai.models import (
     ToolDefinition,
 )
 from diagrid.agent.crewai.workflow import _call_llm_via_dapr
+from diagrid.agent.core.chat.client import _chat_client_cache
 
 
 class TestCrewAICallLlmViaDapr(unittest.TestCase):
     """Test _call_llm_via_dapr for CrewAI framework."""
+
+    def setUp(self):
+        _chat_client_cache.clear()
 
     @mock.patch("diagrid.agent.core.chat.client.DaprClient")
     def test_basic_chat(self, mock_dapr_cls):

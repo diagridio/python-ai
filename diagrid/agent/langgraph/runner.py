@@ -13,12 +13,13 @@
 
 import json
 import logging
+import time
 import uuid
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, TYPE_CHECKING
 
-from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
+from dapr.ext.workflow import WorkflowStatus
 
-from diagrid.agent.core import AgentRegistryMixin
+from diagrid.agent.core.workflow import BaseWorkflowRunner
 from .models import (
     ChannelState,
     EdgeConfig,
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowGraphRunner(AgentRegistryMixin):
+class DaprWorkflowGraphRunner(BaseWorkflowRunner):
     """Runner that executes LangGraph graphs as Dapr Workflows.
 
     This runner wraps a compiled LangGraph and executes it using Dapr Workflows,
@@ -121,9 +122,13 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         """
         self._graph = graph
         self._max_steps = max_steps
-        self._host = host
-        self._port = port
         self._name = name or self._infer_graph_name()
+
+        super().__init__(
+            host=host,
+            port=port,
+            max_iterations=max_steps,
+        )
 
         # Attach metadata hints for the registry mapper
         if name:
@@ -138,10 +143,23 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             agent=self._graph, framework="langgraph", registry=registry_config
         )
 
-        # Create workflow runtime
-        self._workflow_runtime = WorkflowRuntime(host=host, port=port)
-
         # Register workflow and activities
+        self._register_workflow_components()
+
+        # Extract and register graph components
+        self._graph_config = self._extract_graph_config()
+        self._register_graph_components()
+
+    def _infer_graph_name(self) -> str:
+        """Infer a name for the graph."""
+        if hasattr(self._graph, "name") and self._graph.name:
+            return self._graph.name
+        if hasattr(self._graph, "builder") and hasattr(self._graph.builder, "name"):
+            return self._graph.builder.name or "langgraph"
+        return "langgraph"
+
+    def _register_workflow_components(self) -> None:
+        """Register workflow and activities on the workflow runtime."""
         self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
         self._workflow_runtime.register_activity(
             execute_node_activity, name="execute_node_activity"
@@ -150,23 +168,6 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             evaluate_condition_activity, name="evaluate_condition_activity"
         )
 
-        # Extract and register graph components
-        self._graph_config = self._extract_graph_config()
-        self._register_graph_components()
-
-        # Create workflow client (for starting/managing workflows)
-        self._workflow_client: Optional[DaprWorkflowClient] = None
-        self._started = False
-
-    def _infer_graph_name(self) -> str:
-        """Infer a name for the graph."""
-        # Try to get name from graph or builder
-        if hasattr(self._graph, "name") and self._graph.name:
-            return self._graph.name
-        if hasattr(self._graph, "builder") and hasattr(self._graph.builder, "name"):
-            return self._graph.builder.name or "langgraph"
-        return "langgraph"
-
     def _extract_graph_config(self) -> GraphConfig:
         """Extract configuration from the compiled graph."""
         nodes = []
@@ -174,13 +175,11 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         entry_point = None
         finish_points = []
 
-        # Get nodes from the compiled graph
         graph_nodes = getattr(self._graph, "nodes", {})
         for node_name, node_spec in graph_nodes.items():
             if node_name in (START, END, "__start__", "__end__"):
                 continue
 
-            # Extract node triggers and channels
             triggers = []
             channels_read = []
             channels_write: List[str] = []
@@ -203,12 +202,9 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
                 )
             )
 
-        # Get edges
-        # Try to access edges from builder or graph
         builder = getattr(self._graph, "builder", None)
 
         if builder:
-            # Get regular edges
             graph_edges: Any = getattr(builder, "edges", set())
             for source, target in graph_edges:
                 source_name = source if source != "__start__" else START
@@ -227,19 +223,15 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
                     )
                 )
 
-            # Get conditional edges (branches)
             branches = getattr(builder, "branches", {})
             for source, branch_dict in branches.items():
                 for branch_name, branch_spec in branch_dict.items():
-                    # Branch spec has the path function and path_map
                     path_func = getattr(branch_spec, "path", None)
 
                     if path_func:
-                        # Register the condition function
                         condition_name = f"{source}_{branch_name}_condition"
                         register_condition(condition_name, path_func)
 
-                        # Create edge for conditional routing
                         edges.append(
                             EdgeConfig(
                                 source=source if source != "__start__" else START,
@@ -248,11 +240,9 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
                             )
                         )
 
-        # If no entry point found, use first node
         if not entry_point and nodes:
             entry_point = nodes[0].name
 
-        # Get input/output channels
         input_channels = []
         output_channels = []
 
@@ -263,7 +253,6 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             oc = self._graph.output_channels
             output_channels = [oc] if isinstance(oc, str) else list(oc or [])
 
-        # Default to state channels if not specified
         if not input_channels:
             input_channels = list(getattr(self._graph, "channels", {}).keys())
         if not output_channels:
@@ -283,17 +272,14 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         """Register graph nodes and other components in the global registries."""
         clear_registries()
 
-        # Register nodes
         graph_nodes = getattr(self._graph, "nodes", {})
         for node_name, node_spec in graph_nodes.items():
             if node_name in (START, END, "__start__", "__end__"):
                 continue
 
-            # Get the actual callable from the node spec
             node_func = None
 
             if hasattr(node_spec, "bound"):
-                # PregelNode has a 'bound' Runnable
                 bound = node_spec.bound
                 if hasattr(bound, "func"):
                     node_func = bound.func
@@ -314,15 +300,12 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             else:
                 logger.warning(f"Could not extract callable for node: {node_name}")
 
-        # Register channel reducers
         channels = getattr(self._graph, "channels", {})
         for channel_name, channel in channels.items():
-            # Check if channel has a reducer
             if hasattr(channel, "reducer") and channel.reducer:
                 register_channel_reducer(channel_name, channel.reducer)
                 logger.info(f"Registered reducer for channel: {channel_name}")
 
-        # Set up serializer if available
         try:
             from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -332,31 +315,22 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
                 "JsonPlusSerializer not available, using basic serialization"
             )
 
-    def start(self) -> None:
-        """Start the workflow runtime.
-
-        This must be called before running any workflows. It starts listening
-        for workflow work items in the background.
-        """
-        if self._started:
-            return
-
-        self._workflow_runtime.start()
-        self._workflow_client = DaprWorkflowClient(host=self._host, port=self._port)
-        self._started = True
-        logger.info("Dapr Workflow runtime started")
+    # ------------------------------------------------------------------
+    # LangGraph-specific shutdown (no chat client)
+    # ------------------------------------------------------------------
 
     def shutdown(self) -> None:
-        """Shutdown the workflow runtime.
-
-        Call this when you're done running workflows to clean up resources.
-        """
+        """Shutdown the workflow runtime."""
         if not self._started:
             return
 
         self._workflow_runtime.shutdown()
         self._started = False
         logger.info("Dapr Workflow runtime stopped")
+
+    # ------------------------------------------------------------------
+    # LangGraph-specific execution methods
+    # ------------------------------------------------------------------
 
     def invoke(
         self,
@@ -380,30 +354,20 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
 
         Returns:
             Final output values from the graph
-
-        Raises:
-            RuntimeError: If the runner hasn't been started
-            TimeoutError: If timeout is exceeded
-            Exception: If the workflow fails
         """
-        import time
-
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
         assert self._workflow_client is not None
 
-        # Generate IDs
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
-        # Create initial channel state from input
         channel_state = ChannelState(
             values=self._serialize_input(input),
             versions={k: 1 for k in input.keys()},
             updated_channels=list(input.keys()),
         )
 
-        # Create workflow input
         workflow_input = GraphWorkflowInput(
             graph_config=self._graph_config,
             channel_state=channel_state,
@@ -414,11 +378,9 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             thread_id=thread_id,
         )
 
-        # Verify JSON serializable
         workflow_input_dict = workflow_input.to_dict()
         json.dumps(workflow_input_dict)
 
-        # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
             workflow=agent_workflow,
@@ -426,7 +388,6 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             instance_id=workflow_id,
         )
 
-        # Poll for completion
         start_time = time.time()
         while True:
             time.sleep(poll_interval)
@@ -440,7 +401,6 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
                 raise RuntimeError(f"Workflow {workflow_id} state not found")
 
             if state.runtime_status == WorkflowStatus.COMPLETED:
-                # Parse output
                 if state.serialized_output:
                     output_dict = (
                         json.loads(state.serialized_output)
@@ -482,28 +442,20 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
 
         Yields:
             Event dictionaries with workflow progress updates
-
-        Raises:
-            RuntimeError: If the runner hasn't been started
         """
-        import asyncio
-
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
         assert self._workflow_client is not None
 
-        # Generate IDs
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
-        # Create initial channel state from input
         channel_state = ChannelState(
             values=self._serialize_input(input),
             versions={k: 1 for k in input.keys()},
             updated_channels=list(input.keys()),
         )
 
-        # Create workflow input
         workflow_input = GraphWorkflowInput(
             graph_config=self._graph_config,
             channel_state=channel_state,
@@ -514,11 +466,9 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             thread_id=thread_id,
         )
 
-        # Verify JSON serializable
         workflow_input_dict = workflow_input.to_dict()
         json.dumps(workflow_input_dict)
 
-        # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
             workflow=agent_workflow,
@@ -526,7 +476,6 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             instance_id=workflow_id,
         )
 
-        # Yield start event
         yield {
             "type": "workflow_started",
             "workflow_id": workflow_id,
@@ -534,155 +483,33 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
             "graph_name": self._name,
         }
 
-        # Poll for completion
-        previous_status = None
+        def _parse_output(wf_id: str, output_dict: dict) -> dict:  # type: ignore[type-arg]
+            output = GraphWorkflowOutput.from_dict(output_dict)
+            return {
+                "type": "workflow_completed",
+                "workflow_id": wf_id,
+                "output": output.output,
+                "steps": output.steps,
+                "status": output.status,
+            }
 
-        while True:
-            await asyncio.sleep(poll_interval)
-
-            state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
-
-            if state is None:
-                yield {
-                    "type": "workflow_error",
-                    "workflow_id": workflow_id,
-                    "error": "Workflow state not found",
-                }
-                break
-
-            # Yield status change events
-            if state.runtime_status != previous_status:
-                yield {
-                    "type": "workflow_status_changed",
-                    "workflow_id": workflow_id,
-                    "status": str(state.runtime_status),
-                    "custom_status": state.serialized_custom_status,
-                }
-                previous_status = state.runtime_status
-
-            # Check for completion
-            if state.runtime_status == WorkflowStatus.COMPLETED:
-                output_data = state.serialized_output
-                if output_data:
-                    try:
-                        output_dict = (
-                            json.loads(output_data)
-                            if isinstance(output_data, str)
-                            else output_data
-                        )
-                        output = GraphWorkflowOutput.from_dict(output_dict)
-
-                        yield {
-                            "type": "workflow_completed",
-                            "workflow_id": workflow_id,
-                            "output": output.output,
-                            "steps": output.steps,
-                            "status": output.status,
-                        }
-                    except Exception as e:
-                        yield {
-                            "type": "workflow_completed",
-                            "workflow_id": workflow_id,
-                            "raw_output": output_data,
-                            "parse_error": str(e),
-                        }
-                else:
-                    yield {
-                        "type": "workflow_completed",
-                        "workflow_id": workflow_id,
-                    }
-                break
-
-            elif state.runtime_status == WorkflowStatus.FAILED:
-                error_info = None
-                if state.failure_details:
-                    fd = state.failure_details
-                    error_info = {
-                        "message": getattr(fd, "message", str(fd)),
-                        "error_type": getattr(fd, "error_type", None),
-                        "stack_trace": getattr(fd, "stack_trace", None),
-                    }
-                yield {
-                    "type": "workflow_failed",
-                    "workflow_id": workflow_id,
-                    "error": error_info,
-                }
-                break
-
-            elif state.runtime_status == WorkflowStatus.TERMINATED:
-                yield {
-                    "type": "workflow_terminated",
-                    "workflow_id": workflow_id,
-                }
-                break
+        async for event in self._poll_workflow(
+            workflow_id,
+            thread_id,
+            poll_interval=poll_interval,
+            parse_output=_parse_output,
+        ):
+            yield event
 
     def _serialize_input(self, input: Dict[str, Any]) -> Dict[str, Any]:
-        """Serialize input values for storage.
-
-        Args:
-            input: Input dictionary
-
-        Returns:
-            Serialized input
-        """
+        """Serialize input values for storage."""
         from .workflow import _serialize_value
 
         return {k: _serialize_value(v) for k, v in input.items()}
 
-    def get_workflow_status(self, workflow_id: str) -> Optional[Dict[str, Any]]:
-        """Get the status of a workflow.
-
-        Args:
-            workflow_id: The workflow instance ID
-
-        Returns:
-            Dictionary with workflow status or None if not found
-        """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-        assert self._workflow_client is not None
-
-        state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
-        if state is None:
-            return None
-
-        return {
-            "workflow_id": workflow_id,
-            "status": str(state.runtime_status),
-            "custom_status": state.serialized_custom_status,
-            "created_at": str(state.created_at) if state.created_at else None,
-            "last_updated_at": str(state.last_updated_at)
-            if state.last_updated_at
-            else None,
-        }
-
-    def terminate_workflow(self, workflow_id: str) -> None:
-        """Terminate a running workflow.
-
-        Args:
-            workflow_id: The workflow instance ID
-        """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-        assert self._workflow_client is not None
-
-        self._workflow_client.terminate_workflow(instance_id=workflow_id)
-        logger.info(f"Terminated workflow: {workflow_id}")
-
-    def purge_workflow(self, workflow_id: str) -> None:
-        """Purge a completed or terminated workflow.
-
-        This removes all workflow state from the state store.
-
-        Args:
-            workflow_id: The workflow instance ID
-        """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-        assert self._workflow_client is not None
-
-        self._workflow_client.purge_workflow(instance_id=workflow_id)
-        logger.info(f"Purged workflow: {workflow_id}")
+    # ------------------------------------------------------------------
+    # Serve overrides
+    # ------------------------------------------------------------------
 
     def serve(
         self,
@@ -690,91 +517,66 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         port: int = 5001,
         host: str = "0.0.0.0",
         input_mapper: Optional["Callable[[dict], Dict[str, Any]]"] = None,
+        pubsub_name: Optional[str] = None,
+        subscribe_topic: Optional[str] = None,
+        publish_topic: Optional[str] = None,
     ) -> None:
         """Start an HTTP server exposing /agent/run endpoints.
-
-        Requires: pip install fastapi uvicorn
 
         Args:
             port: Port to listen on (default: 5001)
             host: Host to bind to (default: 0.0.0.0)
             input_mapper: Optional function to map request dict to graph input.
-                         Default passes the request through as-is.
+            pubsub_name: Dapr pub/sub component name.
+            subscribe_topic: Topic to subscribe to for incoming tasks.
+            publish_topic: Topic to publish results to.
         """
-        try:
-            from fastapi import FastAPI, HTTPException
-            import uvicorn
-        except ImportError:
-            raise ImportError(
-                "fastapi and uvicorn are required for serve(). "
-                "Install them with: pip install fastapi uvicorn[standard]"
-            )
+        self._input_mapper = input_mapper
+        super().serve(
+            port=port,
+            host=host,
+            pubsub_name=pubsub_name,
+            subscribe_topic=subscribe_topic,
+            publish_topic=publish_topic,
+        )
 
-        mapper = input_mapper or (lambda req: req)
-        app = FastAPI()
-
-        # -- OpenTelemetry --
+    def _setup_telemetry(self) -> None:
         from diagrid.agent.core.telemetry import setup_telemetry, instrument_grpc
 
         setup_telemetry(self.__class__.__name__)
         instrument_grpc()
 
-        # Store graph config so agent_workflow can handle orchestrator calls
+    def _setup_serve_defaults(self) -> None:
+        input_mapper = getattr(self, "_input_mapper", None)
         set_default_graph_config(
             self._graph_config,
             input_mapper=input_mapper,
             max_steps=self._max_steps,
         )
 
-        self.start()
+    async def _serve_run(
+        self,
+        request: dict,
+        session_id: str,  # type: ignore[type-arg]
+    ) -> AsyncIterator[dict[str, Any]]:
+        thread_id = request.get("thread_id") or request.get("session_id") or session_id
 
-        @app.post("/agent/run")
-        async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
-            # Support both thread_id (LangGraph) and session_id (standard)
-            thread_id = (
-                request.get("thread_id")
-                or request.get("session_id")
-                or uuid.uuid4().hex[:8]
-            )
+        input_mapper = getattr(self, "_input_mapper", None)
+        if input_mapper:
+            graph_input = input_mapper(request)
+        else:
+            graph_input = request
+            if "messages" not in request:
+                task = request.get("task")
+                if task:
+                    graph_input = {"messages": [{"role": "user", "content": task}]}
 
-            # If a mapper is provided, use it.
-            if input_mapper:
-                try:
-                    graph_input = mapper(request)
-                except KeyError as e:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Request missing required key for input mapping: {str(e)}. "
-                        f"Available keys: {list(request.keys())}",
-                    )
-            else:
-                # Default behavior: try to find 'task' input key
-                graph_input = request
-                if "messages" not in request:
-                    task = request.get("task")
-                    if task:
-                        graph_input = {"messages": [{"role": "user", "content": task}]}
+        async for event in self.run_async(input=graph_input, thread_id=thread_id):
+            yield event
 
-            result: Dict[str, Any] = {}
-            async for event in self.run_async(input=graph_input, thread_id=thread_id):
-                if event["type"] == "workflow_started":
-                    result["instance_id"] = event["workflow_id"]
-                elif event["type"] == "workflow_completed":
-                    result.update(event)
-                    break
-                elif event["type"] == "workflow_failed":
-                    result.update(event)
-                    break
-            return result
-
-        @app.get("/agent/run/{workflow_id}")
-        async def get_status(workflow_id: str) -> dict:  # type: ignore[type-arg]
-            status = self.get_workflow_status(workflow_id)
-            if status is None:
-                raise HTTPException(status_code=404, detail="Workflow not found")
-            return status
-
-        uvicorn.run(app, host=host, port=port)
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
 
     @property
     def graph(self) -> "CompiledStateGraph":
@@ -785,8 +587,3 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
     def graph_config(self) -> GraphConfig:
         """The extracted graph configuration."""
         return self._graph_config
-
-    @property
-    def is_running(self) -> bool:
-        """Whether the workflow runtime is running."""
-        return self._started

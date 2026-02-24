@@ -9,14 +9,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import uuid
 from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 
-from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient, WorkflowStatus
-
-from diagrid.agent.core import AgentRegistryMixin
 from diagrid.agent.core.chat import DaprChatClient
+from diagrid.agent.core.workflow import BaseWorkflowRunner
 
 from .models import (
     AgentConfig,
@@ -41,7 +40,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DaprWorkflowAgentRunner(AgentRegistryMixin):
+class DaprWorkflowAgentRunner(BaseWorkflowRunner):
     """Runner that executes Google ADK agents as Dapr Workflows.
 
     This runner wraps an ADK LlmAgent and executes it using Dapr Workflows,
@@ -94,6 +93,7 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
         max_iterations: int = 100,
         registry_config: Optional[Any] = None,
         component_name: Optional[str] = None,
+        state_store: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -106,13 +106,17 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             component_name: Dapr conversation component name. If provided, always
                 uses Dapr Conversation API. If None and agent has no model configured,
                 auto-detects a conversation component.
+            state_store: Optional DaprStateStore for agent memory persistence.
         """
         self._agent = agent
-        self._max_iterations = max_iterations
-        self._host = host
-        self._port = port
-        self._component_name = component_name
-        self._dapr_chat_client = None
+
+        super().__init__(
+            host=host,
+            port=port,
+            max_iterations=max_iterations,
+            component_name=component_name,
+            state_store=state_store,
+        )
 
         # Auto-detect: if user provided no model on the agent, resolve a component
         if self._component_name is None and not self._agent_has_model():
@@ -130,24 +134,11 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             agent=self._agent, framework="adk", registry=registry_config
         )
 
-        # Create workflow runtime
-        self._workflow_runtime = WorkflowRuntime(host=host, port=port)
-
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
-        self._workflow_runtime.register_activity(
-            call_llm_activity, name="call_llm_activity"
-        )
-        self._workflow_runtime.register_activity(
-            execute_tool_activity, name="execute_tool_activity"
-        )
+        self._register_workflow_components()
 
         # Register agent's tools in the global registry
         self._register_agent_tools()
-
-        # Create workflow client (for starting/managing workflows)
-        self._workflow_client: Optional[DaprWorkflowClient] = None
-        self._started = False
 
     def _agent_has_model(self) -> bool:
         """Check if the agent has an explicit model configured."""
@@ -158,11 +149,20 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             return False
         return True
 
+    def _register_workflow_components(self) -> None:
+        """Register workflow and activities on the workflow runtime."""
+        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
+        self._workflow_runtime.register_activity(
+            call_llm_activity, name="call_llm_activity"
+        )
+        self._workflow_runtime.register_activity(
+            execute_tool_activity, name="execute_tool_activity"
+        )
+
     def _register_agent_tools(self) -> None:
         """Register the agent's tools in the global tool registry."""
         clear_tool_registry()
 
-        # Get tools from agent
         tools = getattr(self._agent, "tools", []) or []
 
         for tool in tools:
@@ -171,12 +171,10 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
 
     def _get_agent_config(self) -> AgentConfig:
         """Extract serializable agent configuration."""
-        # Get tools
         tools = getattr(self._agent, "tools", []) or []
         tool_definitions = []
 
         for tool in tools:
-            # Try to get tool declaration/schema
             declaration = None
             if hasattr(tool, "_get_declaration"):
                 try:
@@ -186,28 +184,18 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
 
             parameters = None
             if declaration and hasattr(declaration, "parameters"):
-                # Convert parameters schema to dict safely
                 params = declaration.parameters
                 if params:
                     try:
-                        # Try model_dump for pydantic v2
                         if hasattr(params, "model_dump"):
                             parameters = params.model_dump(exclude_none=True)
-                        # Try to_dict for other objects
                         elif hasattr(params, "to_dict"):
                             parameters = params.to_dict()
-                        # Try JSON serialization as fallback
                         else:
-                            import json
-
                             parameters = json.loads(json.dumps(params, default=str))
                     except Exception:
-                        # Skip parameters if we can't serialize them
                         parameters = None
 
-                # ADK (Google protobuf) serializes type enums as uppercase
-                # (e.g. "STRING", "OBJECT").  The Dapr Conversation API and
-                # OpenAI function calling expect JSON Schema lowercase types.
                 if parameters:
                     parameters = self._normalize_schema(parameters)
 
@@ -219,7 +207,6 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
                 )
             )
 
-        # Get system instruction
         system_instruction: Optional[str] = None
         if hasattr(self._agent, "instruction"):
             instr = self._agent.instruction
@@ -230,7 +217,6 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             if isinstance(instr, str):
                 system_instruction = instr
 
-        # Get model name as string
         model = getattr(self._agent, "model", "gemini-2.0-flash")
         if not isinstance(model, str):
             model = str(model)
@@ -274,34 +260,9 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
                 result[key] = value
         return result
 
-    def start(self) -> None:
-        """Start the workflow runtime.
-
-        This must be called before running any workflows. It starts listening
-        for workflow work items in the background.
-        """
-        if self._started:
-            return
-
-        self._workflow_runtime.start()
-        self._workflow_client = DaprWorkflowClient(host=self._host, port=self._port)
-        self._started = True
-        logger.info("Dapr Workflow runtime started")
-
-    def shutdown(self) -> None:
-        """Shutdown the workflow runtime.
-
-        Call this when you're done running workflows to clean up resources.
-        """
-        if not self._started:
-            return
-
-        self._workflow_runtime.shutdown()
-        if self._dapr_chat_client:
-            self._dapr_chat_client.close()
-            self._dapr_chat_client = None
-        self._started = False
-        logger.info("Dapr Workflow runtime stopped")
+    # ------------------------------------------------------------------
+    # Framework-specific run methods
+    # ------------------------------------------------------------------
 
     async def run_async(
         self,
@@ -315,9 +276,6 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
     ) -> AsyncIterator[dict[str, Any]]:
         """Run the agent with a user message.
 
-        This starts a new Dapr Workflow for the agent execution. Each tool
-        execution becomes a durable activity within the workflow.
-
         Args:
             user_message: The user's input message
             session_id: Session ID for the conversation
@@ -328,23 +286,17 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
 
         Yields:
             Event dictionaries with workflow progress updates
-
-        Raises:
-            RuntimeError: If the runner hasn't been started
         """
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
 
         assert self._workflow_client is not None
 
-        # Generate workflow ID if not provided
         if workflow_id is None:
             workflow_id = f"agent-{session_id}-{uuid.uuid4().hex[:8]}"
 
-        # Create initial messages
         messages = [Message(role=MessageRole.USER, content=user_message)]
 
-        # Create workflow input
         workflow_input = AgentWorkflowInput(
             agent_config=self._get_agent_config(),
             messages=messages,
@@ -355,14 +307,9 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             max_iterations=self._max_iterations,
         )
 
-        # Convert to dict and verify JSON serializable
-        import json
-
         workflow_input_dict = workflow_input.to_dict()
-        # Test serialization - this will raise if not serializable
         json.dumps(workflow_input_dict)
 
-        # Start the workflow
         logger.info(f"Starting workflow: {workflow_id}")
         self._workflow_client.schedule_new_workflow(
             workflow=agent_workflow,
@@ -370,186 +317,76 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             instance_id=workflow_id,
         )
 
-        # Yield start event
         yield {
             "type": "workflow_started",
             "workflow_id": workflow_id,
             "session_id": session_id,
         }
 
-        # Poll for workflow completion
-        import asyncio
+        def _parse_output(wf_id: str, output_dict: dict) -> dict:  # type: ignore[type-arg]
+            output = AgentWorkflowOutput.from_dict(output_dict)
+            return {
+                "type": "workflow_completed",
+                "workflow_id": wf_id,
+                "final_response": output.final_response,
+                "iterations": output.iterations,
+                "status": output.status,
+            }
 
-        previous_status = None
+        async for event in self._poll_workflow(
+            workflow_id,
+            session_id,
+            poll_interval=poll_interval,
+            parse_output=_parse_output,
+        ):
+            yield event
 
-        while True:
-            await asyncio.sleep(poll_interval)
+    def run_sync(
+        self,
+        user_message: str,
+        session_id: str,
+        *,
+        workflow_id: Optional[str] = None,
+        timeout: float = 300.0,
+    ) -> AgentWorkflowOutput:
+        """Run the agent synchronously and wait for completion."""
 
-            state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
+        async def _run():
+            result = None
+            async for event in self.run_async(
+                user_message=user_message,
+                session_id=session_id,
+                workflow_id=workflow_id,
+            ):
+                if event["type"] == "workflow_completed":
+                    result = AgentWorkflowOutput(
+                        final_response=event.get("final_response"),
+                        messages=[],
+                        iterations=event.get("iterations", 0),
+                        status=event.get("status", "completed"),
+                    )
+                elif event["type"] == "workflow_failed":
+                    error = event.get("error", {})
+                    raise RuntimeError(
+                        f"Workflow failed: {error.get('message', 'Unknown error')}"
+                    )
+                elif event["type"] == "workflow_error":
+                    raise RuntimeError(f"Workflow error: {event.get('error')}")
+            return result
 
-            if state is None:
-                yield {
-                    "type": "workflow_error",
-                    "workflow_id": workflow_id,
-                    "error": "Workflow state not found",
-                }
-                break
+        return self._run_sync(_run(), timeout=timeout)
 
-            # Yield status change events
-            if state.runtime_status != previous_status:
-                yield {
-                    "type": "workflow_status_changed",
-                    "workflow_id": workflow_id,
-                    "status": str(state.runtime_status),
-                    "custom_status": state.serialized_custom_status,
-                }
-                previous_status = state.runtime_status
+    # ------------------------------------------------------------------
+    # Serve overrides
+    # ------------------------------------------------------------------
 
-            # Check for completion
-            if state.runtime_status == WorkflowStatus.COMPLETED:
-                # Parse output
-                output_data = state.serialized_output
-                if output_data:
-                    try:
-                        import json
-
-                        output_dict = (
-                            json.loads(output_data)
-                            if isinstance(output_data, str)
-                            else output_data
-                        )
-                        output = AgentWorkflowOutput.from_dict(output_dict)
-
-                        yield {
-                            "type": "workflow_completed",
-                            "workflow_id": workflow_id,
-                            "final_response": output.final_response,
-                            "iterations": output.iterations,
-                            "status": output.status,
-                        }
-                    except Exception as e:
-                        yield {
-                            "type": "workflow_completed",
-                            "workflow_id": workflow_id,
-                            "raw_output": output_data,
-                            "parse_error": str(e),
-                        }
-                else:
-                    yield {
-                        "type": "workflow_completed",
-                        "workflow_id": workflow_id,
-                    }
-                break
-
-            elif state.runtime_status == WorkflowStatus.FAILED:
-                # Extract failure details
-                error_info = None
-                if state.failure_details:
-                    fd = state.failure_details
-                    error_info = {
-                        "message": getattr(fd, "message", str(fd)),
-                        "error_type": getattr(fd, "error_type", None),
-                        "stack_trace": getattr(fd, "stack_trace", None),
-                    }
-                yield {
-                    "type": "workflow_failed",
-                    "workflow_id": workflow_id,
-                    "error": error_info,
-                }
-                break
-
-            elif state.runtime_status == WorkflowStatus.TERMINATED:
-                yield {
-                    "type": "workflow_terminated",
-                    "workflow_id": workflow_id,
-                }
-                break
-
-    def get_workflow_status(self, workflow_id: str) -> Optional[dict[str, Any]]:
-        """Get the status of a workflow.
-
-        Args:
-            workflow_id: The workflow instance ID
-
-        Returns:
-            Dictionary with workflow status or None if not found
-        """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-
-        assert self._workflow_client is not None
-
-        state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
-        if state is None:
-            return None
-
-        return {
-            "workflow_id": workflow_id,
-            "status": str(state.runtime_status),
-            "custom_status": state.serialized_custom_status,
-            "created_at": str(state.created_at) if state.created_at else None,
-            "last_updated_at": str(state.last_updated_at)
-            if state.last_updated_at
-            else None,
-        }
-
-    def terminate_workflow(self, workflow_id: str) -> None:
-        """Terminate a running workflow.
-
-        Args:
-            workflow_id: The workflow instance ID
-        """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-
-        assert self._workflow_client is not None
-
-        self._workflow_client.terminate_workflow(instance_id=workflow_id)
-        logger.info(f"Terminated workflow: {workflow_id}")
-
-    def purge_workflow(self, workflow_id: str) -> None:
-        """Purge a completed or terminated workflow.
-
-        This removes all workflow state from the state store.
-
-        Args:
-            workflow_id: The workflow instance ID
-        """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-
-        assert self._workflow_client is not None
-
-        self._workflow_client.purge_workflow(instance_id=workflow_id)
-        logger.info(f"Purged workflow: {workflow_id}")
-
-    def serve(self, *, port: int = 5001, host: str = "0.0.0.0") -> None:
-        """Start an HTTP server exposing /agent/run endpoints.
-
-        Requires: pip install fastapi uvicorn
-
-        Args:
-            port: Port to listen on (default: 5001)
-            host: Host to bind to (default: 0.0.0.0)
-        """
-        try:
-            from fastapi import FastAPI, HTTPException
-            import uvicorn
-        except ImportError:
-            raise ImportError(
-                "fastapi and uvicorn are required for serve(). "
-                "Install them with: pip install fastapi uvicorn[standard]"
-            )
-
-        app = FastAPI()
-
-        # -- OpenTelemetry --
+    def _setup_telemetry(self) -> None:
         from diagrid.agent.core.telemetry import setup_telemetry, instrument_grpc
 
         setup_telemetry(self.__class__.__name__)
         instrument_grpc()
 
-        # Store factory so agent_workflow can handle orchestrator calls
+    def _setup_serve_defaults(self) -> None:
         agent_config = self._get_agent_config()
 
         def _build_workflow_input(task_str: str) -> dict[str, Any]:
@@ -563,39 +400,16 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
 
         set_default_workflow_input_factory(_build_workflow_input)
 
-        self.start()
-
-        @app.post("/agent/run")
-        async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
-            session_id = request.get("session_id", uuid.uuid4().hex[:8])
-            task = request.get("task") or ""
-            result: dict[str, Any] = {}
-            async for event in self.run_async(user_message=task, session_id=session_id):
-                if event["type"] == "workflow_started":
-                    result["instance_id"] = event["workflow_id"]
-                elif event["type"] == "workflow_completed":
-                    result.update(event)
-                    break
-                elif event["type"] == "workflow_failed":
-                    result.update(event)
-                    break
-            return result
-
-        @app.get("/agent/run/{workflow_id}")
-        async def get_status(workflow_id: str) -> dict:  # type: ignore[type-arg]
-            status = self.get_workflow_status(workflow_id)
-            if status is None:
-                raise HTTPException(status_code=404, detail="Workflow not found")
-            return status
-
-        uvicorn.run(app, host=host, port=port)
+    async def _serve_run(
+        self,
+        request: dict,
+        session_id: str,  # type: ignore[type-arg]
+    ) -> AsyncIterator[dict[str, Any]]:
+        task = request.get("task") or ""
+        async for event in self.run_async(user_message=task, session_id=session_id):
+            yield event
 
     @property
     def agent(self) -> "LlmAgent":
         """The ADK agent being executed."""
         return self._agent
-
-    @property
-    def is_running(self) -> bool:
-        """Whether the workflow runtime is running."""
-        return self._started

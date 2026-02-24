@@ -49,6 +49,7 @@ Install:
 """
 
 from diagrid.agent.adk.runner import DaprWorkflowAgentRunner
+from diagrid.agent.adk.state import DaprSessionStore
 from diagrid.agent.adk.models import (
     AgentConfig,
     AgentWorkflowInput,
@@ -88,6 +89,8 @@ def __getattr__(name: str):  # type: ignore[no-untyped-def]
 __all__ = [
     # Main runner class
     "DaprWorkflowAgentRunner",
+    # State
+    "DaprSessionStore",
     # Data models
     "AgentConfig",
     "AgentWorkflowInput",

@@ -65,6 +65,7 @@ Install:
 """
 
 from diagrid.agent.crewai.runner import DaprWorkflowAgentRunner
+from diagrid.agent.crewai.state import DaprMemoryStore
 from diagrid.agent.crewai.models import (
     AgentConfig,
     AgentWorkflowInput,
@@ -93,6 +94,8 @@ from diagrid.agent.crewai.version import __version__
 __all__ = [
     # Main runner class
     "DaprWorkflowAgentRunner",
+    # State
+    "DaprMemoryStore",
     # Data models
     "AgentConfig",
     "AgentWorkflowInput",

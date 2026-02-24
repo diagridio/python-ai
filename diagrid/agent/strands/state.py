@@ -15,11 +15,11 @@ This module provides a SessionManager implementation that uses Dapr state stores
 for persisting agent conversation history and state.
 """
 
-import json
 import logging
 from typing import Any, Optional, TYPE_CHECKING
 
 from diagrid.agent.core import AgentRegistryMixin, find_agent_in_stack
+from diagrid.agent.core.state import DaprStateStore
 from strands.hooks import HookProvider, HookRegistry
 from strands.hooks.events import (
     AfterInvocationEvent,
@@ -83,6 +83,7 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
         auto_load: bool = True,
         consistency: str = "strong",
         registry_config: Optional[Any] = None,
+        state_store: Optional[DaprStateStore] = None,
     ) -> None:
         """Initialize the Dapr state session manager.
 
@@ -93,6 +94,7 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
             auto_load: Automatically load on first invocation
             consistency: State consistency level ("strong" or "eventual")
             registry_config: Optional registry configuration for metadata extraction
+            state_store: Optional pre-configured DaprStateStore instance
         """
         self.store_name = store_name
         self.session_id = session_id
@@ -101,29 +103,11 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
         self.consistency = consistency
         self.registry_config = registry_config
 
+        self._store = state_store or DaprStateStore(
+            store_name=store_name, consistency=consistency
+        )
         self._dapr_client: Any = None
         self._loaded = False
-
-    def _get_client(self) -> Any:
-        """Get or create the Dapr client.
-
-        Returns:
-            The DaprClient instance
-
-        Raises:
-            ImportError: If dapr package is not installed
-        """
-        if self._dapr_client is None:
-            try:
-                from dapr.clients import DaprClient
-
-                self._dapr_client = DaprClient()
-            except ImportError:
-                raise ImportError(
-                    "dapr package is required. Install with: pip install dapr"
-                )
-
-        return self._dapr_client
 
     def _get_state_key(self, key_type: str) -> str:
         """Generate the state store key.
@@ -149,31 +133,18 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
             logger.debug("No session_id - skipping state save")
             return
 
-        client = self._get_client()
-
-        # Serialize messages
-        messages_key = self._get_state_key("messages")
-        messages_data = json.dumps([self._serialize_message(m) for m in agent.messages])
-
-        # Serialize agent state
-        state_key = self._get_state_key("state")
-        state_data = json.dumps(
-            {k: v for k, v in agent.state.items()} if agent.state else {}  # type: ignore[attr-defined]
-        )
-
-        # Save to Dapr state store
         try:
-            client.save_state(
-                store_name=self.store_name,
-                key=messages_key,
-                value=messages_data,
-            )
+            # Save messages
+            messages_key = self._get_state_key("messages")
+            messages_data = [self._serialize_message(m) for m in agent.messages]
+            self._store.save(messages_key, messages_data)
 
-            client.save_state(
-                store_name=self.store_name,
-                key=state_key,
-                value=state_data,
+            # Save agent state
+            state_key = self._get_state_key("state")
+            state_data = (
+                {k: v for k, v in agent.state.items()} if agent.state else {}  # type: ignore[attr-defined]
             )
+            self._store.save(state_key, state_data)
 
             logger.debug(
                 "session=%s | saved agent state (messages=%d)",
@@ -202,22 +173,19 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
             logger.debug("No session_id - skipping state load")
             return False
 
-        client = self._get_client()
-
         try:
+            loaded = False
+
             # Load messages
             messages_key = self._get_state_key("messages")
-            messages_response = client.get_state(
-                store_name=self.store_name,
-                key=messages_key,
-            )
+            messages_data = self._store.get(messages_key)
 
-            if messages_response.data:
-                messages_data = json.loads(messages_response.data.decode())
+            if messages_data:
                 agent.messages.clear()
                 agent.messages.extend(
                     [self._deserialize_message(m) for m in messages_data]
                 )
+                loaded = True
 
                 logger.debug(
                     "session=%s | loaded %d messages",
@@ -227,22 +195,19 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
 
             # Load agent state
             state_key = self._get_state_key("state")
-            state_response = client.get_state(
-                store_name=self.store_name,
-                key=state_key,
-            )
+            state_data = self._store.get(state_key)
 
-            if state_response.data:
-                state_data = json.loads(state_response.data.decode())
+            if state_data:
                 for k, v in state_data.items():
                     agent.state[k] = v  # type: ignore[index]
+                loaded = True
 
                 logger.debug(
                     "session=%s | loaded agent state",
                     self.session_id,
                 )
 
-            return bool(messages_response.data or state_response.data)
+            return loaded
 
         except Exception as e:
             logger.error(
@@ -257,18 +222,9 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
         if not self.session_id:
             return
 
-        client = self._get_client()
-
         try:
-            client.delete_state(
-                store_name=self.store_name,
-                key=self._get_state_key("messages"),
-            )
-
-            client.delete_state(
-                store_name=self.store_name,
-                key=self._get_state_key("state"),
-            )
+            self._store.delete(self._get_state_key("messages"))
+            self._store.delete(self._get_state_key("state"))
 
             logger.info("session=%s | deleted session state", self.session_id)
 

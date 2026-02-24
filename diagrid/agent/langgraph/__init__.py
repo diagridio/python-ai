@@ -49,6 +49,7 @@ Example:
 """
 
 from diagrid.agent.langgraph.runner import DaprWorkflowGraphRunner
+from diagrid.agent.langgraph.state import DaprMemoryCheckpointer
 from diagrid.agent.langgraph.models import (
     ChannelState,
     EdgeConfig,
@@ -76,6 +77,8 @@ from diagrid.agent.langgraph.workflow import (
 __all__ = [
     # Main runner
     "DaprWorkflowGraphRunner",
+    # State
+    "DaprMemoryCheckpointer",
     # Models
     "ChannelState",
     "EdgeConfig",

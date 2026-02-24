@@ -24,11 +24,11 @@ from dapr.ext.workflow import (
 )
 
 from diagrid.agent.core.chat import (
-    DaprChatClient,
     ChatMessage,
     ChatRole,
     ChatToolCall,
     ChatToolDefinition,
+    get_chat_client,
 )
 
 from .models import (
@@ -277,11 +277,8 @@ def _call_llm_via_dapr(llm_input: CallLlmInput) -> dict[str, Any]:
         for td in llm_input.agent_config.tool_definitions
     ] or None
 
-    client = DaprChatClient(component_name=llm_input.agent_config.component_name)
-    try:
-        response = client.chat(messages=chat_messages, tools=tools)
-    finally:
-        client.close()
+    client = get_chat_client(llm_input.agent_config.component_name)
+    response = client.chat(messages=chat_messages, tools=tools)
 
     tool_calls_out = []
     for tc in response.tool_calls:

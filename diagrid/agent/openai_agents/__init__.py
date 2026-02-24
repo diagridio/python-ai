@@ -56,6 +56,7 @@ Install:
 """
 
 from diagrid.agent.openai_agents.runner import DaprWorkflowAgentRunner
+from diagrid.agent.openai_agents.state import DaprMemoryStore
 from diagrid.agent.openai_agents.models import (
     AgentConfig,
     AgentWorkflowInput,
@@ -83,6 +84,8 @@ from diagrid.agent.openai_agents.version import __version__
 __all__ = [
     # Main runner class
     "DaprWorkflowAgentRunner",
+    # State
+    "DaprMemoryStore",
     # Data models
     "AgentConfig",
     "AgentWorkflowInput",

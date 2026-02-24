@@ -15,6 +15,9 @@ from .types import (
     ToolMetadata,
 )
 from .chat import DaprChatClient
+from .state import DaprStateStore
+from .pubsub import DaprPubSub
+from .workflow import BaseWorkflowRunner
 
 __all__ = [
     "SupportedFrameworks",
@@ -30,4 +33,7 @@ __all__ = [
     "detect_framework",
     "AgentRegistryMixin",
     "DaprChatClient",
+    "DaprStateStore",
+    "DaprPubSub",
+    "BaseWorkflowRunner",
 ]
