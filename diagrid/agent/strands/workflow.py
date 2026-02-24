@@ -112,7 +112,17 @@ class DaprAgentWorkflow:
 
             try:
                 # Run the agent synchronously (activity context)
-                result = asyncio.run(agent.invoke_async(task))
+                from diagrid.agent.core.telemetry import get_tracer
+
+                _tracer = get_tracer("strands.agent")
+                _span = _tracer.start_span("Agent.invoke") if _tracer else None
+                if _span:
+                    _span.set_attribute("agent.task", task[:500])
+                try:
+                    result = asyncio.run(agent.invoke_async(task))
+                finally:
+                    if _span:
+                        _span.end()
 
                 result_str = str(result)
                 print(

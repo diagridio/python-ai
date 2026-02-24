@@ -676,6 +676,15 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
 
         app = FastAPI()
 
+        # -- OpenTelemetry --
+        # Patch BEFORE self.start() / any crew run so that when CrewAI's
+        # EventListener lazily creates its Telemetry singleton, our OTLP
+        # processor gets injected into CrewAI's own TracerProvider.
+        from diagrid.agent.core.telemetry import patch_crewai_telemetry, instrument_grpc
+
+        patch_crewai_telemetry()
+        instrument_grpc()
+
         # Store factory so agent_workflow can handle orchestrator calls
         agent_config = self._get_agent_config()
 

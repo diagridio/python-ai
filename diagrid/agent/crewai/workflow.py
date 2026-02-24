@@ -401,11 +401,25 @@ def call_llm_activity(
             tools.append({"type": "function", "function": func_schema})
 
         # Call the LLM
-        response = completion(
-            model=llm_input.agent_config.model,
-            messages=messages,
-            tools=tools if tools else None,
-        )
+        from diagrid.agent.core.telemetry import get_tracer
+
+        _tracer = get_tracer("crewai.agent")
+        _span = _tracer.start_span("LLM.completion") if _tracer else None
+        if _span:
+            _span.set_attribute("llm.model", llm_input.agent_config.model)
+        try:
+            response = completion(
+                model=llm_input.agent_config.model,
+                messages=messages,
+                tools=tools if tools else None,
+            )
+        except Exception:
+            if _span:
+                _span.set_attribute("error", True)
+            raise
+        finally:
+            if _span:
+                _span.end()
 
         # Parse response
         choice = response.choices[0]
@@ -517,6 +531,12 @@ def execute_tool_activity(
             )
         ).to_dict()
 
+    from diagrid.agent.core.telemetry import get_tracer
+
+    _tracer = get_tracer("crewai.agent")
+    _span = _tracer.start_span("Tool.execute") if _tracer else None
+    if _span:
+        _span.set_attribute("tool.name", tool_call.name)
     try:
         # Execute the tool based on its type
         result = _execute_tool(tool, tool_call.args)
@@ -543,6 +563,8 @@ def execute_tool_activity(
 
     except Exception as e:
         logger.error(f"Error executing tool '{tool_call.name}': {e}")
+        if _span:
+            _span.set_attribute("error", True)
         return ExecuteToolOutput(
             tool_result=ToolResult(
                 tool_call_id=tool_call.id,
@@ -551,6 +573,9 @@ def execute_tool_activity(
                 error=str(e),
             ),
         ).to_dict()
+    finally:
+        if _span:
+            _span.end()
 
 
 def _execute_tool(tool: Any, args: dict[str, Any]) -> Any:

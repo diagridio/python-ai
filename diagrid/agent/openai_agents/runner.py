@@ -549,6 +549,23 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
 
         app = FastAPI()
 
+        # -- OpenTelemetry --
+        from diagrid.agent.core.telemetry import (
+            setup_telemetry,
+            instrument_grpc,
+            OtelTracingProcessor,
+        )
+
+        provider = setup_telemetry(self.__class__.__name__)
+        if provider:
+            try:
+                from agents import add_trace_processor
+
+                add_trace_processor(OtelTracingProcessor(provider))  # type: ignore[arg-type]
+            except Exception:
+                logger.debug("OpenAI Agents OTEL bridge skipped", exc_info=True)
+        instrument_grpc()
+
         # Store factory so agent_workflow can handle orchestrator calls
         agent_config = self._get_agent_config()
 

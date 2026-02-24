@@ -395,12 +395,26 @@ def call_llm_activity(
             tools.append({"type": "function", "function": func_schema})
 
         # Call OpenAI Chat Completions API directly
-        client = openai.OpenAI()
-        response = client.chat.completions.create(
-            model=llm_input.agent_config.model,
-            messages=messages,  # type: ignore[arg-type]
-            tools=tools if tools else openai.NOT_GIVEN,  # type: ignore[arg-type]
-        )
+        from diagrid.agent.core.telemetry import get_tracer
+
+        _tracer = get_tracer("openai.agent")
+        _span = _tracer.start_span("LLM.chat_completion") if _tracer else None
+        if _span:
+            _span.set_attribute("llm.model", llm_input.agent_config.model)
+        try:
+            client = openai.OpenAI()
+            response = client.chat.completions.create(
+                model=llm_input.agent_config.model,
+                messages=messages,  # type: ignore[arg-type]
+                tools=tools if tools else openai.NOT_GIVEN,  # type: ignore[arg-type]
+            )
+        except Exception:
+            if _span:
+                _span.set_attribute("error", True)
+            raise
+        finally:
+            if _span:
+                _span.end()
 
         # Parse response
         choice = response.choices[0]

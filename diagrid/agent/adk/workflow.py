@@ -388,12 +388,26 @@ def call_llm_activity(
         )
 
         # Call the LLM
-        client = Client()
-        response = client.models.generate_content(
-            model=llm_input.agent_config.model,
-            contents=contents,  # type: ignore[arg-type]
-            config=config,
-        )
+        from diagrid.agent.core.telemetry import get_tracer
+
+        _tracer = get_tracer("adk.agent")
+        _span = _tracer.start_span("LLM.generate_content") if _tracer else None
+        if _span:
+            _span.set_attribute("llm.model", llm_input.agent_config.model)
+        try:
+            client = Client()
+            response = client.models.generate_content(
+                model=llm_input.agent_config.model,
+                contents=contents,  # type: ignore[arg-type]
+                config=config,
+            )
+        except Exception:
+            if _span:
+                _span.set_attribute("error", True)
+            raise
+        finally:
+            if _span:
+                _span.end()
 
         # Parse response
         if not response.candidates:
@@ -528,11 +542,23 @@ def execute_tool_activity(
         )
 
         # Execute the tool
+        from diagrid.agent.core.telemetry import get_tracer
+
+        _tracer = get_tracer("adk.agent")
+        _span = _tracer.start_span("Tool.execute") if _tracer else None
+        if _span:
+            _span.set_attribute("tool.name", tool_call.name)
         try:
             result = loop.run_until_complete(
                 tool.run_async(args=tool_call.args, tool_context=tool_context)
             )
+        except Exception:
+            if _span:
+                _span.set_attribute("error", True)
+            raise
         finally:
+            if _span:
+                _span.end()
             loop.close()
 
         # Serialize result

@@ -713,6 +713,12 @@ class DaprWorkflowGraphRunner(AgentRegistryMixin):
         mapper = input_mapper or (lambda req: req)
         app = FastAPI()
 
+        # -- OpenTelemetry --
+        from diagrid.agent.core.telemetry import setup_telemetry, instrument_grpc
+
+        setup_telemetry(self.__class__.__name__)
+        instrument_grpc()
+
         # Store graph config so agent_workflow can handle orchestrator calls
         set_default_graph_config(
             self._graph_config,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import atexit
 import base64
-import json
 import os
 import shutil
 import socket
@@ -220,37 +219,46 @@ def _resolve_llm_keys(
 
 
 def _patch_llm_secret(namespace: str, resolved_keys: dict[str, str]) -> None:
-    """Patch llm-secret with resolved keys so they persist for future deploys."""
+    """Create or update llm-secret with resolved keys so they persist for future deploys."""
     # Map of resolved key name -> secret data key
     key_map = {
         "OPENAI_API_KEY": "apiKey",
         "GOOGLE_API_KEY": "googleApiKey",
     }
-    patch_data: dict[str, str] = {}
+    literal_args: list[str] = []
     for env_name, secret_key in key_map.items():
         value = resolved_keys.get(env_name, "")
         if value:
-            patch_data[secret_key] = base64.b64encode(value.encode()).decode()
+            literal_args.extend(["--from-literal", f"{secret_key}={value}"])
 
-    if not patch_data:
+    if not literal_args:
         return
 
-    patch_json = json.dumps({"data": patch_data})
+    # Ensure the namespace exists (no-op if it does)
     try:
-        run(
+        run("kubectl", "create", "namespace", namespace)
+    except CommandError:
+        pass  # already exists
+
+    # Create-or-replace: dry-run + apply is idempotent and works whether
+    # the secret already exists or not.
+    try:
+        yaml_output = run_capture(
             "kubectl",
-            "patch",
+            "create",
             "secret",
+            "generic",
             "llm-secret",
             "-n",
             namespace,
-            "--type",
-            "merge",
-            "-p",
-            patch_json,
+            *literal_args,
+            "--dry-run=client",
+            "-o",
+            "yaml",
         )
+        apply_stdin(yaml_output, namespace=namespace)
     except CommandError:
-        console.warning("Could not patch llm-secret — keys may not persist")
+        console.warning("Could not create/update llm-secret — keys may not persist")
 
 
 # ---------------------------------------------------------------------------

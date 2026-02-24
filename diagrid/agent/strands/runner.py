@@ -790,6 +790,25 @@ class DaprWorkflowAgentRunner(AgentRegistryMixin):
             )
 
         app = FastAPI()
+
+        # -- OpenTelemetry --
+        # StrandsTelemetry creates its own TracerProvider (with deep agent/
+        # cycle/LLM/tool spans) and sets it as the global. We add our gRPC
+        # OTLP processor to that provider so spans reach our collector.
+        from diagrid.agent.core.telemetry import _make_span_processor, instrument_grpc
+
+        try:
+            from strands.telemetry.config import StrandsTelemetry
+
+            st = StrandsTelemetry()  # creates & sets global provider
+            processor = _make_span_processor()
+            if processor is not None:
+                st.tracer_provider.add_span_processor(processor)
+        except Exception:
+            logger.debug("Strands native OTEL setup skipped", exc_info=True)
+
+        instrument_grpc()
+
         self.start()
 
         @app.post("/agent/run")
