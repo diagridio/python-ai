@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 concurrency:
   group: claude-implement-${{ github.event.client_payload.pr_number }}
