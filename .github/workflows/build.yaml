@@ -13,7 +13,9 @@ on:
 
 jobs:
   lint:
-    if: github.event.head_commit.author.name != 'github-actions[bot]'
+    if: >-
+      github.event_name != 'push' ||
+      !contains(fromJSON('["github-actions[bot]", "diagrid-bot[bot]"]'), github.event.head_commit.author.name)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6

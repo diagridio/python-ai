@@ -21,7 +21,8 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.pull_requests[0] != null &&
-      github.event.workflow_run.actor.login != 'claude[bot]'
+      github.event.workflow_run.actor.login != 'claude[bot]' &&
+      github.event.workflow_run.actor.login != 'diagrid-bot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Get PR info
@@ -122,11 +123,20 @@ jobs:
               labels: [label],
             });
 
+      - name: Generate App token
+        if: steps.pr.outputs.attempt_count < 2
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DIAGRID_BOT_APPLICATION_ID }}
+          private-key: ${{ secrets.DIAGRID_BOT_APPLICATION_PRIVATE_KEY }}
+
       - name: Checkout PR branch
         if: steps.pr.outputs.attempt_count < 2
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.pr.outputs.ref }}
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 1
 
       - name: Run Claude CI Fix
@@ -134,6 +144,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ steps.app-token.outputs.token }}
           max_turns: 15
           use_sticky_comment: true
           pr_number: ${{ steps.pr.outputs.number }}
