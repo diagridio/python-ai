@@ -177,7 +177,6 @@ def patch_crewai_telemetry() -> None:
     logger.info("CrewAI Telemetry.set_tracer patched")
 
 
-
 def instrument_grpc() -> None:
     """Patch gRPC client channels so Dapr sidecar calls emit spans."""
     if not os.environ.get(_OTEL_ENDPOINT_ENV):
