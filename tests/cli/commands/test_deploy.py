@@ -18,6 +18,7 @@ _MOCK_CONN = {
 }
 
 
+@patch("diagrid.cli.commands.deploy._ensure_registry_healthy")
 @patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
@@ -34,6 +35,7 @@ def test_deploy_full_flow(
     mock_conn: MagicMock,
     mock_auth: MagicMock,
     mock_preflight: MagicMock,
+    mock_registry: MagicMock,
 ) -> None:
     """Deploy command runs all steps."""
     mock_auth.return_value.authenticate.return_value = MagicMock()
@@ -56,6 +58,7 @@ def test_deploy_full_flow(
     assert "localhost:5001/agent:latest" in manifest
 
 
+@patch("diagrid.cli.commands.deploy._ensure_registry_healthy")
 @patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
@@ -72,6 +75,7 @@ def test_deploy_default_options(
     mock_conn: MagicMock,
     mock_auth: MagicMock,
     mock_preflight: MagicMock,
+    mock_registry: MagicMock,
 ) -> None:
     """Deploy with defaults uses agent:latest."""
     mock_auth.return_value.authenticate.return_value = MagicMock()
@@ -83,6 +87,7 @@ def test_deploy_default_options(
     mock_build.assert_called_once_with("agent", "latest")
 
 
+@patch("diagrid.cli.commands.deploy._ensure_registry_healthy")
 @patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
 @patch("diagrid.cli.commands.deploy._get_connection_details", return_value=_MOCK_CONN)
@@ -99,6 +104,7 @@ def test_deploy_passes_api_url_from_context(
     mock_conn: MagicMock,
     mock_auth: MagicMock,
     mock_preflight: MagicMock,
+    mock_registry: MagicMock,
 ) -> None:
     """Deploy passes the api_url from CLI context to DeviceCodeAuth."""
     mock_auth.return_value.authenticate.return_value = MagicMock()
