@@ -43,7 +43,7 @@ jobs:
 
       - name: Generate App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.DIAGRID_BOT_APPLICATION_ID }}
           private-key: ${{ secrets.DIAGRID_BOT_APPLICATION_PRIVATE_KEY }}
