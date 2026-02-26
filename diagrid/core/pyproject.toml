@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diagrid-core"
+version = "0.1.12"
+description = "Diagrid Core - Shared auth and Catalyst API client"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+    "pyjwt[crypto]>=2.8.0",
+]
+
+[tool.setuptools]
+packages = [
+    "diagrid.core",
+    "diagrid.core.auth",
+    "diagrid.core.config",
+    "diagrid.core.catalyst",
+]
+package-dir = {"diagrid.core" = "."}
+
+[tool.setuptools.package-data]
+"diagrid.core" = ["py.typed"]

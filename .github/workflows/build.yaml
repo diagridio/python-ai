@@ -6,10 +6,16 @@ on:
       - main
       - feature/*
       - release-*
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   lint:
+    if: >-
+      github.event_name != 'push' ||
+      !contains(fromJSON('["github-actions[bot]", "diagrid-bot[bot]"]'), github.event.head_commit.author.name)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
@@ -18,7 +24,7 @@ jobs:
       with:
         python-version: "3.11"
     - name: Install uv
-      uses: astral-sh/setup-uv@v3
+      uses: astral-sh/setup-uv@v7
       with:
         version: "latest"
     - name: Install dependencies
@@ -40,11 +46,15 @@ jobs:
         uv run flake8 diagrid tests --ignore=E501,F401,W503,E203,E704
   build:
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python_ver: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - { os: ubuntu-latest, python_ver: "3.11" }
+          - { os: ubuntu-latest, python_ver: "3.12" }
+          - { os: ubuntu-latest, python_ver: "3.13" }
+          - { os: windows-latest, python_ver: "3.13" }
     steps:
     - uses: actions/checkout@v6
     - name: Set up Python ${{ matrix.python_ver }}
@@ -52,15 +62,12 @@ jobs:
       with:
         python-version: ${{ matrix.python_ver }}
     - name: Install uv
-      uses: astral-sh/setup-uv@v3
+      uses: astral-sh/setup-uv@v7
       with:
         version: "latest"
     - name: Install dependencies
-      run: |
-        uv sync --all-packages --group test
+      run: uv sync --all-packages --extra all --group test
     - name: Check Typing
-      run: |
-        uv run mypy --config-file mypy.ini
+      run: uv run mypy --config-file mypy.ini
     - name: Run Tests
-      run: |
-        uv run pytest tests -m "not integration"
+      run: uv run pytest tests -m "not integration"

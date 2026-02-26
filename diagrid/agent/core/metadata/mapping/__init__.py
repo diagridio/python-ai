@@ -1,9 +1,34 @@
 from .base import BaseAgentMapper
-from .langgraph import LangGraphMapper
-from .strands import StrandsMapper
 
 __all__ = [
     "BaseAgentMapper",
     "LangGraphMapper",
     "StrandsMapper",
+    "CrewAIMapper",
+    "ADKMapper",
+    "OpenAIAgentsMapper",
 ]
+
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    if name == "LangGraphMapper":
+        from .langgraph import LangGraphMapper
+
+        return LangGraphMapper
+    if name == "StrandsMapper":
+        from .strands import StrandsMapper
+
+        return StrandsMapper
+    if name == "CrewAIMapper":
+        from .crewai import CrewAIMapper
+
+        return CrewAIMapper
+    if name == "ADKMapper":
+        from .adk import ADKMapper
+
+        return ADKMapper
+    if name == "OpenAIAgentsMapper":
+        from .openai import OpenAIAgentsMapper
+
+        return OpenAIAgentsMapper
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

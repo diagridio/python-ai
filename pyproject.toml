@@ -4,9 +4,56 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid"
-version = "0.1.0"
+version = "0.1.12"
 description = "Diagrid namespace package"
-requires-python = ">=3.11"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "dapr>=1.16.0",
+    "dapr-ext-workflow>=1.16.0",
+    "diagrid-cli>=0.1.0",
+]
+
+[project.scripts]
+diagridpy = "diagrid.cli.main:cli"
+
+[project.optional-dependencies]
+agent-core = [
+    "dapr-agents>=0.10.6",
+    "dapr-ext-langgraph>=1.17.0rc3",
+    "dapr-ext-strands>=1.17.0rc3",
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
+    "pydantic>=2.12.5",
+    "langgraph>=0.3.6",
+]
+langgraph = [
+    "langgraph>=1.0.8",
+    "langchain-core>=0.3.0",
+    "diagrid[agent-core]",
+]
+crewai = [
+    "crewai>=1.6.1",
+    "litellm>=1.0.0",
+    "diagrid[agent-core]",
+]
+adk = [
+    "google-adk>=1.0.0",
+    "diagrid[agent-core]",
+]
+strands = [
+    "openai>=2.21.0",
+    "strands-agents>=1.26.0",
+    "diagrid[agent-core]",
+]
+openai_agents = [
+    "openai-agents>=0.1.0",
+    "openai>=1.0.0",
+    "diagrid[agent-core]",
+]
+all = [
+    "diagrid[langgraph,crewai,adk,strands,openai_agents]",
+]
 
 [dependency-groups]
 dev = [
@@ -19,21 +66,32 @@ dev = [
 ]
 test = [
     "pytest>=7.0.0,<10.0.0",
-    "pytest-cov>=4.0.0,<7.0.0",
+    "pytest-cov>=4.0.0,<8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+    "integration: marks tests requiring real network access or live infra (excluded from default run)",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["diagrid*"]
-exclude = ["diagrid.agent.core*"]
+exclude = [
+    "diagrid.core*",
+    "diagrid.cli*",
+]
 
 [tool.setuptools.package-data]
 diagrid = ["py.typed"]
 
 [tool.uv.workspace]
 members = [
-    "diagrid/agent/core",
+    "diagrid/core",
+    "diagrid/cli",
 ]
 
 [tool.uv.sources]
-diagrid-agent-core = { workspace = true }
+diagrid-core = { workspace = true }
+diagrid-cli = { workspace = true }

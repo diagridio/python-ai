@@ -1,0 +1,28 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: llm-provider
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "catalyst-agents.labels" . | nindent 4 }}
+spec:
+  {{- if eq .Values.llm.provider "ollama" }}
+  type: conversation.ollama
+  {{- else }}
+  type: conversation.openai
+  {{- end }}
+  version: v1
+  metadata:
+  {{- if eq .Values.llm.provider "ollama" }}
+  - name: endpoint
+    value: {{ .Values.llm.ollama.endpoint | quote }}
+  - name: model
+    value: {{ .Values.llm.ollama.model | quote }}
+  {{- else }}
+  - name: key
+    secretKeyRef:
+      name: llm-secret
+      key: apiKey
+  - name: model
+    value: {{ .Values.llm.openAI.model | quote }}
+  {{- end }}

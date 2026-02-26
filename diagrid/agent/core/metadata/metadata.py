@@ -6,8 +6,7 @@ import time
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Callable, Dict, Optional, Sequence
 
-from diagrid.agent.core.metadata.mapping import LangGraphMapper, StrandsMapper
-from diagrid.agent.core.metadata import (
+from .introspection import (
     detect_framework,
     find_agent_in_stack,
 )
@@ -131,9 +130,20 @@ class AgentRegistryAdapter:
         except PackageNotFoundError:
             schema_version = "edge"
 
+        from diagrid.agent.core.metadata.mapping import (
+            LangGraphMapper,
+            StrandsMapper,
+            CrewAIMapper,
+            ADKMapper,
+            OpenAIAgentsMapper,
+        )
+
         framework_mappers = {
             SupportedFrameworks.LANGGRAPH: LangGraphMapper().map_agent_metadata,
             SupportedFrameworks.STRANDS: StrandsMapper().map_agent_metadata,
+            SupportedFrameworks.CREWAI: CrewAIMapper().map_agent_metadata,
+            SupportedFrameworks.ADK: ADKMapper().map_agent_metadata,
+            SupportedFrameworks.OPENAI: OpenAIAgentsMapper().map_agent_metadata,
         }
 
         mapper = framework_mappers.get(self._framework)

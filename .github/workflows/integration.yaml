@@ -1,0 +1,29 @@
+name: Integration Tests
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # nightly at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  deps-functional:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.11"
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: "latest"
+    - name: Install dependencies
+      run: uv sync --all-packages --group test
+    - name: Run functional integration tests
+      run: uv run pytest tests/cli/utils/test_deps_functional.py -m integration -v

@@ -101,20 +101,33 @@ class LangGraphMapper(BaseAgentMapper):
             "checkpointer", None
         )  # type: ignore
 
+        # Check for metadata hints set by DaprWorkflowGraphRunner
+        custom_name = getattr(agent, "_diagrid_name", None)
+        custom_role = getattr(agent, "_diagrid_role", None)
+        custom_goal = getattr(agent, "_diagrid_goal", None)
+
+        raw_name = custom_name or (
+            agent.get_name() if hasattr(agent, "get_name") else ""
+        )
+        agent_id = raw_name.lower().replace(" ", "-") if raw_name else "graph"
+        full_name = f"langgraph-{agent_id}"
+        role = custom_role or "Assistant"
+        goal = custom_goal or system_prompt or ""
+
         return AgentMetadataSchema(
             schema_version=schema_version,
             agent=AgentMetadata(
                 appid="",
                 type=type(agent).__name__,
                 orchestrator=False,
-                role="Assistant",
-                goal=system_prompt or "",
+                role=role,
+                goal=goal,
                 instructions=[],
                 statestore=checkpointer.state_store_name if checkpointer else None,  # type: ignore
                 system_prompt="",
                 framework=SupportedFrameworks.LANGGRAPH,
             ),
-            name=agent.get_name() if hasattr(agent, "get_name") else "",
+            name=full_name,
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=PubSubMetadata(
                 name="",
