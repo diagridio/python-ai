@@ -3,15 +3,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
-from diagrid.agent.core.types import (
+from diagrid.agent.core.types import SupportedFrameworks
+from dapr_agents import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     RegistryMetadata,
-    SupportedFrameworks,
     ToolMetadata,
 )
+from dapr_agents.agents.configs import MemoryStoreMetadata
 
 if TYPE_CHECKING:
     from crewai import Agent
@@ -81,9 +82,9 @@ class CrewAIMapper(BaseAgentMapper):
 
             tools_metadata.append(
                 ToolMetadata(
-                    tool_name=str(name),
-                    tool_description=str(description),
-                    tool_args="",
+                    name=str(name),
+                    description=str(description),
+                    args="",
                 )
             )
 
@@ -91,7 +92,7 @@ class CrewAIMapper(BaseAgentMapper):
         full_name = f"crewai-{agent_id}"
 
         return AgentMetadataSchema(
-            schema_version=schema_version,
+            version=schema_version,
             agent=AgentMetadata(
                 appid="",
                 type="CrewAI",
@@ -100,26 +101,26 @@ class CrewAIMapper(BaseAgentMapper):
                 goal=str(goal),
                 instructions=[str(backstory)] if backstory else None,
                 framework=SupportedFrameworks.CREWAI,
+                tool_choice="auto" if tools_metadata else None,
+                max_iterations=int(getattr(agent, "max_iter", 25))
+                if hasattr(agent, "max_iter")
+                else 25,
+                metadata={
+                    "framework": "crewai",
+                    "role": role,
+                    "goal": goal,
+                },
             ),
             name=full_name,
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=None,
             memory=MemoryMetadata(
-                type="DaprWorkflow",
+                short_term=MemoryStoreMetadata(type="DaprWorkflow"),
             ),
             llm=llm_metadata,
             tools=tools_metadata,
-            tool_choice="auto" if tools_metadata else None,
-            max_iterations=int(getattr(agent, "max_iter", 25))
-            if hasattr(agent, "max_iter")
-            else 25,
             registry=RegistryMetadata(
-                statestore=None,
+                resource_name=None,
                 name="default",
             ),
-            agent_metadata={
-                "framework": "crewai",
-                "role": role,
-                "goal": goal,
-            },
         )

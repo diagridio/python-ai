@@ -108,8 +108,8 @@ class AgentRegistryAdapter:
         if _metadata.registry:
             if _metadata.registry.name is None:
                 _metadata.registry.name = self._registry.team_name
-            if _metadata.registry.statestore is None:
-                _metadata.registry.statestore = self.registry_state.store_name
+            if _metadata.registry.resource_name is None:
+                _metadata.registry.resource_name = self.registry_state.store_name
 
         self._register(_metadata)
 

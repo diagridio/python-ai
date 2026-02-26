@@ -13,6 +13,7 @@ from dapr_agents import (
     RegistryMetadata,
     ToolMetadata,
 )
+from dapr_agents.agents.configs import MemoryStoreMetadata
 from langgraph.pregel._read import PregelNode
 
 if TYPE_CHECKING:
@@ -115,7 +116,7 @@ class LangGraphMapper(BaseAgentMapper):
         goal = custom_goal or system_prompt or ""
 
         return AgentMetadataSchema(
-            schema_version=schema_version,
+            version=schema_version,
             agent=AgentMetadata(
                 appid="",
                 type=type(agent).__name__,
@@ -123,20 +124,26 @@ class LangGraphMapper(BaseAgentMapper):
                 role=role,
                 goal=goal,
                 instructions=[],
-                statestore=checkpointer.state_store_name if checkpointer else None,  # type: ignore
                 system_prompt="",
                 framework=SupportedFrameworks.LANGGRAPH,
+                max_iterations=1,
+                tool_choice="auto",
+                metadata=None,
             ),
             name=full_name,
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=PubSubMetadata(
-                name="",
+                resource_name="",
                 broadcast_topic=None,
                 agent_topic=None,
             ),
             memory=MemoryMetadata(
-                type="DaprCheckpointer",
-                statestore=checkpointer.state_store_name if checkpointer else None,  # type: ignore
+                short_term=MemoryStoreMetadata(
+                    type="DaprCheckpointer",
+                    resource_name=checkpointer.state_store_name
+                    if checkpointer
+                    else None,  # type: ignore
+                ),
             ),
             llm=LLMMetadata(
                 client=llm_metadata.get("client", "") if llm_metadata else "",
@@ -147,7 +154,7 @@ class LangGraphMapper(BaseAgentMapper):
                 model=llm_metadata.get("model", "unknown")
                 if llm_metadata
                 else "unknown",
-                component_name=None,
+                resource_name=None,
                 base_url=llm_metadata.get("base_url") if llm_metadata else None,
                 azure_endpoint=llm_metadata.get("azure_endpoint")
                 if llm_metadata
@@ -158,18 +165,15 @@ class LangGraphMapper(BaseAgentMapper):
                 prompt_template=None,
             ),
             registry=RegistryMetadata(
-                statestore=None,
+                resource_name=None,
                 name=None,
             ),
             tools=[
                 ToolMetadata(
-                    tool_name=tool.get("name", ""),
-                    tool_description=tool.get("description", ""),
-                    tool_args="",
+                    name=tool.get("name", ""),
+                    description=tool.get("description", ""),
+                    args="",
                 )
                 for tool in tools
             ],
-            max_iterations=1,
-            tool_choice="auto",
-            agent_metadata=None,
         )

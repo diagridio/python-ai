@@ -52,7 +52,7 @@ class StrandsMapperTest(unittest.TestCase):
 
         metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
 
-        self.assertEqual(metadata.schema_version, "1.0.0")
+        self.assertEqual(metadata.version, "1.0.0")
         self.assertEqual(metadata.agent.type, "Strands")
         self.assertEqual(metadata.agent.role, "Session Manager")
         self.assertEqual(metadata.agent.orchestrator, False)
@@ -71,8 +71,9 @@ class StrandsMapperTest(unittest.TestCase):
         metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
 
         assert metadata.memory is not None
-        self.assertEqual(metadata.memory.type, "DaprSessionManager")
-        self.assertEqual(metadata.memory.statestore, "custom-store")
+        assert metadata.memory.short_term is not None
+        self.assertEqual(metadata.memory.short_term.type, "DaprSessionManager")
+        self.assertEqual(metadata.memory.short_term.resource_name, "custom-store")
 
     def test_metadata_name_generation(self):
         """Test agent name generation with session ID."""
@@ -94,18 +95,18 @@ class StrandsMapperTest(unittest.TestCase):
         self.assertEqual(metadata.name, "strands-session")
 
     def test_metadata_agent_metadata_field(self):
-        """Test agent_metadata field contains framework info."""
+        """Test agent.metadata field contains framework info."""
         mock_manager = MockSessionManager(state_store_name="store1", session_id="sess1")
         mapper = StrandsMapper()
 
         metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
 
-        assert metadata.agent_metadata is not None
-        self.assertEqual(metadata.agent_metadata["framework"], "strands")
-        self.assertEqual(metadata.agent_metadata["session_id"], "sess1")
-        self.assertEqual(metadata.agent_metadata["state_store"], "store1")
+        assert metadata.agent.metadata is not None
+        self.assertEqual(metadata.agent.metadata["framework"], "strands")
+        self.assertEqual(metadata.agent.metadata["session_id"], "sess1")
+        self.assertEqual(metadata.agent.metadata["state_store"], "store1")
         # agent_id is None in fallback path when no SessionAgent exists
-        self.assertIsNone(metadata.agent_metadata["agent_id"])
+        self.assertIsNone(metadata.agent.metadata["agent_id"])
 
     def test_metadata_registry_defaults(self):
         """Test registry metadata has correct defaults."""
@@ -115,7 +116,7 @@ class StrandsMapperTest(unittest.TestCase):
         metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
 
         assert metadata.registry is not None
-        self.assertIsNone(metadata.registry.statestore)
+        self.assertIsNone(metadata.registry.resource_name)
         assert metadata.registry.name == "default"
 
     def test_metadata_optional_fields_are_none(self):
@@ -128,8 +129,8 @@ class StrandsMapperTest(unittest.TestCase):
         self.assertIsNone(metadata.pubsub)
         self.assertIsNone(metadata.llm)
         self.assertEqual(metadata.tools, [])  # Empty list, not None
-        self.assertIsNone(metadata.max_iterations)
-        self.assertIsNone(metadata.tool_choice)
+        self.assertIsNone(metadata.agent.max_iterations)
+        self.assertIsNone(metadata.agent.tool_choice)
 
     def test_metadata_registered_at_is_set(self):
         """Test registered_at timestamp is set."""
