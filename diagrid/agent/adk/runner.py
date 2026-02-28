@@ -383,8 +383,8 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
     def _setup_telemetry(self) -> None:
         from diagrid.agent.core.telemetry import setup_telemetry, instrument_grpc
 
-        setup_telemetry(self.__class__.__name__)
-        instrument_grpc()
+        setup_telemetry(self.__class__.__name__, config=self._observability_config)
+        instrument_grpc(config=self._observability_config)
 
     def _setup_serve_defaults(self) -> None:
         agent_config = self._get_agent_config()

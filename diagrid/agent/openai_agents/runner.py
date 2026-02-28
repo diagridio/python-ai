@@ -353,7 +353,9 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             OtelTracingProcessor,
         )
 
-        provider = setup_telemetry(self.__class__.__name__)
+        provider = setup_telemetry(
+            self.__class__.__name__, config=self._observability_config
+        )
         if provider:
             try:
                 from agents import add_trace_processor
@@ -361,7 +363,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                 add_trace_processor(OtelTracingProcessor(provider))  # type: ignore[arg-type]
             except Exception:
                 logger.debug("OpenAI Agents OTEL bridge skipped", exc_info=True)
-        instrument_grpc()
+        instrument_grpc(config=self._observability_config)
 
     def _setup_serve_defaults(self) -> None:
         agent_config = self._get_agent_config()

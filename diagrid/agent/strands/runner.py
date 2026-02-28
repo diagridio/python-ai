@@ -595,13 +595,13 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             from strands.telemetry.config import StrandsTelemetry
 
             st = StrandsTelemetry()
-            processor = _make_span_processor()
+            processor = _make_span_processor(config=self._observability_config)
             if processor is not None:
                 st.tracer_provider.add_span_processor(processor)
         except Exception:
             logger.debug("Strands native OTEL setup skipped", exc_info=True)
 
-        instrument_grpc()
+        instrument_grpc(config=self._observability_config)
 
     def _setup_serve_defaults(self) -> None:
         pass  # Strands doesn't use a workflow input factory

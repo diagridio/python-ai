@@ -31,7 +31,7 @@ class DaprMemoryCheckpointer:
         ```python
         from diagrid.agent.langgraph.state import DaprMemoryCheckpointer
 
-        checkpointer = DaprMemoryCheckpointer(store_name="statestore")
+        checkpointer = DaprMemoryCheckpointer(store_name="agent-memory")
 
         # Save a checkpoint
         checkpointer.save_checkpoint(

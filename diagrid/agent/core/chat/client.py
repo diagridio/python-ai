@@ -39,8 +39,6 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_COMPONENT_NAME = "llm-provider"
-
 
 class DaprChatClient:
     """Client that routes LLM calls through the Dapr Conversation API.
@@ -78,41 +76,28 @@ class DaprChatClient:
         return self._resolved_component_name
 
     def _resolve_component(self) -> str:
-        """Auto-discover a conversation component from Dapr sidecar metadata.
+        """Auto-discover a conversation component via unified discovery.
 
-        Priority:
-        1. If "llm-provider" exists among conversation components, use it.
-        2. If exactly one conversation component exists, use that.
-        3. Fall back to "llm-provider" (Helm chart default).
+        Uses ``discover_components()`` to find the first registered
+        ``conversation.*`` component. Raises ``RuntimeError`` if none
+        is found — callers should either pass ``component_name``
+        explicitly or ensure a conversation component is configured.
         """
-        try:
-            meta = self._dapr_client.get_metadata()
-            conversation_components = [
-                c
-                for c in meta.registered_components
-                if c.type.startswith("conversation.")
-            ]
+        from diagrid.agent.core.discovery import discover_components
 
-            # Check for the well-known "llm-provider" component
-            for c in conversation_components:
-                if c.name == _DEFAULT_COMPONENT_NAME:
-                    logger.info(
-                        "Auto-detected conversation component: %s",
-                        _DEFAULT_COMPONENT_NAME,
-                    )
-                    return _DEFAULT_COMPONENT_NAME
+        discovered = discover_components()
+        if discovered.conversation_name:
+            logger.info(
+                "Auto-detected conversation component: %s",
+                discovered.conversation_name,
+            )
+            return discovered.conversation_name
 
-            # Single conversation component available
-            if len(conversation_components) == 1:
-                name = conversation_components[0].name
-                logger.info("Auto-detected single conversation component: %s", name)
-                return name
-
-        except Exception as e:
-            logger.debug("Failed to auto-detect conversation component: %s", e)
-
-        logger.info("Using default conversation component: %s", _DEFAULT_COMPONENT_NAME)
-        return _DEFAULT_COMPONENT_NAME
+        raise RuntimeError(
+            "No conversation component found in Dapr sidecar metadata. "
+            "Either pass component_name explicitly or configure a "
+            "conversation.* component in your Dapr configuration."
+        )
 
     def chat(
         self,

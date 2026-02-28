@@ -31,7 +31,7 @@ class DaprMemoryStore:
         ```python
         from diagrid.agent.openai_agents.state import DaprMemoryStore
 
-        memory = DaprMemoryStore(store_name="statestore")
+        memory = DaprMemoryStore(store_name="agent-memory")
 
         # Save conversation memory
         memory.save_memory("session-123", {

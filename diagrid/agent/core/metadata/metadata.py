@@ -23,12 +23,9 @@ from dapr_agents.agents.configs import (
     AgentRegistryConfig,
 )
 
-from dapr.clients import DaprClient
-from dapr.clients.grpc._response import (
-    GetMetadataResponse,
-    RegisteredComponents,
-)
 from dapr.clients.grpc._state import Concurrency, Consistency
+
+from diagrid.agent.core.discovery import discover_components
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +60,21 @@ class AgentRegistryAdapter:
         self._registry = registry
 
         try:
+            from dapr.clients import DaprClient
+
             with DaprClient(http_timeout_seconds=10) as _client:
-                resp: GetMetadataResponse = _client.get_metadata()
+                resp = _client.get_metadata()
                 self.appid = resp.application_id
-                if self._registry is None:
-                    components: Sequence[RegisteredComponents] = (
-                        resp.registered_components
+
+            if self._registry is None:
+                discovered = discover_components()
+                if discovered.registry_store_name:
+                    self._registry = AgentRegistryConfig(
+                        store=StateStoreService(
+                            store_name=discovered.registry_store_name
+                        ),
+                        team_name="default",
                     )
-                    for component in components:
-                        if (
-                            "state" in component.type
-                            and component.name == "agent-registry"
-                        ):
-                            self._registry = AgentRegistryConfig(
-                                store=StateStoreService(store_name=component.name),
-                                team_name="default",
-                            )
         except TimeoutError:
             logger.warning(
                 "Dapr sidecar not responding; proceeding without auto-configuration."

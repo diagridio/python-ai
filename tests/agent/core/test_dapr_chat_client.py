@@ -17,7 +17,8 @@ import unittest
 from collections import namedtuple
 from unittest import mock
 
-from diagrid.agent.core.chat.client import DaprChatClient, _DEFAULT_COMPONENT_NAME
+from diagrid.agent.core.chat.client import DaprChatClient
+from diagrid.agent.core.discovery import DiscoveredComponents, _reset_discovery_cache
 from diagrid.agent.core.chat.types import (
     ChatMessage,
     ChatRole,
@@ -50,6 +51,12 @@ def _make_metadata_response(components):
 class TestComponentResolution(unittest.TestCase):
     """Test DaprChatClient component auto-resolution."""
 
+    def setUp(self):
+        _reset_discovery_cache()
+
+    def tearDown(self):
+        _reset_discovery_cache()
+
     @mock.patch("diagrid.agent.core.chat.client.DaprClient")
     def test_explicit_component_name(self, mock_dapr_cls):
         client = DaprChatClient(component_name="my-llm")
@@ -57,42 +64,85 @@ class TestComponentResolution(unittest.TestCase):
         # get_metadata should NOT be called
         mock_dapr_cls.return_value.get_metadata.assert_not_called()
 
+    @mock.patch("diagrid.agent.core.discovery.DaprClient")
     @mock.patch("diagrid.agent.core.chat.client.DaprClient")
-    def test_auto_detect_llm_provider(self, mock_dapr_cls):
-        mock_dapr_cls.return_value.get_metadata.return_value = _make_metadata_response(
+    def test_auto_detect_conversation_component(self, mock_chat_dapr, mock_disc_dapr):
+        """Single conversation component is auto-detected."""
+        mock_client = mock.MagicMock()
+        mock_client.get_metadata.return_value = _make_metadata_response(
             [
                 {"name": "statestore", "type": "state.redis"},
-                {"name": "llm-provider", "type": "conversation.openai"},
+                {"name": "my-llm", "type": "conversation.openai"},
             ]
         )
-        client = DaprChatClient()
-        self.assertEqual(client.component_name, "llm-provider")
+        mock_disc_dapr.return_value.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_disc_dapr.return_value.__exit__ = mock.MagicMock(return_value=False)
 
-    @mock.patch("diagrid.agent.core.chat.client.DaprClient")
-    def test_auto_detect_single_component(self, mock_dapr_cls):
-        mock_dapr_cls.return_value.get_metadata.return_value = _make_metadata_response(
-            [
-                {"name": "my-custom-llm", "type": "conversation.anthropic"},
-            ]
-        )
         client = DaprChatClient()
-        self.assertEqual(client.component_name, "my-custom-llm")
+        self.assertEqual(client.component_name, "my-llm")
 
+    @mock.patch("diagrid.agent.core.discovery.DaprClient")
     @mock.patch("diagrid.agent.core.chat.client.DaprClient")
-    def test_fallback_to_default(self, mock_dapr_cls):
-        mock_dapr_cls.return_value.get_metadata.return_value = _make_metadata_response(
+    def test_no_conversation_component_raises(self, mock_chat_dapr, mock_disc_dapr):
+        """RuntimeError raised when no conversation component found."""
+        mock_client = mock.MagicMock()
+        mock_client.get_metadata.return_value = _make_metadata_response(
             [
                 {"name": "statestore", "type": "state.redis"},
             ]
         )
-        client = DaprChatClient()
-        self.assertEqual(client.component_name, _DEFAULT_COMPONENT_NAME)
+        mock_disc_dapr.return_value.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_disc_dapr.return_value.__exit__ = mock.MagicMock(return_value=False)
 
-    @mock.patch("diagrid.agent.core.chat.client.DaprClient")
-    def test_fallback_on_metadata_error(self, mock_dapr_cls):
-        mock_dapr_cls.return_value.get_metadata.side_effect = Exception("no sidecar")
         client = DaprChatClient()
-        self.assertEqual(client.component_name, _DEFAULT_COMPONENT_NAME)
+        with self.assertRaises(RuntimeError):
+            _ = client.component_name
+
+    @mock.patch("diagrid.agent.core.discovery.DaprClient")
+    @mock.patch("diagrid.agent.core.chat.client.DaprClient")
+    def test_sidecar_error_raises(self, mock_chat_dapr, mock_disc_dapr):
+        """RuntimeError raised when sidecar is unreachable."""
+        mock_disc_dapr.side_effect = Exception("no sidecar")
+
+        client = DaprChatClient()
+        with self.assertRaises(RuntimeError):
+            _ = client.component_name
+
+    @mock.patch("diagrid.agent.core.discovery.DaprClient")
+    @mock.patch("diagrid.agent.core.chat.client.DaprClient")
+    def test_multiple_conversation_components_uses_first(
+        self, mock_chat_dapr, mock_disc_dapr
+    ):
+        """When multiple conversation components exist, the first is used."""
+        mock_client = mock.MagicMock()
+        mock_client.get_metadata.return_value = _make_metadata_response(
+            [
+                {"name": "llm-a", "type": "conversation.openai"},
+                {"name": "llm-b", "type": "conversation.anthropic"},
+            ]
+        )
+        mock_disc_dapr.return_value.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_disc_dapr.return_value.__exit__ = mock.MagicMock(return_value=False)
+
+        client = DaprChatClient()
+        self.assertEqual(client.component_name, "llm-a")
+
+    @mock.patch("diagrid.agent.core.discovery.DaprClient")
+    @mock.patch("diagrid.agent.core.chat.client.DaprClient")
+    def test_lazy_resolution_only_once(self, mock_chat_dapr, mock_disc_dapr):
+        """Discovery is called only once (cached)."""
+        mock_client = mock.MagicMock()
+        mock_client.get_metadata.return_value = _make_metadata_response(
+            [{"name": "my-llm", "type": "conversation.openai"}]
+        )
+        mock_disc_dapr.return_value.__enter__ = mock.MagicMock(return_value=mock_client)
+        mock_disc_dapr.return_value.__exit__ = mock.MagicMock(return_value=False)
+
+        client = DaprChatClient()
+        _ = client.component_name
+        _ = client.component_name
+        # DaprClient constructor called only once (cached discovery)
+        self.assertEqual(mock_disc_dapr.call_count, 1)
 
 
 class TestMessageConversion(unittest.TestCase):
@@ -252,17 +302,6 @@ class TestClientLifecycle(unittest.TestCase):
         client = DaprChatClient(component_name="test-llm")
         client.close()
         mock_dapr_cls.return_value.close.assert_called_once()
-
-    @mock.patch("diagrid.agent.core.chat.client.DaprClient")
-    def test_lazy_resolution_only_once(self, mock_dapr_cls):
-        mock_dapr_cls.return_value.get_metadata.return_value = _make_metadata_response(
-            [{"name": "llm-provider", "type": "conversation.openai"}]
-        )
-        client = DaprChatClient()
-        _ = client.component_name
-        _ = client.component_name
-        # get_metadata should only be called once
-        mock_dapr_cls.return_value.get_metadata.assert_called_once()
 
 
 if __name__ == "__main__":

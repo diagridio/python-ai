@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_STORE_NAME = "statestore"
+_DEFAULT_STORE_NAME = "agent-memory"
 
 
 class DaprStateStore:
@@ -34,7 +34,7 @@ class DaprStateStore:
         ```python
         from diagrid.agent.core.state import DaprStateStore
 
-        store = DaprStateStore(store_name="statestore")
+        store = DaprStateStore(store_name="agent-memory")
         store.save("my-key", {"messages": ["hello"]})
         data = store.get("my-key")
         store.delete("my-key")

@@ -68,7 +68,7 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
         ```
 
     Args:
-        store_name: The Dapr state store name (default: "statestore")
+        store_name: The Dapr state store name (default: "agent-memory")
         session_id: Unique identifier for the session
         auto_save: Whether to automatically save after each invocation (default: True)
         auto_load: Whether to automatically load on first invocation (default: True)
@@ -77,7 +77,7 @@ class DaprStateSessionManager(HookProvider, AgentRegistryMixin):
 
     def __init__(
         self,
-        store_name: str = "statestore",
+        store_name: str = "agent-memory",
         session_id: str | None = None,
         auto_save: bool = True,
         auto_load: bool = True,

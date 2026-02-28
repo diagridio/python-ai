@@ -8,9 +8,13 @@ from .types import (
     SupportedFrameworks,
 )
 from .chat import DaprChatClient
+from .discovery import discover_components, DiscoveredComponents
+from .observability import resolve_observability_config
 from .state import DaprStateStore
 from .pubsub import DaprPubSub
 from .workflow import BaseWorkflowRunner
+
+from dapr_agents.agents.configs import AgentObservabilityConfig
 
 __all__ = [
     "SupportedFrameworks",
@@ -22,4 +26,8 @@ __all__ = [
     "DaprStateStore",
     "DaprPubSub",
     "BaseWorkflowRunner",
+    "discover_components",
+    "DiscoveredComponents",
+    "resolve_observability_config",
+    "AgentObservabilityConfig",
 ]
