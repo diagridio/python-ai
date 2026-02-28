@@ -88,13 +88,14 @@ jobs:
           github_token: ${{ steps.app-token.outputs.token }}
           use_sticky_comment: true
           track_progress: true
-          claude_args: "--max-turns 8"
+          claude_args: "--max-turns 12"
           prompt: |
             You are the Review Agent. Review the PR changes and provide structured feedback.
 
             ## Instructions
             1. Run `git diff origin/main...HEAD` to see all changes in this PR.
             2. Run `git log origin/main...HEAD --oneline` to see the commit history.
+            Important: Run each git command as a separate Bash call. Never chain commands with && or ;.
             3. Analyze the changes for: correctness, type safety, test coverage, security, and consistency with existing patterns.
             4. Categorize each suggestion as either **architectural** or **non_architectural**.
 
