@@ -60,6 +60,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ steps.app-token.outputs.token }}
+          allowed_bots: "diagrid-bot[bot]"
           max_turns: 20
           use_sticky_comment: true
           pr_number: ${{ steps.pr.outputs.number }}
