@@ -78,7 +78,7 @@ REGISTRY_MIRRORS = [
 
 # Helm chart — OCI registry
 DEFAULT_HELM_OCI_CHART = "oci://ghcr.io/diagridio/charts/catalyst-agents"
-DEFAULT_HELM_CHART_VERSION = "0.1.0"
+DEFAULT_HELM_CHART_VERSION = ""
 
 # Quickstart repo
 QUICKSTART_REPO_URL = "https://github.com/diagridio/catalyst-quickstarts"

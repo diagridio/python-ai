@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 import time
 from typing import Any
@@ -20,6 +21,33 @@ class CatalystAPIError(Exception):
     def __init__(self, status_code: int, message: str) -> None:
         self.status_code = status_code
         super().__init__(f"Catalyst API error ({status_code}): {message}")
+
+
+def _format_error_body(text: str) -> str:
+    """Extract human-readable messages from a Catalyst JSON error response.
+
+    Expects ``{"errors": [{"title": "…", "detail": "…"}, …]}``.
+    Falls back to the raw *text* when parsing fails or the structure is
+    unexpected.
+    """
+    try:
+        data = json.loads(text)
+        errors = data.get("errors")
+        if not isinstance(errors, list) or not errors:
+            return text
+        parts: list[str] = []
+        for err in errors:
+            title = err.get("title", "")
+            detail = err.get("detail", "")
+            if title and detail:
+                parts.append(f"{title}: {detail}")
+            elif detail:
+                parts.append(detail)
+            elif title:
+                parts.append(title)
+        return "; ".join(parts) if parts else text
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return text
 
 
 class CatalystClient:
@@ -86,7 +114,7 @@ class CatalystClient:
                 continue
 
             if resp.status_code >= 400:
-                raise CatalystAPIError(resp.status_code, resp.text)
+                raise CatalystAPIError(resp.status_code, _format_error_body(resp.text))
             return resp
 
         # Should not be reached, but satisfy the type checker.

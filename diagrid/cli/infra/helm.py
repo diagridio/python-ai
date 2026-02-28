@@ -26,14 +26,14 @@ def install_dapr_agents(
         "--install",
         release_name,
         chart,
-        "--version",
-        version,
         "--namespace",
         namespace,
         "--create-namespace",
         "--set",
         f"llm.apiKey={llm_api_key}",
     ]
+    if version:
+        args.extend(["--version", version])
     if google_api_key:
         args.extend(["--set", f"llm.googleApiKey={google_api_key}"])
     run(*args)

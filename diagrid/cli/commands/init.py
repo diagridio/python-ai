@@ -174,9 +174,14 @@ def init(
             console.success(f"Using existing project at {project_dir}")
         else:
             console.step(4, total_steps, "Cloning quickstart template...")
-            _clone_quickstart(project_name, framework)
+            cloned = _clone_quickstart(project_name, framework)
             project_dir = project_name
-            console.success(f"Quickstart cloned to ./{project_name}/")
+            if cloned:
+                console.success(f"Quickstart cloned to ./{project_name}/")
+            else:
+                console.info(
+                    f"Directory './{project_name}/' already exists, skipping clone"
+                )
 
         # Step 5: Provision cluster
         console.step(5, total_steps, "Provisioning Kubernetes cluster...")
@@ -244,11 +249,19 @@ def init(
         raise SystemExit(1) from exc
 
 
-def _clone_quickstart(project_name: str, framework: str) -> None:
-    """Clone the quickstart repo and copy the framework template."""
+def _clone_quickstart(project_name: str, framework: str) -> bool:
+    """Clone the quickstart repo and copy the framework template.
+
+    Returns ``True`` if the quickstart was cloned, ``False`` if the
+    target directory already exists (skip).
+    """
     subdir = QUICKSTART_SUBDIRS.get(framework)
     if not subdir:
         raise click.ClickException(f"Unknown framework: {framework}")
+
+    dest = project_name
+    if os.path.exists(dest):
+        return False
 
     with tempfile.TemporaryDirectory() as tmp:
         run(
@@ -264,10 +277,6 @@ def _clone_quickstart(project_name: str, framework: str) -> None:
         if not os.path.isdir(source):
             raise click.ClickException(f"Quickstart template not found at {subdir}")
 
-        dest = project_name
-        if os.path.exists(dest):
-            raise click.ClickException(f"Directory '{dest}' already exists")
-
         shutil.copytree(source, dest)
 
         # Patch agent code to read port from APP_PORT env var (dapr-agents only)
@@ -279,6 +288,8 @@ def _clone_quickstart(project_name: str, framework: str) -> None:
             run("git", "init", cwd=dest)
         except CommandError:
             console.warning("Could not initialize git repo")
+
+    return True
 
 
 def _patch_agent_port(dest: str) -> None:

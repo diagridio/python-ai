@@ -26,7 +26,7 @@ from diagrid.cli.infra.kind import (
     ensure_registry_config,
     kind_available,
 )
-from diagrid.cli.infra.kubectl import apply_stdin
+from diagrid.cli.infra.kubectl import apply_stdin, rollout_restart
 from diagrid.cli.utils import console
 from diagrid.cli.utils.deps import preflight_check
 from diagrid.cli.utils.process import CommandError, run, run_capture
@@ -451,6 +451,7 @@ def _deploy_single_agent(
             secret_env_block="",
         )
         apply_stdin(manifest, namespace=namespace)
+        rollout_restart(image, namespace=namespace)
     console.success("Agent deployed")
 
     # Step 6 (optional): Trigger the agent
@@ -600,6 +601,7 @@ def _deploy_orchestrator(
                 secret_env_block=secret_block,
             )
             apply_stdin(manifest, namespace=namespace)
+            rollout_restart(agent.app_id, namespace=namespace)
     console.success(f"Deployed {len(agents)} agents")
 
     # TODO: Re-enable once Catalyst cloud supports these endpoints.

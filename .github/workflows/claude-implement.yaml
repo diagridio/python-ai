@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Get PR info
         id: pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const prNumber = context.payload.client_payload.pr_number;
@@ -43,7 +43,7 @@ jobs:
 
       - name: Generate App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.DIAGRID_BOT_APPLICATION_ID }}
           private-key: ${{ secrets.DIAGRID_BOT_APPLICATION_PRIVATE_KEY }}
