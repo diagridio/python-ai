@@ -131,21 +131,15 @@ jobs:
           settings: |
             {
               "permissions": {
-                "allow": [
-                  "Bash(git diff*)",
-                  "Bash(git log*)",
-                  "Bash(git show*)",
-                  "Bash(git status*)",
-                  "Read",
-                  "Glob",
-                  "Grep"
-                ],
                 "deny": [
                   "Edit",
+                  "MultiEdit",
                   "Write",
+                  "NotebookEdit",
                   "Bash(git add*)",
                   "Bash(git commit*)",
-                  "Bash(git push*)"
+                  "Bash(git push*)",
+                  "Bash(git rm*)"
                 ]
               }
             }
