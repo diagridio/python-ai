@@ -11,6 +11,7 @@ class SupportedFrameworks(StrEnum):
     CREWAI = "CrewAI"
     ADK = "ADK"
     OPENAI = "OpenAI"
+    PYDANTIC_AI = "PydanticAI"
 
 
 class AgentMetadata(BaseModel):
