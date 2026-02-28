@@ -29,7 +29,7 @@ class CrewAIMapperTest(unittest.TestCase):
         self.assertEqual(metadata.agent.goal, "Find information")
         self.assertEqual(metadata.agent.instructions, ["Expert researcher"])
         self.assertEqual(len(metadata.tools), 1)
-        self.assertEqual(metadata.tools[0].tool_name, "search")
+        self.assertEqual(metadata.tools[0].name, "search")
         self.assertEqual(metadata.llm.model, "gpt-4o")
         self.assertEqual(metadata.agent.framework, SupportedFrameworks.CREWAI)
 
