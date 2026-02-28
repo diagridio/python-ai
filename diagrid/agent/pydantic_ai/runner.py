@@ -163,7 +163,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
             tool_def = self._create_tool_definition(tool_info, tool_name)
             register_tool(tool_name, tool_callable, tool_def)
-            logger.info(f"Registered tool: {tool_name}")
+            logger.info("Registered tool: %s", tool_name)
 
     def _create_tool_definition(self, tool: Any, name: str) -> ToolDefinition:
         """Create a serializable tool definition from a Pydantic AI tool."""
@@ -178,7 +178,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                 else:
                     parameters = schema
             except Exception:
-                pass
+                logger.debug("Failed to extract parameters_json_schema", exc_info=True)
 
         return ToolDefinition(
             name=name,
@@ -213,7 +213,9 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                         if isinstance(result, str):
                             prompt_parts.append(result)
                     except Exception:
-                        pass
+                        logger.debug(
+                            "Failed to call system prompt callable", exc_info=True
+                        )
             system_prompt = "\n".join(prompt_parts)
 
         # Fall back to system_prompt attribute if _system_prompts is empty
@@ -223,6 +225,9 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                 try:
                     system_prompt = system_prompt()
                 except Exception:
+                    logger.debug(
+                        "Failed to call system_prompt attribute", exc_info=True
+                    )
                     system_prompt = ""
 
         name = getattr(self._agent, "name", None) or "pydantic-ai-agent"
@@ -279,7 +284,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         workflow_input_dict = workflow_input.to_dict()
         json.dumps(workflow_input_dict)  # Validate serialization
 
-        logger.info(f"Starting workflow: {workflow_id}")
+        logger.info("Starting workflow: %s", workflow_id)
         self._workflow_client.schedule_new_workflow(
             workflow=agent_workflow,
             input=workflow_input_dict,
@@ -374,8 +379,8 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
     async def _serve_run(
         self,
-        request: dict,
-        session_id: str,  # type: ignore[type-arg]
+        request: dict[str, Any],
+        session_id: str,
     ) -> AsyncIterator[dict[str, Any]]:
         task = request.get("task", "")
         async for event in self.run_async(user_message=task, session_id=session_id):

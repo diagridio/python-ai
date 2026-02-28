@@ -79,7 +79,6 @@ class Message:
     role: MessageRole
     content: Optional[str] = None
     tool_calls: list[ToolCall] = field(default_factory=list)
-    tool_results: list[ToolResult] = field(default_factory=list)
     tool_call_id: Optional[str] = None  # For tool response messages
     name: Optional[str] = None  # Tool name for tool response messages
 
@@ -89,7 +88,6 @@ class Message:
             "role": self.role.value,
             "content": self.content,
             "tool_calls": [tc.to_dict() for tc in self.tool_calls],
-            "tool_results": [tr.to_dict() for tr in self.tool_results],
             "tool_call_id": self.tool_call_id,
             "name": self.name,
         }
@@ -101,9 +99,6 @@ class Message:
             role=MessageRole(data["role"]),
             content=data.get("content"),
             tool_calls=[ToolCall.from_dict(tc) for tc in data.get("tool_calls", [])],
-            tool_results=[
-                ToolResult.from_dict(tr) for tr in data.get("tool_results", [])
-            ],
             tool_call_id=data.get("tool_call_id"),
             name=data.get("name"),
         )

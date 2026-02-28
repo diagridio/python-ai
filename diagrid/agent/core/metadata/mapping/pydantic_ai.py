@@ -71,12 +71,18 @@ class PydanticAIMapper(BaseAgentMapper):
                 )
             )
 
-        # LLM Metadata
+        # LLM Metadata - extract provider from model string (e.g. "openai:gpt-4o")
+        model_str = str(model)
+        if ":" in model_str:
+            provider = model_str.split(":")[0]
+        else:
+            provider = "openai"
+
         llm_metadata = LLMMetadata(
             client="pydantic_ai",
-            provider="openai",
+            provider=provider,
             api="chat",
-            model=str(model),
+            model=model_str,
         )
 
         return AgentMetadataSchema(

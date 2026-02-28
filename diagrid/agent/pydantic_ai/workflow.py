@@ -441,10 +441,7 @@ def call_llm_activity(
         ).to_dict()
 
     except Exception as e:
-        logger.error(f"Error calling LLM: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Error calling LLM")
         return CallLlmOutput(
             message=Message(role=MessageRole.ASSISTANT),
             is_final=True,
@@ -511,10 +508,7 @@ def execute_tool_activity(
         ).to_dict()
 
     except Exception as e:
-        logger.error(f"Error executing tool '{tool_call.name}': {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Error executing tool %s", tool_call.name)
         return ExecuteToolOutput(
             tool_result=ToolResult(
                 tool_call_id=tool_call.id,
