@@ -87,6 +87,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ steps.app-token.outputs.token }}
           use_sticky_comment: true
+          track_progress: true
           claude_args: "--max-turns 8"
           prompt: |
             You are the Review Agent. Review the PR changes and provide structured feedback.
