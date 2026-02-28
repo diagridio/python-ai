@@ -140,9 +140,7 @@ class LangGraphMapper(BaseAgentMapper):
             memory=MemoryMetadata(
                 short_term=MemoryStoreMetadata(
                     type="DaprCheckpointer",
-                    resource_name=checkpointer.store_name
-                    if checkpointer
-                    else None,  # type: ignore
+                    resource_name=checkpointer.store_name if checkpointer else None,  # type: ignore
                 ),
             ),
             llm=LLMMetadata(

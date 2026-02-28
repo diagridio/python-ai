@@ -223,11 +223,7 @@ class AgentMetadataSchemaTest(unittest.TestCase):
             ),
             llm=LLMMetadata(client="OpenAI", provider="openai"),
             registry=RegistryMetadata(name="team-1"),
-            tools=[
-                ToolMetadata(
-                    name="search", description="Search tool", args="{}"
-                )
-            ],
+            tools=[ToolMetadata(name="search", description="Search tool", args="{}")],
         )
         self.assertEqual(schema.name, "full-agent")
         assert schema.pubsub is not None
