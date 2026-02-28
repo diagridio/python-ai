@@ -1,10 +1,8 @@
 name: Claude PR Review
 
 on:
-  workflow_run:
-    workflows: ["Lint and Build"]
-    types:
-      - completed
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -13,16 +11,15 @@ permissions:
   id-token: write
 
 concurrency:
-  group: claude-pr-review-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  group: claude-pr-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.pull_requests[0] != null &&
-      github.event.workflow_run.actor.login != 'claude[bot]' &&
-      github.event.workflow_run.actor.login != 'diagrid-bot[bot]'
+      !github.event.pull_request.draft &&
+      github.event.pull_request.user.login != 'claude[bot]' &&
+      github.event.pull_request.user.login != 'diagrid-bot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Generate App token
@@ -32,50 +29,32 @@ jobs:
           app-id: ${{ secrets.DIAGRID_BOT_APPLICATION_ID }}
           private-key: ${{ secrets.DIAGRID_BOT_APPLICATION_PRIVATE_KEY }}
 
-      - name: Get PR info and check conditions
-        id: pr
+      - name: Skip if latest commit is from a bot
+        id: check
         uses: actions/github-script@v8
         with:
           script: |
-            const prNumber = context.payload.workflow_run.pull_requests[0].number;
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
-
-            // Skip draft PRs
-            if (pr.draft) {
-              core.setOutput('skip', 'true');
-              core.info('Skipping draft PR');
-              return;
-            }
-
-            // Check if latest commit is from claude[bot] implementing suggestions
             const { data: commits } = await github.rest.pulls.listCommits({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: prNumber,
+              pull_number: context.payload.pull_request.number,
             });
-            const latestCommit = commits[commits.length - 1];
-            const commitAuthor = latestCommit.author?.login || latestCommit.commit.author?.name || '';
-            const botAuthors = ['claude[bot]', 'diagrid-bot[bot]'];
-            if (botAuthors.includes(commitAuthor)) {
+            const latest = commits[commits.length - 1];
+            const author = latest.author?.login || latest.commit.author?.name || '';
+            const bots = ['claude[bot]', 'diagrid-bot[bot]'];
+            if (bots.includes(author)) {
               core.setOutput('skip', 'true');
               core.info('Skipping review — latest commit is from a bot');
-              return;
+            } else {
+              core.setOutput('skip', 'false');
             }
 
-            core.setOutput('skip', 'false');
-            core.setOutput('number', prNumber);
-            core.setOutput('ref', pr.head.ref);
-
       - name: Clean up fix attempt labels
-        if: steps.pr.outputs.skip != 'true'
+        if: steps.check.outputs.skip != 'true'
         uses: actions/github-script@v8
         with:
           script: |
-            const prNumber = ${{ steps.pr.outputs.number }};
+            const prNumber = context.payload.pull_request.number;
             const { data: labels } = await github.rest.issues.listLabelsOnIssue({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -94,22 +73,21 @@ jobs:
             }
 
       - name: Checkout PR branch
-        if: steps.pr.outputs.skip != 'true'
+        if: steps.check.outputs.skip != 'true'
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.pr.outputs.ref }}
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Run Claude PR Review
-        if: steps.pr.outputs.skip != 'true'
+        if: steps.check.outputs.skip != 'true'
         id: review
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ steps.app-token.outputs.token }}
-          max_turns: 8
           use_sticky_comment: true
-          pr_number: ${{ steps.pr.outputs.number }}
+          claude_args: "--max-turns 8"
           prompt: |
             You are the Review Agent. Review the PR changes and provide structured feedback.
 
@@ -172,23 +150,22 @@ jobs:
             }
 
       - name: Dispatch implementation if needed
-        if: steps.pr.outputs.skip != 'true'
+        if: steps.check.outputs.skip != 'true'
         uses: actions/github-script@v8
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            // Read the review comment to check for non-architectural suggestions
-            const prNumber = ${{ steps.pr.outputs.number }};
+            const prNumber = context.payload.pull_request.number;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
+              per_page: 100,
             });
 
-            // Find the latest Claude review comment
+            // Find the latest review comment (posted by the action via use_sticky_comment)
             const claudeComments = comments.filter(c =>
-              c.user?.login === 'github-actions[bot]' &&
               c.body?.includes('Non-Architectural')
             );
 

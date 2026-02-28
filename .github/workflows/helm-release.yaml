@@ -92,6 +92,12 @@ jobs:
       - name: Log in to GHCR (ORAS)
         run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
 
+      - name: Tag chart as latest
+        run: |
+          oras cp \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/catalyst-agents:${{ needs.detect-version.outputs.version }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts/catalyst-agents:latest
+
       - name: Push ArtifactHub repo metadata
         run: |
           oras push \

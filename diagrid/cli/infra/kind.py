@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from diagrid.cli.infra.kubectl import apply_stdin
-from diagrid.cli.utils.process import has_command, run, run_capture
+from diagrid.cli.utils.process import CommandError, has_command, run, run_capture
 from diagrid.core.config.constants import (
     DEFAULT_KIND_CLUSTER,
     KIND_CONFIG_YAML,
@@ -30,30 +30,45 @@ def cluster_exists(name: str = DEFAULT_KIND_CLUSTER) -> bool:
     return name in output.splitlines()
 
 
+def _ensure_container(name: str, run_args: list[str]) -> None:
+    """Ensure a Docker container is running, handling 3 states.
+
+    - **Running** — no-op.
+    - **Stopped** — ``docker start <name>``.
+    - **Missing** (docker inspect fails) — ``docker run`` with *run_args*.
+    """
+    try:
+        result = run_capture(
+            "docker",
+            "inspect",
+            "-f",
+            "{{.State.Running}}",
+            name,
+        )
+        if result.strip() == "true":
+            return
+        # Container exists but is stopped — restart it.
+        run("docker", "start", name)
+    except CommandError:
+        # Container does not exist — create it.
+        run("docker", "run", *run_args)
+
+
 def _ensure_registry() -> None:
     """Start the local Docker registry if not running."""
-    result = run_capture(
-        "docker",
-        "inspect",
-        "-f",
-        "{{.State.Running}}",
+    _ensure_container(
         KIND_REGISTRY_NAME,
-    )
-    if result.strip() == "true":
-        return
-
-    run(
-        "docker",
-        "run",
-        "-d",
-        "--restart=always",
-        "-p",
-        f"127.0.0.1:{KIND_REGISTRY_PORT}:5000",
-        "--network",
-        "bridge",
-        "--name",
-        KIND_REGISTRY_NAME,
-        "registry:2",
+        [
+            "-d",
+            "--restart=always",
+            "-p",
+            f"127.0.0.1:{KIND_REGISTRY_PORT}:5000",
+            "--network",
+            "bridge",
+            "--name",
+            KIND_REGISTRY_NAME,
+            "registry:2",
+        ],
     )
 
 
@@ -63,28 +78,19 @@ def _ensure_mirrors() -> None:
         name = host.replace(".", "-")
         mirror_name = f"kind-mirror-{name}"
 
-        result = run_capture(
-            "docker",
-            "inspect",
-            "-f",
-            "{{.State.Running}}",
+        _ensure_container(
             mirror_name,
-        )
-        if result.strip() == "true":
-            continue
-
-        run(
-            "docker",
-            "run",
-            "-d",
-            "--restart=always",
-            "--network",
-            "bridge",
-            "--name",
-            mirror_name,
-            "-e",
-            f"REGISTRY_PROXY_REMOTEURL={url}",
-            "registry:2",
+            [
+                "-d",
+                "--restart=always",
+                "--network",
+                "bridge",
+                "--name",
+                mirror_name,
+                "-e",
+                f"REGISTRY_PROXY_REMOTEURL={url}",
+                "registry:2",
+            ],
         )
 
 
