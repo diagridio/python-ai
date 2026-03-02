@@ -22,7 +22,7 @@ dependencies:
     condition: monitoring.enabled
 
   - name: opentelemetry-collector
-    version: 0.146.0
+    version: 0.146.1
     repository: https://open-telemetry.github.io/opentelemetry-helm-charts
     condition: monitoring.enabled
 
