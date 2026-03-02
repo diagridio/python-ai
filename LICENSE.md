@@ -2,7 +2,7 @@
 
 ## Business Source License 1.1
 
-**Licensor:** Diagrid Inc  
+**Licensor:** Diagrid Inc
 **Licensed Work:** Diagrid Durable Agent Integration SDK for Python
 The Licensed Work is © 2026–Present Diagrid Inc.
 
@@ -13,20 +13,20 @@ The Licensed Work is © 2026–Present Diagrid Inc.
 You may make production use of the Licensed Work without obtaining a commercial license from Licensor only if all of the following conditions are met:
 
 1. The organization using the Licensed Work:
-   - Has fewer than eighty (80) full-time equivalent employees; and  
-   - Has less than twenty million U.S. dollars (USD $20,000,000) in annual gross revenue; and  
+   - Has fewer than eighty (80) full-time equivalent employees; and
+   - Has less than twenty million U.S. dollars (USD $20,000,000) in annual gross revenue; and
    - Is not directly or indirectly controlled by, controlling, or under common control with an entity that exceeds either of the above thresholds.
 
 2. The Licensed Work is not:
-   - Offered as a managed, hosted, or Software-as-a-Service (SaaS) offering;  
-   - Included in, embedded within, or redistributed as part of a product or service whose primary purpose is to provide workflow orchestration, durable execution, agent runtime infrastructure, or similar infrastructure functionality;  
+   - Offered as a managed, hosted, or Software-as-a-Service (SaaS) offering;
+   - Included in, embedded within, or redistributed as part of a product or service whose primary purpose is to provide workflow orchestration, durable execution, agent runtime infrastructure, or similar infrastructure functionality;
    - Commercially redistributed, sublicensed, or made available to third parties for a fee.
 
 Any production use of the Licensed Work that does not satisfy all of the above conditions requires a valid commercial license from Diagrid Inc.
 
 ---
 
-**Change Date:** March 1, 2029  
+**Change Date:** March 1, 2029
 **Change License:** Apache License, Version 2.0
 
 ---
@@ -35,7 +35,7 @@ Any production use of the Licensed Work that does not satisfy all of the above c
 
 The Business Source License (this document, or the "License") is not an Open Source license. However, the Licensed Work will eventually be made available under an Open Source License, as stated in this License.
 
-License text copyright © 2017 MariaDB Corporation Ab, All Rights Reserved.  
+License text copyright © 2017 MariaDB Corporation Ab, All Rights Reserved.
 "Business Source License" is a trademark of MariaDB Corporation Ab.
 
 ---
@@ -69,7 +69,7 @@ In consideration of the right to use this License's text and the "Business Sourc
 1. To specify as the Change License the GPL Version 2.0 or any later version, or a license that is compatible with GPL Version 2.0 or a later version. Licensor may specify additional Change Licenses without limitation.
 
 2. To either:
-   - (a) specify an additional grant of rights to use that does not impose any additional restriction on the right granted in this License, as the Additional Use Grant; or  
+   - (a) specify an additional grant of rights to use that does not impose any additional restriction on the right granted in this License, as the Additional Use Grant; or
    - (b) insert the text "None".
 
 3. To specify a Change Date.
