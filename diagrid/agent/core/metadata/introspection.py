@@ -72,6 +72,12 @@ def find_agent_in_stack() -> Optional[Any]:
             if obj_type == "DaprWorkflowAgentRunner" and "adk" in obj_module:
                 return getattr(obj, "_agent", None)
 
+            # Pydantic AI support (check before OpenAI to avoid substring match)
+            if obj_type == "Agent" and "pydantic_ai" in obj_module:
+                return obj
+            if obj_type == "DaprWorkflowAgentRunner" and "pydantic_ai" in obj_module:
+                return getattr(obj, "_agent", None)
+
             # OpenAI Agents support
             if obj_type == "Agent" and "agents" in obj_module:
                 return obj
@@ -120,6 +126,10 @@ def detect_framework(agent: Any) -> Optional[str]:
     # ADK
     if agent_type == "LlmAgent" and "google.adk" in agent_module:
         return "adk"
+
+    # Pydantic AI (check before OpenAI to avoid substring match)
+    if agent_type == "Agent" and "pydantic_ai" in agent_module:
+        return "pydantic_ai"
 
     # OpenAI Agents
     if agent_type == "Agent" and "agents" in agent_module:

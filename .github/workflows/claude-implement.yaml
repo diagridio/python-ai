@@ -62,7 +62,7 @@ jobs:
           github_token: ${{ steps.app-token.outputs.token }}
           allowed_bots: "diagrid-bot[bot]"
           use_sticky_comment: true
-          claude_args: "--max-turns 20"
+          claude_args: "--max-turns 30"
           prompt: |
             You are the Implementation Agent. Implement ONLY the specific non-architectural suggestions listed below.
 

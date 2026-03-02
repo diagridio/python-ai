@@ -7,6 +7,7 @@ __all__ = [
     "CrewAIMapper",
     "ADKMapper",
     "OpenAIAgentsMapper",
+    "PydanticAIMapper",
 ]
 
 
@@ -31,4 +32,8 @@ def __getattr__(name: str):  # type: ignore[no-untyped-def]
         from .openai import OpenAIAgentsMapper
 
         return OpenAIAgentsMapper
+    if name == "PydanticAIMapper":
+        from .pydantic_ai import PydanticAIMapper
+
+        return PydanticAIMapper
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
