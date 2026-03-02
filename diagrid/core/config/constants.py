@@ -89,6 +89,7 @@ QUICKSTART_SUBDIRS = {
     "openai-agents": "agents/openai-agents",
     "crewai": "agents/crewai",
     "adk": "agents/adk",
+    "pydantic-ai": "agents/pydantic-ai",
     "orchestrator": "agents",
 }
 
@@ -127,6 +128,12 @@ ORCHESTRATOR_AGENTS: tuple[OrchestratorAgent, ...] = (
     ),
     OrchestratorAgent("dapr-agent", "dapr-agents/durable-agent", 8006),
     OrchestratorAgent("event-orchestrator", "dapr-agents/orchestrator", 8007),
+    OrchestratorAgent(
+        "pydantic-ai-agent",
+        "pydantic-ai",
+        8008,
+        secret_env=(("OPENAI_API_KEY", "apiKey"),),
+    ),
 )
 
 # OTEL collector

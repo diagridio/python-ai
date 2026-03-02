@@ -132,6 +132,7 @@ class AgentRegistryAdapter:
             CrewAIMapper,
             ADKMapper,
             OpenAIAgentsMapper,
+            PydanticAIMapper,
         )
 
         framework_mappers = {
@@ -140,6 +141,7 @@ class AgentRegistryAdapter:
             SupportedFrameworks.CREWAI: CrewAIMapper().map_agent_metadata,
             SupportedFrameworks.ADK: ADKMapper().map_agent_metadata,
             SupportedFrameworks.OPENAI: OpenAIAgentsMapper().map_agent_metadata,
+            SupportedFrameworks.PYDANTIC_AI: PydanticAIMapper().map_agent_metadata,
         }
 
         mapper = framework_mappers.get(self._framework)

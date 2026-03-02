@@ -60,9 +60,9 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ steps.app-token.outputs.token }}
-          max_turns: 20
+          allowed_bots: "diagrid-bot[bot]"
           use_sticky_comment: true
-          pr_number: ${{ steps.pr.outputs.number }}
+          claude_args: "--max-turns 30"
           prompt: |
             You are the Implementation Agent. Implement ONLY the specific non-architectural suggestions listed below.
 

@@ -18,8 +18,7 @@ jobs:
   review:
     if: >-
       !github.event.pull_request.draft &&
-      github.event.pull_request.user.login != 'claude[bot]' &&
-      github.event.pull_request.user.login != 'diagrid-bot[bot]'
+      github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
       - name: Generate App token
@@ -87,13 +86,15 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ steps.app-token.outputs.token }}
           use_sticky_comment: true
-          claude_args: "--max-turns 8"
+          track_progress: true
+          claude_args: "--max-turns 12"
           prompt: |
             You are the Review Agent. Review the PR changes and provide structured feedback.
 
             ## Instructions
             1. Run `git diff origin/main...HEAD` to see all changes in this PR.
             2. Run `git log origin/main...HEAD --oneline` to see the commit history.
+            Important: Run each git command as a separate Bash call. Never chain commands with && or ;.
             3. Analyze the changes for: correctness, type safety, test coverage, security, and consistency with existing patterns.
             4. Categorize each suggestion as either **architectural** or **non_architectural**.
 
@@ -130,21 +131,15 @@ jobs:
           settings: |
             {
               "permissions": {
-                "allow": [
-                  "Bash(git diff*)",
-                  "Bash(git log*)",
-                  "Bash(git show*)",
-                  "Bash(git status*)",
-                  "Read",
-                  "Glob",
-                  "Grep"
-                ],
                 "deny": [
                   "Edit",
+                  "MultiEdit",
                   "Write",
+                  "NotebookEdit",
                   "Bash(git add*)",
                   "Bash(git commit*)",
-                  "Bash(git push*)"
+                  "Bash(git push*)",
+                  "Bash(git rm*)"
                 ]
               }
             }

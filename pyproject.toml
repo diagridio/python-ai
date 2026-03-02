@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid"
-version = "0.1.13"
+version = "0.1.14"
 description = "Diagrid namespace package"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -51,8 +51,12 @@ openai_agents = [
     "openai>=1.0.0",
     "diagrid[agent-core]",
 ]
+pydantic_ai = [
+    "pydantic-ai>=0.1.0",
+    "diagrid[agent-core]",
+]
 all = [
-    "diagrid[langgraph,crewai,adk,strands,openai_agents]",
+    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai]",
 ]
 
 [dependency-groups]
