@@ -18,8 +18,7 @@ jobs:
   review:
     if: >-
       !github.event.pull_request.draft &&
-      github.event.pull_request.user.login != 'claude[bot]' &&
-      github.event.pull_request.user.login != 'diagrid-bot[bot]'
+      github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
       - name: Generate App token
