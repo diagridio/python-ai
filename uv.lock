@@ -792,7 +792,7 @@ wheels = [
 
 [[package]]
 name = "dapr"
-version = "1.17.0rc4"
+version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -802,14 +802,14 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/43/d8/253e649af396ae7749c790f6592016c38c67d5ab0cd580226e1d72fcc7a4/dapr-1.17.0rc4.tar.gz", hash = "sha256:f5a6468c91e5c4657fb3e300ee895fc7b37022cecd7b4e131dfe69a8da644943", size = 169724, upload-time = "2026-02-13T14:27:10.675Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/62/bb/d9b3235e45d557bc3f79584e0ce7e08858d81959aa8722b95c32bffeacc0/dapr-1.17.0.tar.gz", hash = "sha256:918331f4b8e12cd484b1350ed4a0b379bb79148244e7e4c62d1c8770d1cbc860", size = 170812, upload-time = "2026-02-27T20:56:46.158Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f6/f4/5586fc8982f46118c1ba16c586929ca417b5aa0fcfb2ad8c248cff85216f/dapr-1.17.0rc4-py3-none-any.whl", hash = "sha256:2c46d8aeb210859b7ee165e74b4414cd6433037328c7ef63520733bfc0c6bc19", size = 240098, upload-time = "2026-02-13T14:27:09.016Z" },
+    { url = "https://files.pythonhosted.org/packages/44/e9/4a15713fae156a9d25d62057c2a3a2a47efcbaa55816053fdfff5eb3f0cb/dapr-1.17.0-py3-none-any.whl", hash = "sha256:101ad9dde88c4f1a6d469ac3d84b711f6e7095298a2a72e9a239d62693553fc0", size = 241207, upload-time = "2026-02-27T20:56:43.299Z" },
 ]
 
 [[package]]
 name = "dapr-agents"
-version = "0.10.6"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -834,38 +834,38 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-exporter-zipkin-json" },
     { name = "opentelemetry-instrumentation-grpc" },
-    { name = "opentelemetry-instrumentation-requests" },
+    { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-proto" },
     { name = "posthog" },
     { name = "protobuf" },
     { name = "pydantic" },
-    { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "regex" },
     { name = "requests" },
     { name = "rich" },
+    { name = "tiktoken" },
     { name = "toolbox-core" },
     { name = "uvicorn" },
     { name = "websockets" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/d8/dee34e4cc3b2df12eaab55a5543dcf7d1f472734902cdff7c2450232bcf4/dapr_agents-0.10.6.tar.gz", hash = "sha256:8c1fb42b051b9759ccf7caf6590a580f2dd17ed77cbc806c5093fe94ec9105c3", size = 3906971, upload-time = "2026-01-13T14:24:19.167Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/62/e8/da9c3ceb7a379955962fc28ecb1fc3490ae4e741bf4e726261d37bc533c8/dapr_agents-0.12.0.tar.gz", hash = "sha256:d1a5365a71f5fdeb2a8e871875c04b8eb97f54ac3c8f9a8a221c74acce67651f", size = 3255840, upload-time = "2026-02-17T14:59:53.549Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/24/a31a325f9b3d4b549af3a98e44b883212cc836543e3662abbe9c23d7c6e3/dapr_agents-0.10.6-py3-none-any.whl", hash = "sha256:3b1f98f3a76a7eb5920b3074700c7d782e5312a1aaa88608a2adee629d73bb79", size = 348608, upload-time = "2026-01-13T14:24:17.157Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/5b/4873a2872464adc804a5d7d089c657165bc6465cc756d1e0d9e881ff6e9b/dapr_agents-0.12.0-py3-none-any.whl", hash = "sha256:09da5315e23ccdcaead6170aa4f2b5b36c3ae7eb843cff1a9e2be3d40fb3e9a1", size = 363733, upload-time = "2026-02-17T14:59:51.524Z" },
 ]
 
 [[package]]
 name = "dapr-ext-fastapi"
-version = "1.16.1"
+version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dapr" },
     { name = "fastapi" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c6/11/d9d4674106ee6a9ed7778727f2c7081be5c8fe764dbd7a38ec04b4780260/dapr_ext_fastapi-1.16.1.tar.gz", hash = "sha256:2e4f2b447e32cecfb6f13c425bd6040dc255a9c00aaa1994bd8aad39f2d8a70c", size = 10145, upload-time = "2026-01-16T08:26:52.193Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/3a/682c12ba154475289e43a293350fe9448d884438476a8c3a6cf9035015da/dapr_ext_fastapi-1.17.0.tar.gz", hash = "sha256:5aaf20bd92e986388c3535ba3e2edb94ca14d25c93a37bf02e6565f044c6fc05", size = 10393, upload-time = "2026-02-27T20:56:45.089Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/0b/b73b74893e48522b45fcee93a2ea6e05f9e5eb0e5fad1d48048f9924d809/dapr_ext_fastapi-1.16.1-py3-none-any.whl", hash = "sha256:c6eae6156e7a8a33b92526c31ae5715161320a5ddc60fc1bbcf2af6c5fc776c4", size = 10497, upload-time = "2026-01-16T08:26:51.23Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/3c/aefc8c75f7797d0adca4911e4ab342b8e3089c84eb8857cbbff5ded8ffd5/dapr_ext_fastapi-1.17.0-py3-none-any.whl", hash = "sha256:47d344b00562937fb82042deb66679a93b4f775b9b98db7b1faac22f724258e8", size = 10676, upload-time = "2026-02-27T20:56:43.24Z" },
 ]
 
 [[package]]
@@ -902,15 +902,15 @@ wheels = [
 
 [[package]]
 name = "dapr-ext-workflow"
-version = "1.16.1"
+version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dapr" },
     { name = "durabletask-dapr" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/46/d84e3df0cc9d7aef8ca7c056560bfc1a7f6b8af3f791f44b1be57fd7397c/dapr_ext_workflow-1.16.1.tar.gz", hash = "sha256:75a5c27bc2939984857300c847650ddc09ba3aa721403b017ddb9dc71d9ae6b7", size = 20025, upload-time = "2026-01-16T08:26:39.267Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/39/0a/3e3dd75f5fa26e8af525990952f95217de7e8659fe24ce2c3ce2bd112968/dapr_ext_workflow-1.17.0.tar.gz", hash = "sha256:c0703126f4e5ddecfc7b2d4e6e0ecaadfd0fb4c8723a144100c968647837b588", size = 21463, upload-time = "2026-02-27T20:56:42.946Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/10/581efe8c3c15401de9b35bea3b2e3300d8eebd0d13df5b317c49381855dc/dapr_ext_workflow-1.16.1-py3-none-any.whl", hash = "sha256:f148fbe2e1955127954e7fdf8cdfe37adbd03836315eb7005cc08a20de6d9ee4", size = 23684, upload-time = "2026-01-16T08:26:38.102Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/90/b13fc8cc854aff9dd48fbedd6540ad851a1e4540b79fef8cf25fa5ad178a/dapr_ext_workflow-1.17.0-py3-none-any.whl", hash = "sha256:b754df2b641a5c86af12befad28fc43c0d27a4860ab213ac48a780bb2a10d539", size = 28381, upload-time = "2026-02-27T20:56:42.099Z" },
 ]
 
 [[package]]
@@ -1851,6 +1851,7 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/e8/2e1462c8fdbe0f210feb5ac7ad2d9029af8be3bf45bd9fa39765f821642f/greenlet-3.3.1-cp311-cp311-macosx_11_0_universal2.whl", hash = "sha256:5fd23b9bc6d37b563211c6abbb1b3cab27db385a4449af5c32e932f93017080c", size = 274974, upload-time = "2026-01-23T15:31:02.891Z" },
     { url = "https://files.pythonhosted.org/packages/7e/a8/530a401419a6b302af59f67aaf0b9ba1015855ea7e56c036b5928793c5bd/greenlet-3.3.1-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:09f51496a0bfbaa9d74d36a52d2580d1ef5ed4fdfcff0a73730abfbbbe1403dd", size = 577175, upload-time = "2026-01-23T16:00:56.213Z" },
     { url = "https://files.pythonhosted.org/packages/8e/89/7e812bb9c05e1aaef9b597ac1d0962b9021d2c6269354966451e885c4e6b/greenlet-3.3.1-cp311-cp311-manylinux_2_24_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:cb0feb07fe6e6a74615ee62a880007d976cf739b6669cce95daa7373d4fc69c5", size = 590401, upload-time = "2026-01-23T16:05:26.365Z" },
+    { url = "https://files.pythonhosted.org/packages/70/ae/e2d5f0e59b94a2269b68a629173263fa40b63da32f5c231307c349315871/greenlet-3.3.1-cp311-cp311-manylinux_2_24_s390x.manylinux_2_28_s390x.whl", hash = "sha256:67ea3fc73c8cd92f42467a72b75e8f05ed51a0e9b1d15398c913416f2dafd49f", size = 601161, upload-time = "2026-01-23T16:15:53.456Z" },
     { url = "https://files.pythonhosted.org/packages/5c/ae/8d472e1f5ac5efe55c563f3eabb38c98a44b832602e12910750a7c025802/greenlet-3.3.1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:39eda9ba259cc9801da05351eaa8576e9aa83eb9411e8f0c299e05d712a210f2", size = 590272, upload-time = "2026-01-23T15:32:49.411Z" },
     { url = "https://files.pythonhosted.org/packages/a8/51/0fde34bebfcadc833550717eade64e35ec8738e6b097d5d248274a01258b/greenlet-3.3.1-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:e2e7e882f83149f0a71ac822ebf156d902e7a5d22c9045e3e0d1daf59cee2cc9", size = 1550729, upload-time = "2026-01-23T16:04:20.867Z" },
     { url = "https://files.pythonhosted.org/packages/16/c9/2fb47bee83b25b119d5a35d580807bb8b92480a54b68fef009a02945629f/greenlet-3.3.1-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:80aa4d79eb5564f2e0a6144fcc744b5a37c56c4a92d60920720e99210d88db0f", size = 1615552, upload-time = "2026-01-23T15:33:45.743Z" },
@@ -1859,6 +1860,7 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f9/c8/9d76a66421d1ae24340dfae7e79c313957f6e3195c144d2c73333b5bfe34/greenlet-3.3.1-cp312-cp312-macosx_11_0_universal2.whl", hash = "sha256:7e806ca53acf6d15a888405880766ec84721aa4181261cd11a457dfe9a7a4975", size = 276443, upload-time = "2026-01-23T15:30:10.066Z" },
     { url = "https://files.pythonhosted.org/packages/81/99/401ff34bb3c032d1f10477d199724f5e5f6fbfb59816ad1455c79c1eb8e7/greenlet-3.3.1-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d842c94b9155f1c9b3058036c24ffb8ff78b428414a19792b2380be9cecf4f36", size = 597359, upload-time = "2026-01-23T16:00:57.394Z" },
     { url = "https://files.pythonhosted.org/packages/2b/bc/4dcc0871ed557792d304f50be0f7487a14e017952ec689effe2180a6ff35/greenlet-3.3.1-cp312-cp312-manylinux_2_24_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:20fedaadd422fa02695f82093f9a98bad3dab5fcda793c658b945fcde2ab27ba", size = 607805, upload-time = "2026-01-23T16:05:28.068Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/cd/7a7ca57588dac3389e97f7c9521cb6641fd8b6602faf1eaa4188384757df/greenlet-3.3.1-cp312-cp312-manylinux_2_24_s390x.manylinux_2_28_s390x.whl", hash = "sha256:c620051669fd04ac6b60ebc70478210119c56e2d5d5df848baec4312e260e4ca", size = 622363, upload-time = "2026-01-23T16:15:54.754Z" },
     { url = "https://files.pythonhosted.org/packages/cf/05/821587cf19e2ce1f2b24945d890b164401e5085f9d09cbd969b0c193cd20/greenlet-3.3.1-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:14194f5f4305800ff329cbf02c5fcc88f01886cadd29941b807668a45f0d2336", size = 609947, upload-time = "2026-01-23T15:32:51.004Z" },
     { url = "https://files.pythonhosted.org/packages/a4/52/ee8c46ed9f8babaa93a19e577f26e3d28a519feac6350ed6f25f1afee7e9/greenlet-3.3.1-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:7b2fe4150a0cf59f847a67db8c155ac36aed89080a6a639e9f16df5d6c6096f1", size = 1567487, upload-time = "2026-01-23T16:04:22.125Z" },
     { url = "https://files.pythonhosted.org/packages/8f/7c/456a74f07029597626f3a6db71b273a3632aecb9afafeeca452cfa633197/greenlet-3.3.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:49f4ad195d45f4a66a0eb9c1ba4832bb380570d361912fa3554746830d332149", size = 1636087, upload-time = "2026-01-23T15:33:47.486Z" },
@@ -1867,6 +1869,7 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/ab/d26750f2b7242c2b90ea2ad71de70cfcd73a948a49513188a0fc0d6fc15a/greenlet-3.3.1-cp313-cp313-macosx_11_0_universal2.whl", hash = "sha256:7ab327905cabb0622adca5971e488064e35115430cec2c35a50fd36e72a315b3", size = 275205, upload-time = "2026-01-23T15:30:24.556Z" },
     { url = "https://files.pythonhosted.org/packages/10/d3/be7d19e8fad7c5a78eeefb2d896a08cd4643e1e90c605c4be3b46264998f/greenlet-3.3.1-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:65be2f026ca6a176f88fb935ee23c18333ccea97048076aef4db1ef5bc0713ac", size = 599284, upload-time = "2026-01-23T16:00:58.584Z" },
     { url = "https://files.pythonhosted.org/packages/ae/21/fe703aaa056fdb0f17e5afd4b5c80195bbdab701208918938bd15b00d39b/greenlet-3.3.1-cp313-cp313-manylinux_2_24_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:7a3ae05b3d225b4155bda56b072ceb09d05e974bc74be6c3fc15463cf69f33fd", size = 610274, upload-time = "2026-01-23T16:05:29.312Z" },
+    { url = "https://files.pythonhosted.org/packages/06/00/95df0b6a935103c0452dad2203f5be8377e551b8466a29650c4c5a5af6cc/greenlet-3.3.1-cp313-cp313-manylinux_2_24_s390x.manylinux_2_28_s390x.whl", hash = "sha256:12184c61e5d64268a160226fb4818af4df02cfead8379d7f8b99a56c3a54ff3e", size = 624375, upload-time = "2026-01-23T16:15:55.915Z" },
     { url = "https://files.pythonhosted.org/packages/cb/86/5c6ab23bb3c28c21ed6bebad006515cfe08b04613eb105ca0041fecca852/greenlet-3.3.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6423481193bbbe871313de5fd06a082f2649e7ce6e08015d2a76c1e9186ca5b3", size = 612904, upload-time = "2026-01-23T15:32:52.317Z" },
     { url = "https://files.pythonhosted.org/packages/c2/f3/7949994264e22639e40718c2daf6f6df5169bf48fb038c008a489ec53a50/greenlet-3.3.1-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:33a956fe78bbbda82bfc95e128d61129b32d66bcf0a20a1f0c08aa4839ffa951", size = 1567316, upload-time = "2026-01-23T16:04:23.316Z" },
     { url = "https://files.pythonhosted.org/packages/8d/6e/d73c94d13b6465e9f7cd6231c68abde838bb22408596c05d9059830b7872/greenlet-3.3.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:4b065d3284be43728dd280f6f9a13990b56470b81be20375a207cdc814a983f2", size = 1636549, upload-time = "2026-01-23T15:33:48.643Z" },
@@ -3359,21 +3362,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/86/08/11208bcfcab4fc2023252c3f322aa397fd9ad948355fea60f5fc98648603/opentelemetry_instrumentation_httpx-0.60b1.tar.gz", hash = "sha256:a506ebaf28c60112cbe70ad4f0338f8603f148938cb7b6794ce1051cd2b270ae", size = 20611, upload-time = "2025-12-11T13:37:01.661Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/59/b98e84eebf745ffc75397eaad4763795bff8a30cbf2373a50ed4e70646c5/opentelemetry_instrumentation_httpx-0.60b1-py3-none-any.whl", hash = "sha256:f37636dd742ad2af83d896ba69601ed28da51fa4e25d1ab62fde89ce413e275b", size = 15701, upload-time = "2025-12-11T13:36:04.56Z" },
-]
-
-[[package]]
-name = "opentelemetry-instrumentation-requests"
-version = "0.60b1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-instrumentation" },
-    { name = "opentelemetry-semantic-conventions" },
-    { name = "opentelemetry-util-http" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/4a/bb9d47d7424fc33aeba75275256ae6e6031f44b6a9a3f778d611c0c3ac27/opentelemetry_instrumentation_requests-0.60b1.tar.gz", hash = "sha256:9a1063c16c44a3ba6e81870c4fa42a0fac3ecef5a4d60a11d0976eec9046f3d4", size = 16366, upload-time = "2025-12-11T13:37:12.456Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/7f/969b59a5acccb4c35317421843d63d7853ad7a18078ca3a9b80c248be448/opentelemetry_instrumentation_requests-0.60b1-py3-none-any.whl", hash = "sha256:eec9fac3fab84737f663a2e08b12cb095b4bd67643b24587a8ecfa3cf4d0ca4c", size = 13141, upload-time = "2025-12-11T13:36:23.696Z" },
 ]
 
 [[package]]
