@@ -3,15 +3,16 @@ from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 
 from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
-from diagrid.agent.core.types import (
+from diagrid.agent.core.types import SupportedFrameworks
+from dapr_agents import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     RegistryMetadata,
-    SupportedFrameworks,
     ToolMetadata,
 )
+from dapr_agents.agents.configs import MemoryStoreMetadata
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -65,9 +66,9 @@ class PydanticAIMapper(BaseAgentMapper):
 
             tools_metadata.append(
                 ToolMetadata(
-                    tool_name=str(tool_name),
-                    tool_description=str(tool_description),
-                    tool_args="",
+                    name=str(tool_name),
+                    description=str(tool_description),
+                    args="",
                 )
             )
 
@@ -86,7 +87,7 @@ class PydanticAIMapper(BaseAgentMapper):
         )
 
         return AgentMetadataSchema(
-            schema_version=schema_version,
+            version=schema_version,
             agent=AgentMetadata(
                 appid="",
                 type="Agent",
@@ -96,24 +97,24 @@ class PydanticAIMapper(BaseAgentMapper):
                 instructions=[str(system_prompt)] if system_prompt else None,
                 framework=SupportedFrameworks.PYDANTIC_AI,
                 system_prompt=str(system_prompt) if system_prompt else None,
+                tool_choice="auto" if tools_metadata else None,
+                max_iterations=25,
+                metadata={
+                    "framework": "pydantic-ai",
+                    "name": name,
+                    "model": str(model),
+                },
             ),
             name=f"pydantic-ai-{name}",
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=None,
             memory=MemoryMetadata(
-                type="DaprWorkflow",
+                short_term=MemoryStoreMetadata(type="DaprWorkflow"),
             ),
             llm=llm_metadata,
             tools=tools_metadata,
-            tool_choice="auto" if tools_metadata else None,
-            max_iterations=25,  # Default
             registry=RegistryMetadata(
-                statestore=None,
+                resource_name=None,
                 name="default",
             ),
-            agent_metadata={
-                "framework": "pydantic-ai",
-                "name": name,
-                "model": str(model),
-            },
         )
