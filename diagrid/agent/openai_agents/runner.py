@@ -133,7 +133,13 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         # Register metadata
         self._register_agent_metadata(
-            agent=self._agent, framework="openai", registry=registry_config
+            agent=self._agent,
+            framework="openai",
+            registry=registry_config,
+            component_name=self._component_name,
+            state_store_name=self._state_store.store_name
+            if self._state_store
+            else None,
         )
 
         # Register workflow and activities

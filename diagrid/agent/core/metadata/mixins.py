@@ -26,6 +26,8 @@ class AgentRegistryMixin:
         agent: Any,
         framework: Optional[str] = None,
         registry: Optional[Any] = None,
+        component_name: Optional[str] = None,
+        state_store_name: Optional[str] = None,
     ) -> None:
         """
         Register agent metadata with the registry.
@@ -34,6 +36,8 @@ class AgentRegistryMixin:
             agent: The agent or graph object to register.
             framework: Optional framework name. If None, will be auto-detected.
             registry: Optional registry configuration.
+            component_name: Optional Dapr conversation component name resolved at runtime.
+            state_store_name: Optional Dapr state store name resolved at runtime.
         """
         try:
             # Avoid duplicate registration for the same agent object in the same process
@@ -46,7 +50,13 @@ class AgentRegistryMixin:
                 return
 
             # This will extract metadata and register it if a registry is configured/detected
-            AgentRegistryAdapter(registry=registry, framework=fw, agent=agent)
+            AgentRegistryAdapter(
+                registry=registry,
+                framework=fw,
+                agent=agent,
+                component_name=component_name,
+                state_store_name=state_store_name,
+            )
 
             # Mark as registered
             try:

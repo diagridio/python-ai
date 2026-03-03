@@ -16,6 +16,7 @@ from .models import (
     MessageRole,
     ToolDefinition,
 )
+from .utils import get_pydantic_ai_tools
 from .workflow import (
     agent_workflow,
     call_llm_activity,
@@ -120,7 +121,13 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         # Register metadata
         self._register_agent_metadata(
-            agent=self._agent, framework="pydantic_ai", registry=registry_config
+            agent=self._agent,
+            framework="pydantic_ai",
+            registry=registry_config,
+            component_name=self._component_name,
+            state_store_name=self._state_store.store_name
+            if self._state_store
+            else None,
         )
 
         # Register workflow and activities
@@ -166,10 +173,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
     def _get_function_tools(self) -> dict[str, Any]:
         """Get function tools dict from the agent, supporting both old and new APIs."""
-        toolset = getattr(self._agent, "_function_toolset", None)
-        if toolset is not None:
-            return getattr(toolset, "tools", {}) or {}
-        return getattr(self._agent, "_function_tools", {}) or {}
+        return get_pydantic_ai_tools(self._agent)
 
     def _create_tool_definition(self, tool: Any, name: str) -> ToolDefinition:
         """Create a serializable tool definition from a Pydantic AI tool."""
@@ -238,7 +242,15 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                         )
             system_prompt = "\n".join(prompt_parts)
 
-        # Fall back to system_prompt attribute if _system_prompts is empty
+        # Fall back to _instructions (list of strings or callables)
+        if not system_prompt:
+            instructions = getattr(self._agent, "_instructions", [])
+            if instructions:
+                prompt_parts = [inst for inst in instructions if isinstance(inst, str)]
+                if prompt_parts:
+                    system_prompt = "\n".join(prompt_parts)
+
+        # Fall back to system_prompt attribute if still empty
         if not system_prompt:
             system_prompt = getattr(self._agent, "system_prompt", "") or ""
             if callable(system_prompt):

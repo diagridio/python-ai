@@ -12,6 +12,7 @@ from .introspection import (
 )
 from diagrid.agent.core.types import (
     AgentMetadataSchema,
+    LLMMetadata,
     SupportedFrameworks,
 )
 
@@ -36,13 +37,18 @@ logger = logging.getLogger(__name__)
 class AgentRegistryAdapter:
     @classmethod
     def create_from_stack(
-        cls, registry: Optional[AgentRegistryConfig] = None
+        cls,
+        registry: Optional[AgentRegistryConfig] = None,
+        component_name: Optional[str] = None,
+        state_store_name: Optional[str] = None,
     ) -> Optional["AgentRegistryAdapter"]:
         """
         Auto-detect and create an AgentRegistryAdapter by walking the call stack.
 
         Args:
             registry: Optional registry configuration. If None, will attempt auto-discovery.
+            component_name: Optional Dapr conversation component name resolved at runtime.
+            state_store_name: Optional Dapr state store name resolved at runtime.
 
         Returns:
             AgentRegistryAdapter instance if agent found, None otherwise.
@@ -55,12 +61,25 @@ class AgentRegistryAdapter:
         if not framework:
             return None
 
-        return cls(registry=registry, framework=framework, agent=agent)
+        return cls(
+            registry=registry,
+            framework=framework,
+            agent=agent,
+            component_name=component_name,
+            state_store_name=state_store_name,
+        )
 
     def __init__(
-        self, registry: Optional[AgentRegistryConfig], framework: str, agent: Any
+        self,
+        registry: Optional[AgentRegistryConfig],
+        framework: str,
+        agent: Any,
+        component_name: Optional[str] = None,
+        state_store_name: Optional[str] = None,
     ) -> None:
         self._registry = registry
+        self._component_name = component_name
+        self._state_store_name = state_store_name
 
         try:
             with DaprClient(http_timeout_seconds=10) as _client:
@@ -110,6 +129,27 @@ class AgentRegistryAdapter:
                 _metadata.registry.name = self._registry.team_name
             if _metadata.registry.statestore is None:
                 _metadata.registry.statestore = self.registry_state.store_name
+
+        # Patch LLM from runner's resolved conversation component
+        if self._component_name:
+            if _metadata.llm is None:
+                _metadata.llm = LLMMetadata(
+                    client="DaprChatClient",
+                    provider="dapr",
+                    api="chat",
+                    component_name=self._component_name,
+                )
+            elif not _metadata.llm.component_name:
+                _metadata.llm.component_name = self._component_name
+                _metadata.llm.client = "DaprChatClient"
+                _metadata.llm.provider = "dapr"
+
+        # Patch memory/agent statestore from runner's state store
+        if self._state_store_name:
+            if _metadata.memory and not _metadata.memory.statestore:
+                _metadata.memory.statestore = self._state_store_name
+            if not _metadata.agent.statestore:
+                _metadata.agent.statestore = self._state_store_name
 
         self._register(_metadata)
 

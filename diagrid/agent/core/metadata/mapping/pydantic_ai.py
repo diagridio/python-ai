@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
@@ -12,6 +13,7 @@ from diagrid.agent.core.types import (
     SupportedFrameworks,
     ToolMetadata,
 )
+from diagrid.agent.pydantic_ai.utils import get_pydantic_ai_tools
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -136,13 +138,7 @@ class PydanticAIMapper(BaseAgentMapper):
         """Extract tool metadata from the agent."""
         tools_metadata: list[ToolMetadata] = []
 
-        # pydantic-ai v1.61.0+: tools live in _function_toolset.tools
-        toolset = getattr(agent, "_function_toolset", None)
-        if toolset is not None:
-            function_tools = getattr(toolset, "tools", {}) or {}
-        else:
-            # Fallback for older pydantic-ai versions
-            function_tools = getattr(agent, "_function_tools", {}) or {}
+        function_tools = get_pydantic_ai_tools(agent)
 
         for tool_name, tool_info in function_tools.items():
             tool_description = getattr(tool_info, "description", "") or ""
@@ -153,8 +149,6 @@ class PydanticAIMapper(BaseAgentMapper):
             if func_schema is not None:
                 json_schema = getattr(func_schema, "json_schema", None)
                 if json_schema is not None:
-                    import json
-
                     try:
                         tool_args = json.dumps(json_schema)
                     except (TypeError, ValueError):
