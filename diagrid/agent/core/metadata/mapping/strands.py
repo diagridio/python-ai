@@ -220,13 +220,12 @@ class StrandsMapper(BaseAgentMapper):
             return None
 
         # Extract LLM details
-        provider = llm_config.get("provider", "unknown")
         model = llm_config.get("model", "unknown")
 
         return LLMMetadata(
-            client="dapr_conversation",
-            provider=provider,
-            api="conversation",
+            client="DaprChatClient",
+            provider="dapr",
+            api="chat",
             model=model,
             component_name=llm_component,
         )

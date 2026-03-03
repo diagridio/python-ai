@@ -16,6 +16,7 @@ from .models import (
     MessageRole,
     ToolDefinition,
 )
+from .utils import get_pydantic_ai_tools
 from .workflow import (
     agent_workflow,
     call_llm_activity,
@@ -120,7 +121,13 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         # Register metadata
         self._register_agent_metadata(
-            agent=self._agent, framework="pydantic_ai", registry=registry_config
+            agent=self._agent,
+            framework="pydantic_ai",
+            registry=registry_config,
+            component_name=self._component_name,
+            state_store_name=self._state_store.store_name
+            if self._state_store
+            else None,
         )
 
         # Register workflow and activities
@@ -152,8 +159,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         """Register the agent's tools in the global tool registry."""
         clear_tool_registry()
 
-        # Pydantic AI stores tools in _function_tools dict
-        function_tools = getattr(self._agent, "_function_tools", {}) or {}
+        function_tools = self._get_function_tools()
 
         for tool_name, tool_info in function_tools.items():
             # Extract the underlying callable from the tool info
@@ -165,12 +171,23 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             register_tool(tool_name, tool_callable, tool_def)
             logger.info("Registered tool: %s", tool_name)
 
+    def _get_function_tools(self) -> dict[str, Any]:
+        """Get function tools dict from the agent, supporting both old and new APIs."""
+        return get_pydantic_ai_tools(self._agent)
+
     def _create_tool_definition(self, tool: Any, name: str) -> ToolDefinition:
         """Create a serializable tool definition from a Pydantic AI tool."""
         description = getattr(tool, "description", "") or ""
 
         parameters = None
-        if hasattr(tool, "parameters_json_schema"):
+        # pydantic-ai v1.61.0+: function_schema.json_schema
+        func_schema = getattr(tool, "function_schema", None)
+        if func_schema is not None:
+            json_schema = getattr(func_schema, "json_schema", None)
+            if json_schema is not None:
+                parameters = json_schema
+        # Fallback for older versions
+        elif hasattr(tool, "parameters_json_schema"):
             try:
                 schema = tool.parameters_json_schema
                 if callable(schema):
@@ -188,15 +205,22 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
     def _get_agent_config(self) -> AgentConfig:
         """Extract serializable agent configuration."""
-        function_tools = getattr(self._agent, "_function_tools", {}) or {}
+        function_tools = self._get_function_tools()
         tool_definitions = []
 
         for tool_name, tool_info in function_tools.items():
             tool_definitions.append(self._create_tool_definition(tool_info, tool_name))
 
-        model = getattr(self._agent, "model", "gpt-4o-mini")
-        if not isinstance(model, str):
-            model = str(model)
+        model = getattr(self._agent, "model", None)
+        if model is not None and not isinstance(model, str):
+            # Use model_id or model_name from Model object
+            model = (
+                getattr(model, "model_id", None)
+                or getattr(model, "model_name", None)
+                or str(model)
+            )
+        elif model is None:
+            model = "unknown"
 
         # Extract system prompt from Pydantic AI agent
         system_prompt = ""
@@ -218,7 +242,15 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                         )
             system_prompt = "\n".join(prompt_parts)
 
-        # Fall back to system_prompt attribute if _system_prompts is empty
+        # Fall back to _instructions (list of strings or callables)
+        if not system_prompt:
+            instructions = getattr(self._agent, "_instructions", [])
+            if instructions:
+                prompt_parts = [inst for inst in instructions if isinstance(inst, str)]
+                if prompt_parts:
+                    system_prompt = "\n".join(prompt_parts)
+
+        # Fall back to system_prompt attribute if still empty
         if not system_prompt:
             system_prompt = getattr(self._agent, "system_prompt", "") or ""
             if callable(system_prompt):

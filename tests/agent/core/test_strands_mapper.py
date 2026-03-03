@@ -108,8 +108,8 @@ class TestStrandsMapper(unittest.TestCase):
 
         # Should extract LLM metadata
         assert result.llm is not None
-        self.assertEqual(result.llm.client, "dapr_conversation")
-        self.assertEqual(result.llm.provider, "openai")
+        self.assertEqual(result.llm.client, "DaprChatClient")
+        self.assertEqual(result.llm.provider, "dapr")
         self.assertEqual(result.llm.model, "gpt-4")
         self.assertEqual(result.llm.component_name, "openai")
 
