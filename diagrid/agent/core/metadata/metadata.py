@@ -116,8 +116,11 @@ class AgentRegistryAdapter:
     def _can_handle(self, framework: str) -> bool:
         """Check if this adapter can handle the given Agent."""
 
+        def _normalize(s: str) -> str:
+            return s.lower().replace("_", "").replace("-", "").replace(" ", "")
+
         for fw in SupportedFrameworks:
-            if framework.lower() == fw.value.lower():
+            if _normalize(framework) == _normalize(fw.value):
                 self._framework = fw
                 return True
         return False
