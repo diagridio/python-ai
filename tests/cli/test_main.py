@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Tests for CLI main entry point — env/api flag handling."""
 
 from __future__ import annotations

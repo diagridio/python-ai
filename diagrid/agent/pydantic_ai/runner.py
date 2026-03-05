@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Runner for executing Pydantic AI agents as Dapr Workflows."""
 
 import json

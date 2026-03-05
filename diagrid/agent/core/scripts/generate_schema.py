@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 import argparse
 import json
 from importlib.metadata import PackageNotFoundError, version

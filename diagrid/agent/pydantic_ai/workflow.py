@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Dapr Workflow definitions for durable Pydantic AI execution."""
 
 import json

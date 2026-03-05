@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """User configuration store (~/.diagrid/config.json).
 
 Byte-compatible with the Go CLI's userconfig package.

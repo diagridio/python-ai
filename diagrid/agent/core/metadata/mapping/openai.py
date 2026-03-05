@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 import logging
 from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING

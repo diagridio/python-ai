@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """OpenTelemetry setup for non-dapr-agents framework runners.
 
 Provides shared utilities so every framework runner can emit traces

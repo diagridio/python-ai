@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """OAuth2 Device Code Flow for Auth0, ported from Go CLI."""
 
 from __future__ import annotations

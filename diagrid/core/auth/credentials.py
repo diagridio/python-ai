@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Credential store for Diagrid CLI (~/.diagrid/creds).
 
 The credential file is base64-encoded JSON, byte-compatible with the Go CLI.
