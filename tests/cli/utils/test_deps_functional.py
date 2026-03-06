@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Functional integration tests for diagrid.cli.utils.deps.
 
 These tests perform real network downloads and require internet access.

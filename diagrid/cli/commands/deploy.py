@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """diagridpy deploy command — build and deploy an agent to the kind cluster."""
 
 from __future__ import annotations

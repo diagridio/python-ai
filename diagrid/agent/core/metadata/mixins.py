@@ -1,13 +1,5 @@
-# Copyright 2026 The Dapr Authors
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
 
 import logging
 from typing import Any, Optional
@@ -26,6 +18,8 @@ class AgentRegistryMixin:
         agent: Any,
         framework: Optional[str] = None,
         registry: Optional[Any] = None,
+        component_name: Optional[str] = None,
+        state_store_name: Optional[str] = None,
     ) -> None:
         """
         Register agent metadata with the registry.
@@ -34,6 +28,8 @@ class AgentRegistryMixin:
             agent: The agent or graph object to register.
             framework: Optional framework name. If None, will be auto-detected.
             registry: Optional registry configuration.
+            component_name: Optional Dapr conversation component name resolved at runtime.
+            state_store_name: Optional Dapr state store name resolved at runtime.
         """
         try:
             # Avoid duplicate registration for the same agent object in the same process
@@ -46,7 +42,13 @@ class AgentRegistryMixin:
                 return
 
             # This will extract metadata and register it if a registry is configured/detected
-            AgentRegistryAdapter(registry=registry, framework=fw, agent=agent)
+            AgentRegistryAdapter(
+                registry=registry,
+                framework=fw,
+                agent=agent,
+                component_name=component_name,
+                state_store_name=state_store_name,
+            )
 
             # Mark as registered
             try:

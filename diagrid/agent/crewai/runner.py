@@ -1,13 +1,5 @@
-# Copyright 2025 Diagrid Inc.
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
 
 """Runner for executing CrewAI agents as Dapr Workflows."""
 
@@ -139,7 +131,13 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         # Register metadata
         self._register_agent_metadata(
-            agent=self._agent, framework="crewai", registry=registry_config
+            agent=self._agent,
+            framework="crewai",
+            registry=registry_config,
+            component_name=self._component_name,
+            state_store_name=self._state_store.store_name
+            if self._state_store
+            else None,
         )
 
         # Register workflow and activities

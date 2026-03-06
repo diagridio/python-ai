@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Dependency preflight check and auto-install for diagridpy commands."""
 
 from __future__ import annotations

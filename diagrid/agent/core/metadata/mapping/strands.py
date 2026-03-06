@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -221,13 +224,12 @@ class StrandsMapper(BaseAgentMapper):
             return None
 
         # Extract LLM details
-        provider = llm_config.get("provider", "unknown")
         model = llm_config.get("model", "unknown")
 
         return LLMMetadata(
-            client="dapr_conversation",
-            provider=provider,
-            api="conversation",
+            client="DaprChatClient",
+            provider="dapr",
+            api="chat",
             model=model,
             resource_name=llm_component,
         )
