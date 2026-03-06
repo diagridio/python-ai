@@ -92,10 +92,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self,
         graph: "CompiledStateGraph",
         *,
+        name: str,
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_steps: int = 100,
-        name: Optional[str] = None,
         role: Optional[str] = None,
         goal: Optional[str] = None,
         registry_config: Optional[Any] = None,
@@ -104,19 +104,20 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
         Args:
             graph: The compiled LangGraph to execute
+            name: Required name for the graph
             host: Dapr sidecar host (default: localhost)
             port: Dapr sidecar port (default: 50001)
             max_steps: Maximum number of steps before stopping (default: 100)
-            name: Optional name for the graph (inferred if not provided)
             role: Optional role description for registry (e.g. "Schedule Planner")
             goal: Optional goal description for registry
             registry_config: Optional registry configuration for metadata extraction
         """
         self._graph = graph
         self._max_steps = max_steps
-        self._name = name or self._infer_graph_name()
 
         super().__init__(
+            name,
+            framework="langgraph",
             host=host,
             port=port,
             max_iterations=max_steps,
@@ -142,17 +143,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self._graph_config = self._extract_graph_config()
         self._register_graph_components()
 
-    def _infer_graph_name(self) -> str:
-        """Infer a name for the graph."""
-        if hasattr(self._graph, "name") and self._graph.name:
-            return self._graph.name
-        if hasattr(self._graph, "builder") and hasattr(self._graph.builder, "name"):
-            return self._graph.builder.name or "langgraph"
-        return "langgraph"
-
     def _register_workflow_components(self) -> None:
         """Register workflow and activities on the workflow runtime."""
-        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
+        self._workflow_runtime.register_workflow(
+            agent_workflow, name=self.workflow_name
+        )
         self._workflow_runtime.register_activity(
             execute_node_activity, name="execute_node_activity"
         )

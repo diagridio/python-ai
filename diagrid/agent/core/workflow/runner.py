@@ -35,13 +35,17 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
 
     def __init__(
         self,
+        name: str,
         *,
+        framework: str,
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: int = 25,
         component_name: Optional[str] = None,
         state_store: Any = None,
     ) -> None:
+        self._name = name
+        self._framework = framework
         self._host = host
         self._port = port
         self._max_iterations = max_iterations
@@ -51,6 +55,11 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
         self._workflow_client: Optional[DaprWorkflowClient] = None
         self._started = False
+
+    @property
+    def workflow_name(self) -> str:
+        """Return the canonical workflow name: ``dapr.<framework>.<name>.workflow``."""
+        return f"dapr.{self._framework}.{self._name}.workflow"
 
     # ------------------------------------------------------------------
     # Shared lifecycle

@@ -80,6 +80,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         self,
         agent: "LlmAgent",
         *,
+        name: str,
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: int = 100,
@@ -91,6 +92,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         Args:
             agent: The ADK LlmAgent to execute
+            name: Required name for the workflow
             host: Dapr sidecar host (default: localhost)
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations (default: 100)
@@ -103,6 +105,8 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         self._agent = agent
 
         super().__init__(
+            name,
+            framework="adk",
             host=host,
             port=port,
             max_iterations=max_iterations,
@@ -149,7 +153,9 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
     def _register_workflow_components(self) -> None:
         """Register workflow and activities on the workflow runtime."""
-        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
+        self._workflow_runtime.register_workflow(
+            agent_workflow, name=self.workflow_name
+        )
         self._workflow_runtime.register_activity(
             call_llm_activity, name="call_llm_activity"
         )

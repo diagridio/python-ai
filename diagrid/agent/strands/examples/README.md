@@ -61,7 +61,7 @@ User Prompt
 DaprWorkflowAgentRunner
     |
     v
-START WORKFLOW: strands_agent_workflow
+START WORKFLOW: dapr.strands.<name>.workflow
     |
     +--> Activity: run_agent (invoke Strands agent)
     |         |
