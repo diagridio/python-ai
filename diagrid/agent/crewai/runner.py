@@ -118,15 +118,35 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             state_store=state_store,
         )
 
-        # Auto-detect: if user provided no LLM on the agent, resolve a component
-        if self._component_name is None and not self._agent_has_llm():
-            self._dapr_chat_client = DaprChatClient()
-            self._component_name = self._dapr_chat_client.component_name
-            logger.info(
-                "No LLM configured on agent; using Dapr conversation component: %s",
-                self._component_name,
-            )
-        elif self._component_name is not None:
+        # Resolve Dapr conversation component:
+        # 1. Explicit component_name argument takes priority
+        # 2. DaprLLM on the agent carries an optional component_name
+        # 3. No LLM at all → auto-detect from sidecar metadata
+        if self._component_name is None:
+            from .dapr_llm import DaprLLM
+
+            agent_llm = getattr(self._agent, "llm", None)
+            if isinstance(agent_llm, DaprLLM):
+                if agent_llm.component_name:
+                    self._component_name = agent_llm.component_name
+                    self._dapr_chat_client = DaprChatClient(
+                        component_name=self._component_name
+                    )
+                else:
+                    self._dapr_chat_client = DaprChatClient()
+                    self._component_name = self._dapr_chat_client.component_name
+                logger.info(
+                    "DaprLLM detected; using Dapr conversation component: %s",
+                    self._component_name,
+                )
+            elif not self._agent_has_llm():
+                self._dapr_chat_client = DaprChatClient()
+                self._component_name = self._dapr_chat_client.component_name
+                logger.info(
+                    "No LLM configured on agent; using Dapr conversation component: %s",
+                    self._component_name,
+                )
+        else:
             self._dapr_chat_client = DaprChatClient(component_name=self._component_name)
 
         # Register metadata

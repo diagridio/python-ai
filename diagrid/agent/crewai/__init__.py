@@ -56,6 +56,7 @@ Install:
     pip install diagrid
 """
 
+from diagrid.agent.crewai.dapr_llm import DaprLLM, _patch_crewai_llm_fallback
 from diagrid.agent.crewai.runner import DaprWorkflowAgentRunner
 from diagrid.agent.crewai.state import DaprMemoryStore
 from diagrid.agent.crewai.models import (
@@ -83,9 +84,17 @@ from diagrid.agent.crewai.workflow import (
 )
 from diagrid.agent.crewai.version import __version__
 
+# Patch CrewAI's LLM fallback so that Agent() without an explicit llm=
+# auto-discovers the Dapr conversation component instead of crashing with
+# "OPENAI_API_KEY is required".  The patch only activates when the original
+# fallback would have raised; explicit LLM configurations are untouched.
+_patch_crewai_llm_fallback()
+
 __all__ = [
     # Main runner class
     "DaprWorkflowAgentRunner",
+    # LLM placeholder
+    "DaprLLM",
     # State
     "DaprMemoryStore",
     # Data models

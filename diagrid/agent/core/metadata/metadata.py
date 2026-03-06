@@ -7,7 +7,7 @@ import logging
 import random
 import time
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from .introspection import (
     detect_framework,
@@ -19,7 +19,6 @@ from diagrid.agent.core.types import (
 
 from dapr_agents.storage.daprstores.stateservice import (
     StateStoreService,
-    StateStoreError,
 )
 from dapr_agents.agents.configs import (
     AgentMetadataSchema,
@@ -32,6 +31,8 @@ from dapr.clients.grpc._state import Concurrency, Consistency
 from diagrid.agent.core.discovery import discover_components
 
 logger = logging.getLogger(__name__)
+
+_REGISTRY_AGENTS_KEY = "agents"
 
 
 class AgentRegistryAdapter:
@@ -170,6 +171,24 @@ class AgentRegistryAdapter:
                 return True
         return False
 
+    def _effective_team(self, team: Optional[str] = None) -> str:
+        return team or (
+            self._registry.team_name
+            if self._registry and self._registry.team_name
+            else "default"
+        )
+
+    def _team_registry_index_key(self, team: Optional[str] = None) -> str:
+        return f"{self._registry_prefix}{self._effective_team(team)}:_index"
+
+    def _agent_registry_key(self, agent_name: str, team: Optional[str] = None) -> str:
+        return f"{self._registry_prefix}{self._effective_team(team)}:{agent_name}"
+
+    def _registry_partition_key(self, team: Optional[str] = None) -> Dict[str, str]:
+        meta = dict(self._meta)
+        meta["partitionKey"] = f"{self._registry_prefix}{self._effective_team(team)}"
+        return meta
+
     def _extract_metadata(self, agent: Any) -> AgentMetadataSchema:
         """Extract metadata from the given Agent."""
 
@@ -203,153 +222,129 @@ class AgentRegistryAdapter:
         return mapper(agent=agent, schema_version=schema_version)
 
     def _register(self, metadata: AgentMetadataSchema) -> None:
-        """Register the adapter with the given Agent."""
         """
-        Upsert this agent's metadata in the team registry.
+        Register agent metadata in the team registry.
 
-        Args:
-            metadata: Additional metadata to store for this agent.
-            team: Team override; falls back to configured default team.
+        Two-step operation:
+        1. Save per-agent key (simple overwrite, no read-modify-write).
+        2. Update index with ETag-protected retry loop (add agent name to list).
         """
         if not metadata.registry:
             raise ValueError("Registry metadata is required for registration")
 
-        self._upsert_agent_entry(
-            team=metadata.registry.name,
-            agent_name=metadata.name,
-            agent_metadata=metadata.model_dump(),
+        team = metadata.registry.name
+        agent_name = metadata.name
+        partition_meta = self._registry_partition_key(team)
+
+        # Step 1: Save per-agent metadata key (contention-free overwrite)
+        agent_key = self._agent_registry_key(agent_name, team)
+        metadata_dict = metadata.model_dump(mode="json")
+        self.registry_state.save(
+            key=agent_key,
+            value=metadata_dict,
+            state_metadata=partition_meta,
         )
 
-    def _mutate_registry_entry(
-        self,
-        *,
-        team: Optional[str],
-        mutator: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
-        max_attempts: Optional[int] = None,
-    ) -> None:
-        """
-        Apply a mutation to the team registry with optimistic concurrency.
+        # Step 2: Add agent name to index (ETag-protected)
+        index_key = self._team_registry_index_key(team)
+        self._ensure_registry_initialized(key=index_key, meta=partition_meta)
 
-        Args:
-            team: Team identifier.
-            mutator: Function that returns the updated registry dict (or None for no-op).
-            max_attempts: Override for concurrency retries; defaults to init value.
-
-        Raises:
-            StateStoreError: If the mutation fails after retries due to contention.
-        """
-        if not self.registry_state:
-            raise RuntimeError(
-                "registry_state must be provided to mutate the agent registry"
-            )
-
-        key = f"agents:{team or 'default'}"
-        self._meta["partitionKey"] = key
-        attempts = max_attempts or self._max_etag_attempts
-
-        self._ensure_registry_initialized(key=key, meta=self._meta)
-
+        attempts = self._max_etag_attempts
         for attempt in range(1, attempts + 1):
-            logger.debug(
-                f"Mutating registry entry '{key}', attempt {attempt}/{attempts}"
-            )
             try:
-                current, etag = self.registry_state.load_with_etag(
-                    key=key,
-                    default={},
-                    state_metadata=self._meta,
+                current_index, etag = self.registry_state.load_with_etag(
+                    key=index_key,
+                    default={_REGISTRY_AGENTS_KEY: []},
+                    state_metadata=partition_meta,
                 )
-                if not isinstance(current, dict):
-                    current = {}
-
-                updated = mutator(dict(current))
-                if updated is None:
-                    return
-
-                self.registry_state.save(
-                    key=key,
-                    value=updated,
-                    etag=etag,
-                    state_metadata=self._meta,
-                    state_options=self._save_options,
-                )
-                logger.debug(f"Successfully mutated registry entry '{key}'")
-                return
+                agents_list = current_index.get(_REGISTRY_AGENTS_KEY, [])  # type: ignore[union-attr]
+                if agent_name not in agents_list:
+                    agents_list.append(agent_name)
+                    self.registry_state.save(
+                        key=index_key,
+                        value={_REGISTRY_AGENTS_KEY: agents_list},
+                        etag=etag,
+                        state_metadata=partition_meta,
+                        state_options=self._save_options,
+                    )
+                break
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "Conflict during registry mutation (attempt %d/%d) for '%s': %s",
+                    "Conflict updating registry index (attempt %d/%d) for '%s': %s",
                     attempt,
                     attempts,
-                    key,
+                    index_key,
                     exc,
                 )
                 if attempt == attempts:
-                    raise StateStoreError(
-                        f"Failed to mutate agent registry key '{key}' after {attempts} attempts."
-                    ) from exc
-                # Jittered backoff to reduce thundering herd during contention.
-                time.sleep(min(1.0 * attempt, 3.0) * (1 + random.uniform(0, 0.25)))
-
-    def _upsert_agent_entry(
-        self,
-        *,
-        team: Optional[str],
-        agent_name: str,
-        agent_metadata: Dict[str, Any],
-        max_attempts: Optional[int] = None,
-    ) -> None:
-        """
-        Insert/update a single agent record in the team registry.
-
-        Args:
-            team: Team identifier.
-            agent_name: Agent name (key).
-            agent_metadata: Metadata value to write.
-            max_attempts: Override retry attempts.
-        """
-
-        def mutator(current: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-            if current.get(agent_name) == agent_metadata:
-                return None
-            current[agent_name] = agent_metadata
-            return current
-
-        logger.debug(
-            "Upserting agent '%s' in team '%s' registry", agent_name, team or "default"
-        )
-        self._mutate_registry_entry(
-            team=team,
-            mutator=mutator,
-            max_attempts=max_attempts,
-        )
+                    logger.exception(
+                        "Failed to update registry index after %d attempts.", attempts
+                    )
+                    return
+                time.sleep(min(0.25 * attempt, 1.0) * (1 + random.uniform(0, 0.25)))
 
     def _remove_agent_entry(
         self,
         *,
         team: Optional[str],
         agent_name: str,
-        max_attempts: Optional[int] = None,
     ) -> None:
         """
         Delete a single agent record from the team registry.
 
+        Two-step operation:
+        1. Delete per-agent key (simple delete).
+        2. Update index with ETag-protected retry loop (remove agent name from list).
+
         Args:
             team: Team identifier.
             agent_name: Agent name (key).
-            max_attempts: Override retry attempts.
         """
+        partition_meta = self._registry_partition_key(team)
 
-        def mutator(current: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-            if agent_name not in current:
-                return None
-            del current[agent_name]
-            return current
+        # Step 1: Delete per-agent metadata key
+        agent_key = self._agent_registry_key(agent_name, team)
+        try:
+            self.registry_state.delete(key=agent_key, state_metadata=partition_meta)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to delete per-agent key '%s': %s", agent_key, exc)
 
-        self._mutate_registry_entry(
-            team=team,
-            mutator=mutator,
-            max_attempts=max_attempts,
-        )
+        # Step 2: Remove agent name from index (ETag-protected)
+        index_key = self._team_registry_index_key(team)
+        attempts = self._max_etag_attempts
+        for attempt in range(1, attempts + 1):
+            try:
+                current_index, etag = self.registry_state.load_with_etag(
+                    key=index_key,
+                    default={_REGISTRY_AGENTS_KEY: []},
+                    state_metadata=partition_meta,
+                )
+                agents_list = current_index.get(_REGISTRY_AGENTS_KEY, [])  # type: ignore[union-attr]
+                if agent_name not in agents_list:
+                    break
+                agents_list.remove(agent_name)
+                self.registry_state.save(
+                    key=index_key,
+                    value={_REGISTRY_AGENTS_KEY: agents_list},
+                    etag=etag,
+                    state_metadata=partition_meta,
+                    state_options=self._save_options,
+                )
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Conflict updating registry index (attempt %d/%d) for '%s': %s",
+                    attempt,
+                    attempts,
+                    index_key,
+                    exc,
+                )
+                if attempt == attempts:
+                    logger.exception(
+                        "Failed to update registry index after %d attempts.", attempts
+                    )
+                    return
+                time.sleep(min(0.25 * attempt, 1.0) * (1 + random.uniform(0, 0.25)))
 
     def _ensure_registry_initialized(self, *, key: str, meta: Dict[str, str]) -> None:
         """
