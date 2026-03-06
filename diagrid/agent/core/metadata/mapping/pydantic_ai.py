@@ -42,47 +42,14 @@ class PydanticAIMapper(BaseAgentMapper):
             AgentMetadataSchema with extracted metadata
         """
         # Basic agent info
-        name = getattr(agent, "name", None) or "pydantic-ai-agent"
-        model = getattr(agent, "model", "gpt-4o-mini")
-
-        # Extract system prompt
-        system_prompt = ""
-        system_prompts = getattr(agent, "_system_prompts", [])
-        if system_prompts:
-            prompt_parts = []
-            for sp in system_prompts:
-                if isinstance(sp, str):
-                    prompt_parts.append(sp)
-            system_prompt = "\n".join(prompt_parts)
-
-        if not system_prompt:
-            system_prompt = getattr(agent, "system_prompt", "") or ""
-            if callable(system_prompt):
-                try:
-                    system_prompt = system_prompt()
-                except Exception:
-                    system_prompt = ""
+        name = self._extract_name(agent)
+        system_prompt = self._extract_system_prompt(agent)
 
         # Tools
-        tools_metadata = []
-        function_tools = getattr(agent, "_function_tools", {}) or {}
-        for tool_name, tool_info in function_tools.items():
-            tool_description = getattr(tool_info, "description", "")
+        tools_metadata = self._extract_tools(agent)
 
-            tools_metadata.append(
-                ToolMetadata(
-                    name=str(tool_name),
-                    description=str(tool_description),
-                    args="",
-                )
-            )
-
-        # LLM Metadata - extract provider from model string (e.g. "openai:gpt-4o")
-        model_str = str(model)
-        if ":" in model_str:
-            provider = model_str.split(":")[0]
-        else:
-            provider = "openai"
+        # LLM Metadata
+        model_str, provider = self._extract_model_info(agent)
 
         llm_metadata = LLMMetadata(
             client="pydantic_ai",
@@ -107,7 +74,7 @@ class PydanticAIMapper(BaseAgentMapper):
                 metadata={
                     "framework": "pydantic-ai",
                     "name": name,
-                    "model": str(model),
+                    "model": model_str,
                 },
             ),
             name=f"pydantic-ai-{name}",
@@ -118,16 +85,10 @@ class PydanticAIMapper(BaseAgentMapper):
             ),
             llm=llm_metadata,
             tools=tools_metadata,
-            tool_choice="auto" if tools_metadata else None,
             registry=RegistryMetadata(
                 resource_name=None,
                 name="default",
             ),
-            agent_metadata={
-                "framework": "pydantic-ai",
-                "name": name,
-                "model": model_str,
-            },
         )
 
     def _extract_name(self, agent: Any) -> str:
@@ -204,9 +165,9 @@ class PydanticAIMapper(BaseAgentMapper):
 
             tools_metadata.append(
                 ToolMetadata(
-                    tool_name=str(tool_name),
-                    tool_description=str(tool_description),
-                    tool_args=tool_args,
+                    name=str(tool_name),
+                    description=str(tool_description),
+                    args=tool_args,
                 )
             )
 

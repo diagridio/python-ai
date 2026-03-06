@@ -136,19 +136,25 @@ class AgentRegistryAdapter:
                     client="DaprChatClient",
                     provider="dapr",
                     api="chat",
-                    component_name=self._component_name,
+                    resource_name=self._component_name,
                 )
-            elif not _metadata.llm.component_name:
-                _metadata.llm.component_name = self._component_name
+            elif not _metadata.llm.resource_name:
+                _metadata.llm.resource_name = self._component_name
                 _metadata.llm.client = "DaprChatClient"
                 _metadata.llm.provider = "dapr"
 
         # Patch memory/agent statestore from runner's state store
         if self._state_store_name:
-            if _metadata.memory and not _metadata.memory.statestore:
-                _metadata.memory.statestore = self._state_store_name
-            if not _metadata.agent.statestore:
-                _metadata.agent.statestore = self._state_store_name
+            if (
+                _metadata.memory
+                and _metadata.memory.short_term
+                and not _metadata.memory.short_term.resource_name
+            ):
+                _metadata.memory.short_term.resource_name = self._state_store_name
+            if _metadata.agent.metadata is None:
+                _metadata.agent.metadata = {}
+            if not _metadata.agent.metadata.get("state_store"):
+                _metadata.agent.metadata["state_store"] = self._state_store_name
 
         self._register(_metadata)
 
