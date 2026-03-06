@@ -2,8 +2,8 @@
 
 ## Business Source License 1.1
 
-**Licensor:** Diagrid Inc  
-**Licensed Work:** Diagrid AI Infrastructure SDK for Python  
+**Licensor:** Diagrid Inc
+**Licensed Work:** Diagrid AI Infrastructure SDK for Python
 The Licensed Work is © 2026–Present Diagrid Inc.
 
 ---
@@ -16,8 +16,8 @@ The Licensor grants permission to make production use of the Licensed Work witho
 
 The organization using the Licensed Work:
 
-- Has fewer than **eighty (60) full-time equivalent employees**, and  
-- Has less than **twenty million U.S. dollars (USD $15,000,000) in annual gross revenue**, and  
+- Has fewer than **eighty (60) full-time equivalent employees**, and
+- Has less than **twenty million U.S. dollars (USD $15,000,000) in annual gross revenue**, and
 - Is not directly or indirectly controlled by, controlling, under common control with, **or acting on behalf of** an entity that exceeds either of the above thresholds.
 
 ## 2. Prohibited uses
@@ -28,21 +28,21 @@ The Licensed Work may **not** be used in production if it is:
 
 - Included in, embedded within, or redistributed as part of any **product or service whose primary or substantial purpose** is to provide:
 
-  - workflow orchestration  
-  - durable execution  
-  - agent runtime infrastructure  
-  - agent frameworks  
-  - distributed workflow systems  
+  - workflow orchestration
+  - durable execution
+  - agent runtime infrastructure
+  - agent frameworks
+  - distributed workflow systems
   - or other competing infrastructure functionality
 
 - Commercially redistributed, sublicensed, or made available to third parties **for a fee or as part of a commercial offering**, or
 
 - Used to **develop, operate, or power any product, platform, or service that provides functionality substantially similar to or competitive with the Licensor's commercial products or services**, including but not limited to:
 
-  - agent runtime infrastructure  
-  - durable execution platforms  
-  - workflow orchestration systems  
-  - managed agent platforms  
+  - agent runtime infrastructure
+  - durable execution platforms
+  - workflow orchestration systems
+  - managed agent platforms
   - or other competing infrastructure platforms
 
   This restriction applies **regardless of whether the Licensed Work is distributed to third parties or used internally** to power such a service.
@@ -80,10 +80,10 @@ Version 2.0.
 
 The Licensor hereby grants You the right to:
 
-- copy  
-- modify  
-- create derivative works  
-- redistribute  
+- copy
+- modify
+- create derivative works
+- redistribute
 - and make **non-production use**
 
 of the Licensed Work.
@@ -118,7 +118,7 @@ TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON AN *
 
 LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO:
 
-- MERCHANTABILITY  
-- FITNESS FOR A PARTICULAR PURPOSE  
-- NON-INFRINGEMENT  
+- MERCHANTABILITY
+- FITNESS FOR A PARTICULAR PURPOSE
+- NON-INFRINGEMENT
 - TITLE
