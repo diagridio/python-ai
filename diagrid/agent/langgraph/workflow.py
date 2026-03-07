@@ -110,10 +110,12 @@ def _close_langsmith_parent_trace_async(config: Optional[Dict[str, Any]]) -> Non
     def _do_close() -> None:
         try:
             import os
+
             if os.environ.get("LANGSMITH_TRACING", "").lower() not in ("true", "1"):
                 return
             from langsmith import Client
             from datetime import datetime, timezone
+
             client = Client()
             client.update_run(run_id, end_time=datetime.now(timezone.utc))
             client.flush()
@@ -371,6 +373,7 @@ def execute_node_activity(
 
     def _run_node() -> Any:
         import inspect
+
         sig = inspect.signature(node_func)
         params = list(sig.parameters.keys())
 
@@ -380,6 +383,7 @@ def execute_node_activity(
             r = node_func(state)
 
         import asyncio
+
         if asyncio.iscoroutine(r):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -393,12 +397,16 @@ def execute_node_activity(
         # Set up LangSmith child trace so LLM calls nest under the parent
         # "LangGraph" trace created by runner.invoke().
         import os
+
         dotted_order = config.get("langsmith_dotted_order")
-        _use_tracing = dotted_order and os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1")
+        _use_tracing = dotted_order and os.environ.get(
+            "LANGSMITH_TRACING", ""
+        ).lower() in ("true", "1")
 
         if _use_tracing:
             import langsmith as ls
             from langsmith.run_helpers import _PARENT_RUN_TREE
+
             # Clear any stale context from Dapr's thread pool
             _PARENT_RUN_TREE.set(None)
             with ls.trace(
@@ -422,6 +430,7 @@ def execute_node_activity(
     except Exception as e:
         logger.error(f"Error executing node '{node_name}': {e}")
         import traceback
+
         traceback.print_exc()
         return ExecuteNodeOutput(
             node_name=node_name,

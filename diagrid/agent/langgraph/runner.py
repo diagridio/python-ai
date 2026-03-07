@@ -357,9 +357,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         _ls_client = None
         try:
             import os as _os
+
             if _os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1"):
                 from langsmith import Client as _LsClient
                 from datetime import datetime, timezone
+
                 _ls_client = _LsClient()
                 _ls_run_id = str(uuid.uuid4())
                 _now = datetime.now(timezone.utc)
@@ -413,9 +415,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 time.sleep(poll_interval)
 
                 if timeout and (time.time() - start_time) > timeout:
-                    raise TimeoutError(f"Workflow {workflow_id} timed out after {timeout}s")
+                    raise TimeoutError(
+                        f"Workflow {workflow_id} timed out after {timeout}s"
+                    )
 
-                state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
+                state = self._workflow_client.get_workflow_state(
+                    instance_id=workflow_id
+                )
 
                 if state is None:
                     raise RuntimeError(f"Workflow {workflow_id} state not found")
@@ -445,7 +451,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             if _ls_run_id and _ls_client:
                 try:
                     from datetime import datetime, timezone
-                    _ls_client.update_run(_ls_run_id, end_time=datetime.now(timezone.utc))
+
+                    _ls_client.update_run(
+                        _ls_run_id, end_time=datetime.now(timezone.utc)
+                    )
                     _ls_client.flush()
                 except Exception as e:
                     logger.debug(f"LangSmith parent trace close failed: {e}")
@@ -484,9 +493,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         # Create LangSmith parent trace and pass dotted_order to activities via config.
         try:
             import os as _os
+
             if _os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1"):
                 from langsmith import Client as _LsClient
                 from datetime import datetime, timezone
+
                 _ls_client = _LsClient()
                 _ls_run_id = str(uuid.uuid4())
                 _now = datetime.now(timezone.utc)
