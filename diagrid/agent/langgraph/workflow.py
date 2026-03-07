@@ -97,6 +97,32 @@ def set_default_graph_config(
     _default_max_steps = max_steps
 
 
+def _close_langsmith_parent_trace_async(config: Optional[Dict[str, Any]]) -> None:
+    """Close the parent LangSmith trace in a background thread (non-blocking)."""
+    if not config:
+        return
+    run_id = config.get("langsmith_run_id")
+    if not run_id:
+        return
+
+    import threading
+
+    def _do_close() -> None:
+        try:
+            import os
+            if os.environ.get("LANGSMITH_TRACING", "").lower() not in ("true", "1"):
+                return
+            from langsmith import Client
+            from datetime import datetime, timezone
+            client = Client()
+            client.update_run(run_id, end_time=datetime.now(timezone.utc))
+            client.flush()
+        except Exception as e:
+            print(f"  [TRACE] Failed to close parent trace: {e}", flush=True)
+
+    threading.Thread(target=_do_close, daemon=True).start()
+
+
 def clear_registries() -> None:
     """Clear all registries."""
     _node_registry.clear()
@@ -186,6 +212,8 @@ def agent_workflow(
 
         # Check if END is reached
         if END in pending_nodes or not pending_nodes:
+            if not ctx.is_replaying:
+                _close_langsmith_parent_trace_async(config)
             return GraphWorkflowOutput(
                 output=_extract_output(channel_state, graph_config.output_channels),
                 channel_state=channel_state,
@@ -196,6 +224,8 @@ def agent_workflow(
         # Filter out END from nodes to execute
         nodes_to_execute = [n for n in pending_nodes if n != END]
         if not nodes_to_execute:
+            if not ctx.is_replaying:
+                _close_langsmith_parent_trace_async(config)
             return GraphWorkflowOutput(
                 output=_extract_output(channel_state, graph_config.output_channels),
                 channel_state=channel_state,
@@ -226,6 +256,8 @@ def agent_workflow(
         for result_data in task_results:
             output = ExecuteNodeOutput.from_dict(result_data)
             if output.error:
+                if not ctx.is_replaying:
+                    _close_langsmith_parent_trace_async(config)
                 return GraphWorkflowOutput(
                     output=_extract_output(channel_state, graph_config.output_channels),
                     channel_state=channel_state,
@@ -264,6 +296,8 @@ def agent_workflow(
                         )
                         cond_output = EvaluateConditionOutput.from_dict(cond_result)
                         if cond_output.error:
+                            if not ctx.is_replaying:
+                                _close_langsmith_parent_trace_async(config)
                             return GraphWorkflowOutput(
                                 output=_extract_output(
                                     channel_state, graph_config.output_channels
@@ -286,6 +320,8 @@ def agent_workflow(
         step += 1
 
     # Max steps reached
+    if not ctx.is_replaying:
+        _close_langsmith_parent_trace_async(config)
     return GraphWorkflowOutput(
         output=_extract_output(channel_state, graph_config.output_channels),
         channel_state=channel_state,
@@ -330,38 +366,67 @@ def execute_node_activity(
     # Reconstruct state from channel values
     state = _reconstruct_state(node_input.channel_state)
 
-    # Execute the node function
-    # Node functions can have different signatures:
-    # - (state) -> updates
-    # - (state, config) -> updates
-    import inspect
+    # Extract tracing config
+    config = node_input.config or {}
 
-    sig = inspect.signature(node_func)
-    params = list(sig.parameters.keys())
+    def _run_node() -> Any:
+        import inspect
+        sig = inspect.signature(node_func)
+        params = list(sig.parameters.keys())
 
-    if len(params) >= 2 and "config" in params:
-        result = node_func(state, config=node_input.config or {})
-    else:
-        result = node_func(state)
+        if len(params) >= 2 and "config" in params:
+            r = node_func(state, config=config)
+        else:
+            r = node_func(state)
 
-    # Handle async functions
-    import asyncio
+        import asyncio
+        if asyncio.iscoroutine(r):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                r = loop.run_until_complete(r)
+            finally:
+                loop.close()
+        return r
 
-    if asyncio.iscoroutine(result):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(result)
-        finally:
-            loop.close()
+    try:
+        # Set up LangSmith child trace so LLM calls nest under the parent
+        # "LangGraph" trace created by runner.invoke().
+        import os
+        dotted_order = config.get("langsmith_dotted_order")
+        _use_tracing = dotted_order and os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1")
 
-    # Convert result to writes
-    writes = _result_to_writes(result)
+        if _use_tracing:
+            import langsmith as ls
+            from langsmith.run_helpers import _PARENT_RUN_TREE
+            # Clear any stale context from Dapr's thread pool
+            _PARENT_RUN_TREE.set(None)
+            with ls.trace(
+                name=node_name,
+                run_type="chain",
+                parent=dotted_order,
+                inputs={"step": node_name},
+            ):
+                result = _run_node()
+        else:
+            result = _run_node()
 
-    return ExecuteNodeOutput(
-        node_name=node_name,
-        writes=writes,
-    ).to_dict()
+        # Convert result to writes
+        writes = _result_to_writes(result)
+
+        return ExecuteNodeOutput(
+            node_name=node_name,
+            writes=writes,
+        ).to_dict()
+
+    except Exception as e:
+        logger.error(f"Error executing node '{node_name}': {e}")
+        import traceback
+        traceback.print_exc()
+        return ExecuteNodeOutput(
+            node_name=node_name,
+            error=str(e),
+        ).to_dict()
 
 
 def evaluate_condition_activity(
