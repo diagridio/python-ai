@@ -14,7 +14,7 @@
 
 3. **Install dependencies** (from the repo root):
    ```bash
-   pip install diagrid
+   pip install -r requirements.txt
    ```
 
 4. **OPENAI_API_KEY** environment variable set:

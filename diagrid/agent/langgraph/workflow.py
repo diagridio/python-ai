@@ -393,49 +393,39 @@ def execute_node_activity(
                 loop.close()
         return r
 
-    try:
-        # Set up LangSmith child trace so LLM calls nest under the parent
-        # "LangGraph" trace created by runner.invoke().
-        import os
+    # Set up LangSmith child trace so LLM calls nest under the parent
+    # "LangGraph" trace created by runner.invoke().
+    import os
 
-        dotted_order = config.get("langsmith_dotted_order")
-        _use_tracing = dotted_order and os.environ.get(
-            "LANGSMITH_TRACING", ""
-        ).lower() in ("true", "1")
+    dotted_order = config.get("langsmith_dotted_order")
+    _use_tracing = dotted_order and os.environ.get("LANGSMITH_TRACING", "").lower() in (
+        "true",
+        "1",
+    )
 
-        if _use_tracing:
-            import langsmith as ls
-            from langsmith.run_helpers import _PARENT_RUN_TREE
+    if _use_tracing:
+        import langsmith as ls
+        from langsmith.run_helpers import _PARENT_RUN_TREE
 
-            # Clear any stale context from Dapr's thread pool
-            _PARENT_RUN_TREE.set(None)
-            with ls.trace(
-                name=node_name,
-                run_type="chain",
-                parent=dotted_order,
-                inputs={"step": node_name},
-            ):
-                result = _run_node()
-        else:
+        # Clear any stale context from Dapr's thread pool
+        _PARENT_RUN_TREE.set(None)
+        with ls.trace(
+            name=node_name,
+            run_type="chain",
+            parent=dotted_order,
+            inputs={"step": node_name},
+        ):
             result = _run_node()
+    else:
+        result = _run_node()
 
-        # Convert result to writes
-        writes = _result_to_writes(result)
+    # Convert result to writes
+    writes = _result_to_writes(result)
 
-        return ExecuteNodeOutput(
-            node_name=node_name,
-            writes=writes,
-        ).to_dict()
-
-    except Exception as e:
-        logger.error(f"Error executing node '{node_name}': {e}")
-        import traceback
-
-        traceback.print_exc()
-        return ExecuteNodeOutput(
-            node_name=node_name,
-            error=str(e),
-        ).to_dict()
+    return ExecuteNodeOutput(
+        node_name=node_name,
+        writes=writes,
+    ).to_dict()
 
 
 def evaluate_condition_activity(

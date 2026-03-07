@@ -12,9 +12,9 @@
    export GOOGLE_API_KEY=your-api-key
    ```
 
-3. **Install dependencies** (from the repo root):
+3. **Install dependencies** 
    ```bash
-   pip3 install -e ".[adk]"
+   pip install -r requirements.txt
    ```
 
 ## Running the Examples
