@@ -410,6 +410,7 @@ def execute_node_activity(
         # _PARENT_RUN_TREE is a private symbol; degrade gracefully if it moves.
         try:
             from langsmith.run_helpers import _PARENT_RUN_TREE
+
             _PARENT_RUN_TREE.set(None)
         except (ImportError, AttributeError):
             pass
