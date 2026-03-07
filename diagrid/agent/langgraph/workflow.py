@@ -120,7 +120,7 @@ def _close_langsmith_parent_trace_async(config: Optional[Dict[str, Any]]) -> Non
             client.update_run(run_id, end_time=datetime.now(timezone.utc))
             client.flush()
         except Exception as e:
-            print(f"  [TRACE] Failed to close parent trace: {e}", flush=True)
+            logger.debug(f"Failed to close parent LangSmith trace: {e}")
 
     threading.Thread(target=_do_close, daemon=True).start()
 
@@ -405,10 +405,15 @@ def execute_node_activity(
 
     if _use_tracing:
         import langsmith as ls
-        from langsmith.run_helpers import _PARENT_RUN_TREE
 
-        # Clear any stale context from Dapr's thread pool
-        _PARENT_RUN_TREE.set(None)
+        # Clear any stale context from Dapr's thread pool.
+        # _PARENT_RUN_TREE is a private symbol; degrade gracefully if it moves.
+        try:
+            from langsmith.run_helpers import _PARENT_RUN_TREE
+            _PARENT_RUN_TREE.set(None)
+        except (ImportError, AttributeError):
+            pass
+
         with ls.trace(
             name=node_name,
             run_type="chain",
