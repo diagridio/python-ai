@@ -580,8 +580,6 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             ):
                 yield event
 
-            # Workflow completed normally; workflow.py already closes the trace.
-            _ls_run_id = None
         finally:
             if _ls_run_id and _ls_client:
                 try:
