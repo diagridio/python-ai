@@ -180,11 +180,11 @@ async def main():
                     break
         else:
             # Workflow was already scheduled - poll using the saved workflow_id
-            saved_workflow_id = state.get("workflow_id")
+            saved_workflow_id = state.get("workflow_id", "")
             log(
                 f"Workflow already scheduled. Polling for completion: {saved_workflow_id}"
             )
-            await poll_for_completion(runner, saved_workflow_id)
+            await poll_for_completion(runner, saved_workflow_id or "")
 
     except KeyboardInterrupt:
         log("\nInterrupted by user")
@@ -198,6 +198,8 @@ async def poll_for_completion(runner: DaprWorkflowAgentRunner, workflow_id: str)
     if not workflow_id:
         log("No workflow_id saved - cannot poll!")
         return
+
+    assert runner._workflow_client is not None
 
     previous_status = None
     while True:
