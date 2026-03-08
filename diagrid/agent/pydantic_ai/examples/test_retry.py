@@ -113,8 +113,9 @@ Call each tool exactly once in sequence."""
 
 async def main():
     """Run the retry test."""
-    # Reset state
+    # Reset state (both on-disk and in-memory)
     save_state({"tool1_count": 0, "tool2_count": 0, "tool3_count": 0})
+    attempt_state.update({"tool1_count": 0, "tool2_count": 0, "tool3_count": 0})
 
     log(f"\n{'=' * 60}")
     log("RETRY TEST - Pydantic AI")
