@@ -231,12 +231,6 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         elif model is None:
             model = "unknown"
 
-        # Strip provider prefix (e.g. "openai:gpt-4o-mini" -> "gpt-4o-mini")
-        # pydantic_ai uses "provider:model" format, but the OpenAI API needs
-        # just the model name.
-        if isinstance(model, str) and ":" in model:
-            model = model.split(":", 1)[1]
-
         # Extract system prompt from Pydantic AI agent
         system_prompt = ""
         system_prompts = getattr(self._agent, "_system_prompts", [])
