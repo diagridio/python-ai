@@ -184,7 +184,7 @@ async def main():
             log(
                 f"Workflow already scheduled. Polling for completion: {saved_workflow_id}"
             )
-            await poll_for_completion(runner, saved_workflow_id)
+            await poll_for_completion(runner, str(saved_workflow_id) if saved_workflow_id is not None else "")
 
     except KeyboardInterrupt:
         log("\nInterrupted by user")
@@ -202,6 +202,9 @@ async def poll_for_completion(runner: DaprWorkflowAgentRunner, workflow_id: str)
     previous_status = None
     while True:
         await asyncio.sleep(1.0)
+        if runner._workflow_client is None:
+            log("Workflow client not initialized!")
+            break
         workflow_state = runner._workflow_client.get_workflow_state(
             instance_id=workflow_id
         )
