@@ -185,7 +185,9 @@ async def main():
                 f"Workflow already scheduled. Polling for completion: {saved_workflow_id}"
             )
 
-            await poll_for_completion(runner, str(saved_workflow_id) if saved_workflow_id is not None else "")
+            await poll_for_completion(
+                runner, str(saved_workflow_id) if saved_workflow_id is not None else ""
+            )
 
     except KeyboardInterrupt:
         log("\nInterrupted by user")
