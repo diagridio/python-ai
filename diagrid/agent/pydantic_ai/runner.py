@@ -222,10 +222,10 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         model = getattr(self._agent, "model", None)
         if model is not None and not isinstance(model, str):
-            # Use model_id or model_name from Model object
+            # Use model_name first (bare name), then model_id, then str()
             model = (
-                getattr(model, "model_id", None)
-                or getattr(model, "model_name", None)
+                getattr(model, "model_name", None)
+                or getattr(model, "model_id", None)
                 or str(model)
             )
         elif model is None:
