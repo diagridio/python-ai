@@ -349,6 +349,43 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
+        config = config or {}
+        config["thread_id"] = thread_id
+
+        # Create LangSmith parent trace and pass dotted_order to activities via config.
+        # The finally on the polling loop below closes the trace on FAILED/TERMINATED.
+        # On normal completion, _close_langsmith_parent_trace_async in workflow.py also
+        # closes it (benign double-close since update_run is idempotent).
+        _ls_run_id = None
+        _ls_client = None
+        try:
+            import os as _os
+
+            if _os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1"):
+                from langsmith import Client as _LsClient
+                from datetime import datetime, timezone
+
+                _ls_client = _LsClient()
+                _ls_run_id = str(uuid.uuid4())
+                _now = datetime.now(timezone.utc)
+                _ts = _now.strftime("%Y%m%dT%H%M%S") + f"{_now.microsecond:06d}Z"
+                _dotted_order = f"{_ts}{_ls_run_id}"
+                _ls_client.create_run(
+                    id=_ls_run_id,
+                    name="LangGraph",
+                    run_type="chain",
+                    inputs=input,
+                    dotted_order=_dotted_order,
+                    trace_id=_ls_run_id,
+                    extra={"metadata": {"thread_id": thread_id}},
+                )
+                config["langsmith_dotted_order"] = _dotted_order
+                config["langsmith_run_id"] = _ls_run_id
+        except Exception as e:
+            logger.debug(f"LangSmith parent trace creation failed: {e}")
+            _ls_run_id = None
+            _ls_client = None
+
         channel_state = ChannelState(
             values=self._serialize_input(input),
             versions={k: 1 for k in input.keys()},
@@ -376,38 +413,56 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         )
 
         start_time = time.time()
-        while True:
-            time.sleep(poll_interval)
+        try:
+            while True:
+                time.sleep(poll_interval)
 
-            if timeout and (time.time() - start_time) > timeout:
-                raise TimeoutError(f"Workflow {workflow_id} timed out after {timeout}s")
-
-            state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
-
-            if state is None:
-                raise RuntimeError(f"Workflow {workflow_id} state not found")
-
-            if state.runtime_status == WorkflowStatus.COMPLETED:
-                if state.serialized_output:
-                    output_dict = (
-                        json.loads(state.serialized_output)
-                        if isinstance(state.serialized_output, str)
-                        else state.serialized_output
+                if timeout and (time.time() - start_time) > timeout:
+                    raise TimeoutError(
+                        f"Workflow {workflow_id} timed out after {timeout}s"
                     )
-                    output = GraphWorkflowOutput.from_dict(output_dict)
-                    return output.output
-                return {}
 
-            elif state.runtime_status == WorkflowStatus.FAILED:
-                error_msg = "Workflow failed"
-                if state.failure_details:
-                    error_msg = getattr(
-                        state.failure_details, "message", str(state.failure_details)
+                state = self._workflow_client.get_workflow_state(
+                    instance_id=workflow_id
+                )
+
+                if state is None:
+                    raise RuntimeError(f"Workflow {workflow_id} state not found")
+
+                if state.runtime_status == WorkflowStatus.COMPLETED:
+                    # Workflow completed normally; workflow.py already closes the trace.
+                    _ls_run_id = None
+                    if state.serialized_output:
+                        output_dict = (
+                            json.loads(state.serialized_output)
+                            if isinstance(state.serialized_output, str)
+                            else state.serialized_output
+                        )
+                        output = GraphWorkflowOutput.from_dict(output_dict)
+                        return output.output
+                    return {}
+
+                elif state.runtime_status == WorkflowStatus.FAILED:
+                    error_msg = "Workflow failed"
+                    if state.failure_details:
+                        error_msg = getattr(
+                            state.failure_details, "message", str(state.failure_details)
+                        )
+                    raise RuntimeError(error_msg)
+
+                elif state.runtime_status == WorkflowStatus.TERMINATED:
+                    raise RuntimeError(f"Workflow {workflow_id} was terminated")
+        finally:
+            if _ls_run_id and _ls_client:
+                try:
+                    from datetime import datetime, timezone
+
+                    _ls_client.update_run(
+                        _ls_run_id, end_time=datetime.now(timezone.utc)
                     )
-                raise RuntimeError(error_msg)
-
-            elif state.runtime_status == WorkflowStatus.TERMINATED:
-                raise RuntimeError(f"Workflow {workflow_id} was terminated")
+                    _ls_client.flush()
+                except Exception as e:
+                    logger.debug(f"LangSmith parent trace close failed: {e}")
 
     async def run_async(
         self,
@@ -437,6 +492,42 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
+        config = config or {}
+        config["thread_id"] = thread_id
+
+        # Create LangSmith parent trace and pass dotted_order to activities via config.
+        # The trace is closed by _close_langsmith_parent_trace_async in workflow.py on
+        # normal completion. The finally below closes it if the caller abandons the generator.
+        _ls_run_id = None
+        _ls_client = None
+        try:
+            import os as _os
+
+            if _os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1"):
+                from langsmith import Client as _LsClient
+                from datetime import datetime, timezone
+
+                _ls_client = _LsClient()
+                _ls_run_id = str(uuid.uuid4())
+                _now = datetime.now(timezone.utc)
+                _ts = _now.strftime("%Y%m%dT%H%M%S") + f"{_now.microsecond:06d}Z"
+                _dotted_order = f"{_ts}{_ls_run_id}"
+                _ls_client.create_run(
+                    id=_ls_run_id,
+                    name="LangGraph",
+                    run_type="chain",
+                    inputs=input,
+                    dotted_order=_dotted_order,
+                    trace_id=_ls_run_id,
+                    extra={"metadata": {"thread_id": thread_id}},
+                )
+                config["langsmith_dotted_order"] = _dotted_order
+                config["langsmith_run_id"] = _ls_run_id
+        except Exception as e:
+            logger.debug(f"LangSmith parent trace creation failed: {e}")
+            _ls_run_id = None
+            _ls_client = None
+
         channel_state = ChannelState(
             values=self._serialize_input(input),
             versions={k: 1 for k in input.keys()},
@@ -463,30 +554,43 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             instance_id=workflow_id,
         )
 
-        yield {
-            "type": "workflow_started",
-            "workflow_id": workflow_id,
-            "thread_id": thread_id,
-            "graph_name": self._name,
-        }
-
-        def _parse_output(wf_id: str, output_dict: dict) -> dict:  # type: ignore[type-arg]
-            output = GraphWorkflowOutput.from_dict(output_dict)
-            return {
-                "type": "workflow_completed",
-                "workflow_id": wf_id,
-                "output": output.output,
-                "steps": output.steps,
-                "status": output.status,
+        try:
+            yield {
+                "type": "workflow_started",
+                "workflow_id": workflow_id,
+                "thread_id": thread_id,
+                "graph_name": self._name,
             }
 
-        async for event in self._poll_workflow(
-            workflow_id,
-            thread_id,
-            poll_interval=poll_interval,
-            parse_output=_parse_output,
-        ):
-            yield event
+            def _parse_output(wf_id: str, output_dict: dict) -> dict:  # type: ignore[type-arg]
+                output = GraphWorkflowOutput.from_dict(output_dict)
+                return {
+                    "type": "workflow_completed",
+                    "workflow_id": wf_id,
+                    "output": output.output,
+                    "steps": output.steps,
+                    "status": output.status,
+                }
+
+            async for event in self._poll_workflow(
+                workflow_id,
+                thread_id,
+                poll_interval=poll_interval,
+                parse_output=_parse_output,
+            ):
+                yield event
+
+        finally:
+            if _ls_run_id and _ls_client:
+                try:
+                    from datetime import datetime, timezone
+
+                    _ls_client.update_run(
+                        _ls_run_id, end_time=datetime.now(timezone.utc)
+                    )
+                    _ls_client.flush()
+                except Exception as e:
+                    logger.debug(f"LangSmith parent trace close failed: {e}")
 
     def _serialize_input(self, input: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize input values for storage."""

@@ -9,7 +9,7 @@ using Dapr Workflows. Each node execution becomes a separate Dapr activity.
 
 Prerequisites:
     - Redis running on localhost:6379
-    - Install dependencies: pip install diagrid langgraph
+    - Install dependencies: pip install -r requirements.txt
 
 Run with:
     cd diagrid/agent/langgraph/examples
