@@ -80,24 +80,24 @@ class TestDaprAgentWorkflow:
         return agent
 
     def test_init_defaults(self, mock_agent):
-        """Test initialization with defaults."""
-        workflow = DaprAgentWorkflow(agent=mock_agent)
+        """Test initialization with name."""
+        workflow = DaprAgentWorkflow(agent=mock_agent, name="my_agent")
 
         assert workflow.agent is mock_agent
-        assert workflow.workflow_name == "strands_agent_workflow"
+        assert workflow.workflow_name == "dapr.strands.my_agent.workflow"
 
     def test_init_custom_name(self, mock_agent):
-        """Test initialization with custom workflow name."""
+        """Test initialization with custom name."""
         workflow = DaprAgentWorkflow(
             agent=mock_agent,
-            workflow_name="test_workflow",
+            name="test_workflow",
         )
 
-        assert workflow.workflow_name == "test_workflow"
+        assert workflow.workflow_name == "dapr.strands.test_workflow.workflow"
 
     def test_register(self, mock_agent):
         """Test that register creates workflow and activity."""
-        workflow = DaprAgentWorkflow(agent=mock_agent)
+        workflow = DaprAgentWorkflow(agent=mock_agent, name="my_agent")
 
         mock_runtime = MagicMock()
 
@@ -116,14 +116,14 @@ class TestDaprAgentWorkflowDecorator:
         mock_agent.tool_registry = MagicMock()
         mock_agent.tool_registry.registry = {}
 
-        @dapr_agent_workflow(workflow_name="decorated_workflow")
+        @dapr_agent_workflow(name="decorated_workflow")
         def create_agent():
             return mock_agent
 
         workflow = create_agent()
 
         assert isinstance(workflow, DaprAgentWorkflow)
-        assert workflow.workflow_name == "decorated_workflow"
+        assert workflow.workflow_name == "dapr.strands.decorated_workflow.workflow"
 
     def test_decorator_passes_args(self):
         """Test that decorator passes arguments to factory."""
@@ -133,7 +133,7 @@ class TestDaprAgentWorkflowDecorator:
 
         received_args = []
 
-        @dapr_agent_workflow()
+        @dapr_agent_workflow(name="test_agent")
         def create_agent(param1, param2=None):
             received_args.extend([param1, param2])
             return mock_agent

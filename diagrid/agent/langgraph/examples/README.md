@@ -7,9 +7,10 @@
    docker run -d --name redis -p 6379:6379 redis:latest
    ```
 
-2. **Install dependencies** (from the repo root):
+2. **Install dependencies**:
    ```bash
-   pip3 install -e ".[langgraph]"
+   cd diagrid/agent/langgraph/examples
+   pip install -r requirements.txt
    ```
 
 ## Running the Examples

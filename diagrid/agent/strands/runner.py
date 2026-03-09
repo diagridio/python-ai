@@ -82,6 +82,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         self,
         agent: "Agent",
         *,
+        name: str,
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: Optional[int] = None,
@@ -93,6 +94,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         Args:
             agent: The Strands Agent to execute
+            name: Required name for the workflow
             host: Dapr sidecar host (default: localhost)
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations (default: 25)
@@ -105,6 +107,8 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         self._agent = agent
 
         super().__init__(
+            name,
+            framework="strands",
             host=host,
             port=port,
             max_iterations=max_iterations or 25,
@@ -137,9 +141,20 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         self._register_workflow_components()
 
     def _agent_has_model(self) -> bool:
-        """Check if the agent has an explicit model configured."""
+        """Check if the agent has an explicit model configured.
+
+        Strands always sets a default BedrockModel even when the user
+        doesn't pass one.  Treat the implicit default the same as
+        "no model configured" so the Dapr conversation component
+        auto-detect can kick in.
+        """
         model = getattr(self._agent, "model", None)
-        return model is not None
+        if model is None:
+            return False
+        # Strands defaults to BedrockModel when no model is provided
+        if type(model).__name__ == "BedrockModel":
+            return False
+        return True
 
     def _register_workflow_components(self) -> None:
         """Set up the workflow runtime, activities, and workflow."""
@@ -223,11 +238,15 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             if tool_specs:
                 tools = []
                 for spec in tool_specs:
+                    input_schema = spec.get("inputSchema")
+                    # Strands wraps inputSchema as {"json": {…}}; unwrap it
+                    if isinstance(input_schema, dict) and "json" in input_schema:
+                        input_schema = input_schema["json"]
                     tools.append(
                         ChatToolDefinition(
                             name=spec.get("name", ""),
                             description=spec.get("description", ""),
-                            parameters=spec.get("inputSchema"),
+                            parameters=input_schema,
                         )
                     )
 
@@ -463,7 +482,9 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             }
 
         # Register workflow and activities
-        self._workflow_runtime.register_workflow(agent_workflow, name="agent_workflow")
+        self._workflow_runtime.register_workflow(
+            agent_workflow, name=self.workflow_name
+        )
         self._workflow_runtime.register_activity(
             call_model_activity, name="strands_call_model"
         )

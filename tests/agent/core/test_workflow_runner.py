@@ -13,6 +13,10 @@ from diagrid.agent.core.workflow.runner import BaseWorkflowRunner
 class ConcreteRunner(BaseWorkflowRunner):
     """Minimal concrete subclass for testing."""
 
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("framework", "test")
+        super().__init__(kwargs.pop("name", "test_agent"), **kwargs)
+
     def _setup_telemetry(self) -> None:
         pass
 

@@ -65,13 +65,15 @@ class DaprAgentWorkflow:
     def __init__(
         self,
         agent: Agent,
-        workflow_name: str = "strands_agent_workflow",
+        *,
+        name: str,
     ) -> None:
         self.agent = agent
-        self.workflow_name = workflow_name
+        self._name = name
+        self.workflow_name = f"dapr.strands.{name}.workflow"
         self._workflow_runtime: Any = None
         self._workflow_func: Any = None
-        self._activity_name = f"{workflow_name}_run_agent"
+        self._activity_name = f"dapr.strands.{name}.run_agent"
 
     def register(self, workflow_runtime: Any) -> None:
         """Register the agent workflow and activities with Dapr.
@@ -346,13 +348,16 @@ class DaprAgentWorkflow:
 
 
 def dapr_agent_workflow(
-    workflow_name: str = "strands_agent_workflow",
+    name: str,
 ) -> Callable[[Callable[..., Agent]], Callable[..., DaprAgentWorkflow]]:
     """Decorator to create a Dapr workflow from an agent factory function.
 
+    Args:
+        name: Required name for the workflow (produces ``dapr.strands.<name>.workflow``).
+
     Example:
         ```python
-        @dapr_agent_workflow(workflow_name="my_agent")
+        @dapr_agent_workflow(name="my_agent")
         def create_agent() -> Agent:
             return Agent(model="us.amazon.nova-pro-v1:0", tools=[my_tool])
 
@@ -366,7 +371,7 @@ def dapr_agent_workflow(
     ) -> Callable[..., DaprAgentWorkflow]:
         def wrapper(*args: Any, **kwargs: Any) -> DaprAgentWorkflow:
             agent = agent_factory(*args, **kwargs)
-            return DaprAgentWorkflow(agent=agent, workflow_name=workflow_name)
+            return DaprAgentWorkflow(agent=agent, name=name)
 
         return wrapper
 

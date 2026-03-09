@@ -62,16 +62,18 @@ class DurableAgent:
     def __init__(
         self,
         agent: Agent,
-        workflow_name: str | None = None,
+        *,
+        name: str,
     ):
         """Create a durable wrapper around a Strands Agent.
 
         Args:
             agent: The Strands Agent instance to make durable
-            workflow_name: Optional custom workflow name
+            name: Required name (produces ``dapr.strands.<name>.workflow``)
         """
         self._agent = agent
-        self._workflow_name = workflow_name or f"durable_agent_{uuid.uuid4().hex[:8]}"
+        self._name = name
+        self._workflow_name = f"dapr.strands.{name}.workflow"
 
         # Dapr components (initialized on first call)
         self._workflow_runtime: Any = None
@@ -87,7 +89,6 @@ class DurableAgent:
         from dapr.ext.workflow import WorkflowRuntime, DaprWorkflowClient
 
         agent = self._agent
-        workflow_name = self._workflow_name
 
         self._workflow_runtime = WorkflowRuntime()
 
@@ -360,12 +361,14 @@ class DurableAgent:
             }
 
         # Register everything
-        self._workflow_runtime.register_workflow(agent_workflow, name=workflow_name)
-        self._workflow_runtime.register_activity(
-            call_model_activity, name=f"{workflow_name}_call_model"
+        self._workflow_runtime.register_workflow(
+            agent_workflow, name=self._workflow_name
         )
         self._workflow_runtime.register_activity(
-            execute_tool_activity, name=f"{workflow_name}_execute_tool"
+            call_model_activity, name=f"dapr.strands.{self._name}.call_model"
+        )
+        self._workflow_runtime.register_activity(
+            execute_tool_activity, name=f"dapr.strands.{self._name}.execute_tool"
         )
 
         # Store reference to workflow function for scheduling

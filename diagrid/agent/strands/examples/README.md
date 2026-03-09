@@ -14,7 +14,7 @@
 
 3. **Install dependencies** (from the repo root):
    ```bash
-   pip install diagrid
+   pip install -r requirements.txt
    ```
 
 4. **OPENAI_API_KEY** environment variable set:
@@ -61,7 +61,7 @@ User Prompt
 DaprWorkflowAgentRunner
     |
     v
-START WORKFLOW: strands_agent_workflow
+START WORKFLOW: dapr.strands.<name>.workflow
     |
     +--> Activity: run_agent (invoke Strands agent)
     |         |
