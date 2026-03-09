@@ -1,0 +1,114 @@
+name: Claude Implement Suggestions
+
+on:
+  repository_dispatch:
+    types:
+      - claude-implement
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: claude-implement-${{ github.event.client_payload.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR info
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prNumber = context.payload.client_payload.pr_number;
+            const suggestions = context.payload.client_payload.suggestions;
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            if (pr.state !== 'open') {
+              core.setFailed(`PR #${prNumber} is ${pr.state}, skipping`);
+              return;
+            }
+
+            core.setOutput('number', prNumber);
+            core.setOutput('ref', pr.head.ref);
+            core.setOutput('suggestions', suggestions);
+
+      - name: Generate App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.DIAGRID_BOT_APPLICATION_ID }}
+          private-key: ${{ secrets.DIAGRID_BOT_APPLICATION_PRIVATE_KEY }}
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 1
+
+      - name: Run Claude Implementation
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ steps.app-token.outputs.token }}
+          allowed_bots: "diagrid-bot[bot]"
+          use_sticky_comment: true
+          claude_args: "--max-turns 30"
+          prompt: |
+            You are the Implementation Agent. Implement ONLY the specific non-architectural suggestions listed below.
+
+            ## Suggestions to Implement
+            ${{ steps.pr.outputs.suggestions }}
+
+            ## Instructions
+            1. Read and understand each suggestion above.
+            2. Implement each one precisely — do not add anything beyond what is listed.
+            3. After all changes, verify by running the full quality suite:
+               - `uv sync --all-packages --extra all --group test`
+               - `uv run ruff format`
+               - `uv run flake8 diagrid tests --ignore=E501,F401,W503,E203,E704`
+               - `uv run mypy --config-file mypy.ini`
+               - `uv run pytest tests -m "not integration"`
+            4. If any check fails after your changes, fix it before committing.
+            5. Commit with message: "fix: implement review suggestions" and push.
+
+            ## Rules
+            - Implement ONLY the suggestions listed above. Nothing else.
+            - Do NOT make architectural changes (new patterns, restructuring, new abstractions).
+            - Do NOT modify: pyproject.toml, uv.lock, mypy.ini, charts/, .github/workflows/
+            - Do NOT add new dependencies.
+            - Do NOT delete or skip existing tests.
+            - Do NOT change public APIs in diagrid/core/.
+            - If a suggestion conflicts with these rules, skip it and note why in your commit message.
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Bash(uv sync*)",
+                  "Bash(uv run ruff format*)",
+                  "Bash(uv run flake8*)",
+                  "Bash(uv run mypy*)",
+                  "Bash(uv run pytest*)",
+                  "Bash(git add*)",
+                  "Bash(git commit*)",
+                  "Bash(git push*)",
+                  "Bash(git diff*)",
+                  "Bash(git log*)",
+                  "Bash(git status*)",
+                  "Read",
+                  "Edit",
+                  "Glob",
+                  "Grep"
+                ],
+                "deny": []
+              }
+            }

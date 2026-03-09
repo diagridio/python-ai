@@ -1,0 +1,165 @@
+# -*- coding: utf-8 -*-
+
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
+
+import unittest
+
+import pytest
+
+pytest.importorskip("dapr.ext.strands", reason="dapr.ext.strands not installed")
+
+from diagrid.agent.core.metadata.introspection import detect_framework  # noqa: E402
+from diagrid.agent.core.metadata.mapping.strands import StrandsMapper  # noqa: E402
+
+
+class MockSessionManager:
+    """Mock DaprSessionManager for testing."""
+
+    def __init__(
+        self, state_store_name="test-statestore", session_id="test-session-123"
+    ):
+        self._state_store_name = state_store_name
+        self._session_id = session_id
+
+    @property
+    def state_store_name(self) -> str:
+        return self._state_store_name
+
+
+class StrandsMapperTest(unittest.TestCase):
+    """Tests for StrandsMapper metadata extraction."""
+
+    def test_mapper_instantiation(self):
+        """Test that StrandsMapper can be instantiated."""
+        mapper = StrandsMapper()
+        self.assertIsNotNone(mapper)
+
+    def test_metadata_extraction_basic(self):
+        """Test basic metadata extraction from a mock session manager."""
+        mock_manager = MockSessionManager()
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        self.assertEqual(metadata.version, "1.0.0")
+        self.assertEqual(metadata.agent.type, "Strands")
+        self.assertEqual(metadata.agent.role, "Session Manager")
+        self.assertEqual(metadata.agent.orchestrator, False)
+        self.assertEqual(
+            metadata.agent.goal,
+            "Manages multi-agent sessions with distributed state storage",
+        )
+
+    def test_metadata_memory_extraction(self):
+        """Test memory metadata extraction."""
+        mock_manager = MockSessionManager(
+            state_store_name="custom-store", session_id="session-456"
+        )
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        assert metadata.memory is not None
+        assert metadata.memory.short_term is not None
+        self.assertEqual(metadata.memory.short_term.type, "DaprSessionManager")
+        self.assertEqual(metadata.memory.short_term.resource_name, "custom-store")
+
+    def test_metadata_name_generation(self):
+        """Test agent name generation with session ID."""
+        mock_manager = MockSessionManager(session_id="my-session")
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        # Fallback path generates different name
+        self.assertEqual(metadata.name, "strands-session-my-session")
+
+    def test_metadata_name_without_session_id(self):
+        """Test agent name generation without session ID."""
+        mock_manager = MockSessionManager(session_id=None)
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        self.assertEqual(metadata.name, "strands-session")
+
+    def test_metadata_agent_metadata_field(self):
+        """Test agent.metadata field contains framework info."""
+        mock_manager = MockSessionManager(state_store_name="store1", session_id="sess1")
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        assert metadata.agent.metadata is not None
+        self.assertEqual(metadata.agent.metadata["framework"], "strands")
+        self.assertEqual(metadata.agent.metadata["session_id"], "sess1")
+        self.assertEqual(metadata.agent.metadata["state_store"], "store1")
+        # agent_id is None in fallback path when no SessionAgent exists
+        self.assertIsNone(metadata.agent.metadata["agent_id"])
+
+    def test_metadata_registry_defaults(self):
+        """Test registry metadata has correct defaults."""
+        mock_manager = MockSessionManager()
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        assert metadata.registry is not None
+        self.assertIsNone(metadata.registry.resource_name)
+        assert metadata.registry.name == "default"
+
+    def test_metadata_optional_fields_are_none(self):
+        """Test optional fields are None when not applicable."""
+        mock_manager = MockSessionManager()
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        self.assertIsNone(metadata.pubsub)
+        self.assertIsNone(metadata.llm)
+        self.assertEqual(metadata.tools, [])  # Empty list, not None
+        self.assertIsNone(metadata.agent.max_iterations)
+        self.assertIsNone(metadata.agent.tool_choice)
+
+    def test_metadata_registered_at_is_set(self):
+        """Test registered_at timestamp is set."""
+        mock_manager = MockSessionManager()
+        mapper = StrandsMapper()
+
+        metadata = mapper.map_agent_metadata(mock_manager, schema_version="1.0.0")
+
+        self.assertIsNotNone(metadata.registered_at)
+        self.assertIn("T", metadata.registered_at)
+
+
+class StrandsFrameworkDetectionTest(unittest.TestCase):
+    """Tests for framework detection with Strands objects."""
+
+    def test_detect_framework_by_class_name(self):
+        """Test detection by DaprSessionManager class name."""
+
+        class DaprSessionManager:
+            pass
+
+        mock = DaprSessionManager()
+        framework = detect_framework(mock)
+        self.assertEqual(framework, "strands")
+
+    def test_detect_framework_by_module(self):
+        """Test detection by strands module path."""
+
+        class MockAgent:
+            pass
+
+        # Use actual type name and module that detection looks for
+        MockAgent.__module__ = "strands.agent"
+        MockAgent.__name__ = "Agent"
+        mock = MockAgent()
+        framework = detect_framework(mock)
+        self.assertEqual(framework, "strands")
+
+
+if __name__ == "__main__":
+    unittest.main()

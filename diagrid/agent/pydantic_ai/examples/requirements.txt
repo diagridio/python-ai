@@ -1,0 +1,5 @@
+dapr>=1.17.0
+dapr-ext-workflow>=1.17.0
+pydantic-ai>=0.0.1
+openai>=1.0.0
+diagrid>=0.1.15

@@ -1,0 +1,73 @@
+name: Lint and Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/*
+      - release-*
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  lint:
+    if: >-
+      github.event_name != 'push' ||
+      !contains(fromJSON('["github-actions[bot]", "diagrid-bot[bot]"]'), github.event.head_commit.author.name)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.11"
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: "latest"
+    - name: Install dependencies
+      run: |
+        uv sync --all-packages
+    - name: Run Autoformatter
+      run: |
+        uv run ruff format
+        statusResult=$(git status -u --porcelain)
+        if [ -z "$statusResult" ]
+        then
+            exit 0
+        else
+            echo "Source files are not formatted correctly. Run 'uv run ruff format' to autoformat."
+            exit 1
+        fi
+    - name: Run Linter
+      run: |
+        uv run flake8 diagrid tests --ignore=E501,F401,W503,E203,E704
+  build:
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python_ver: "3.11" }
+          - { os: ubuntu-latest, python_ver: "3.12" }
+          - { os: ubuntu-latest, python_ver: "3.13" }
+          - { os: windows-latest, python_ver: "3.13" }
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python ${{ matrix.python_ver }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python_ver }}
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: "latest"
+    - name: Install dependencies
+      run: uv sync --all-packages --extra all --group test
+    - name: Check Typing
+      run: uv run mypy --config-file mypy.ini
+    - name: Run Tests
+      run: uv run pytest tests -m "not integration"
