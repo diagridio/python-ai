@@ -69,6 +69,7 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
             from diagrid.agent.core.state import DaprStateStore
 
             self._state_store = DaprStateStore(store_name=discovered.memory_store_name)
+
     @property
     def workflow_name(self) -> str:
         """Return the canonical workflow name: ``dapr.<framework>.<name>.workflow``."""
