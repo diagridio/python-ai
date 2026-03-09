@@ -6,15 +6,16 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
-from diagrid.agent.core.types import (
+from diagrid.agent.core.types import SupportedFrameworks
+from dapr_agents import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     RegistryMetadata,
-    SupportedFrameworks,
     ToolMetadata,
 )
+from dapr_agents.agents.configs import MemoryStoreMetadata
 
 from dapr.ext.strands import DaprSessionManager
 from strands.types.session import SessionAgent
@@ -230,7 +231,7 @@ class StrandsMapper(BaseAgentMapper):
             provider="dapr",
             api="chat",
             model=model,
-            component_name=llm_component,
+            resource_name=llm_component,
         )
 
     def _extract_tools_metadata(
@@ -255,18 +256,18 @@ class StrandsMapper(BaseAgentMapper):
             if isinstance(tool, dict):
                 tool_metadata_list.append(
                     ToolMetadata(
-                        tool_name=str(tool.get("name", "unknown")),
-                        tool_description=str(tool.get("description", "")),
-                        tool_args=str(tool.get("args", {})),
+                        name=str(tool.get("name", "unknown")),
+                        description=str(tool.get("description", "")),
+                        args=str(tool.get("args", {})),
                     )
                 )
             elif hasattr(tool, "name"):
                 # Handle tool objects
                 tool_metadata_list.append(
                     ToolMetadata(
-                        tool_name=str(getattr(tool, "name", "unknown")),
-                        tool_description=str(getattr(tool, "description", "")),
-                        tool_args=str(getattr(tool, "args", {})),
+                        name=str(getattr(tool, "name", "unknown")),
+                        description=str(getattr(tool, "description", "")),
+                        args=str(getattr(tool, "args", {})),
                     )
                 )
 
@@ -318,7 +319,7 @@ class StrandsMapper(BaseAgentMapper):
                     model=llm_info.get(
                         "model", "unknown"
                     ),  # gpt-4o, claude-3-opus, etc.
-                    component_name=None,
+                    resource_name=None,
                 )
             else:
                 llm_metadata = None
@@ -330,9 +331,9 @@ class StrandsMapper(BaseAgentMapper):
                 if isinstance(tool, dict):
                     tools_metadata.append(
                         ToolMetadata(
-                            tool_name=tool.get("name", "unknown"),
-                            tool_description=tool.get("description", ""),
-                            tool_args="",
+                            name=tool.get("name", "unknown"),
+                            description=tool.get("description", ""),
+                            args="",
                         )
                     )
 
@@ -345,7 +346,7 @@ class StrandsMapper(BaseAgentMapper):
             memory_type = "DaprSessionManager" if has_session_manager else "InMemory"
 
             return AgentMetadataSchema(
-                schema_version=schema_version,
+                version=schema_version,
                 agent=AgentMetadata(
                     appid="",
                     type="Strands",
@@ -355,33 +356,32 @@ class StrandsMapper(BaseAgentMapper):
                     instructions=extracted.get("instructions")
                     if extracted.get("instructions")
                     else None,
-                    statestore=state_store_name,  # Set from session manager
                     system_prompt=extracted.get("system_prompt"),
                     framework=SupportedFrameworks.STRANDS,
+                    tool_choice="auto" if tools_metadata else None,
+                    max_iterations=extracted.get("max_iterations"),
+                    metadata={
+                        "framework": "strands",
+                        "agent_id": agent_id,
+                        "session_id": session_id_value,
+                        "state_store": state_store_name,
+                    },
                 ),
                 name=full_name,
                 registered_at=datetime.now(timezone.utc).isoformat(),
                 pubsub=None,
                 memory=MemoryMetadata(
-                    type=memory_type,
-                    statestore=state_store_name,  # Set statestore
+                    short_term=MemoryStoreMetadata(
+                        type=memory_type,
+                        resource_name=state_store_name,
+                    ),
                 ),
                 llm=llm_metadata,
                 tools=tools_metadata,  # Already a list, could be empty []
-                tool_choice="auto"
-                if tools_metadata
-                else None,  # Set tool_choice based on whether tools exist
-                max_iterations=extracted.get("max_iterations"),
                 registry=RegistryMetadata(
-                    statestore=None,
+                    resource_name=None,
                     name="default",
                 ),
-                agent_metadata={
-                    "framework": "strands",
-                    "agent_id": agent_id,
-                    "session_id": session_id_value,
-                    "state_store": state_store_name,
-                },
             )
 
         # Case 2: DaprSessionManager (legacy approach)
@@ -436,7 +436,7 @@ class StrandsMapper(BaseAgentMapper):
             )
 
         return AgentMetadataSchema(
-            schema_version=schema_version,
+            version=schema_version,
             agent=AgentMetadata(
                 appid="",
                 type="Strands",
@@ -444,29 +444,30 @@ class StrandsMapper(BaseAgentMapper):
                 role=role,
                 goal=goal,
                 instructions=instructions if instructions else None,
-                statestore=state_store_name,
                 system_prompt=system_prompt,
                 framework=SupportedFrameworks.STRANDS,
+                tool_choice=tool_choice,
+                max_iterations=max_iterations,
+                metadata={
+                    "framework": "strands",
+                    "session_id": session_id,
+                    "agent_id": agent_id,
+                    "state_store": state_store_name,
+                },
             ),
             name=agent_name,
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=None,
             memory=MemoryMetadata(
-                type="DaprSessionManager",
-                statestore=state_store_name,
+                short_term=MemoryStoreMetadata(
+                    type="DaprSessionManager",
+                    resource_name=state_store_name,
+                ),
             ),
             llm=llm_metadata,
             tools=tools_metadata,  # Already a list, could be empty []
-            tool_choice=tool_choice,
-            max_iterations=max_iterations,
             registry=RegistryMetadata(
-                statestore=None,
+                resource_name=None,
                 name="default",
             ),
-            agent_metadata={
-                "framework": "strands",
-                "session_id": session_id,
-                "agent_id": agent_id,
-                "state_store": state_store_name,
-            },
         )

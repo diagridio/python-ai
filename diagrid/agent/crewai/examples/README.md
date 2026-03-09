@@ -12,7 +12,7 @@
    export OPENAI_API_KEY=your-api-key
    ```
 
-3. **Install dependencies** 
+3. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```

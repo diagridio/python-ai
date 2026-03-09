@@ -8,29 +8,19 @@ from .metadata import (
     AgentRegistryAdapter,
 )
 from .types import (
-    AgentMetadata,
-    AgentMetadataSchema,
-    LLMMetadata,
-    MemoryMetadata,
-    PubSubMetadata,
-    RegistryMetadata,
     SupportedFrameworks,
-    ToolMetadata,
 )
 from .chat import DaprChatClient
+from .discovery import discover_components, DiscoveredComponents
+from .observability import resolve_observability_config
 from .state import DaprStateStore
 from .pubsub import DaprPubSub
 from .workflow import BaseWorkflowRunner
 
+from dapr_agents.agents.configs import AgentObservabilityConfig
+
 __all__ = [
     "SupportedFrameworks",
-    "AgentMetadataSchema",
-    "AgentMetadata",
-    "LLMMetadata",
-    "PubSubMetadata",
-    "ToolMetadata",
-    "RegistryMetadata",
-    "MemoryMetadata",
     "AgentRegistryAdapter",
     "find_agent_in_stack",
     "detect_framework",
@@ -39,4 +29,8 @@ __all__ = [
     "DaprStateStore",
     "DaprPubSub",
     "BaseWorkflowRunner",
+    "discover_components",
+    "DiscoveredComponents",
+    "resolve_observability_config",
+    "AgentObservabilityConfig",
 ]

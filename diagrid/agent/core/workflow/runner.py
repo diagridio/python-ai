@@ -13,7 +13,9 @@ from typing import Any, AsyncIterator, Optional
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
 
 from diagrid.agent.core.chat import close_chat_clients
+from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
+from diagrid.agent.core.observability import resolve_observability_config
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,18 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
         self._workflow_client: Optional[DaprWorkflowClient] = None
         self._started = False
+
+        # Run unified discovery and resolve observability config
+        discovered = discover_components()
+        self._observability_config = resolve_observability_config(
+            runtime_conf=discovered.runtime_conf or None,
+        )
+
+        # Auto-configure state store from discovery if not explicitly provided
+        if self._state_store is None and discovered.memory_store_name:
+            from diagrid.agent.core.state import DaprStateStore
+
+            self._state_store = DaprStateStore(store_name=discovered.memory_store_name)
 
     @property
     def workflow_name(self) -> str:

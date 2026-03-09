@@ -44,13 +44,13 @@ class TestStrandsMapper(unittest.TestCase):
         result = self.mapper.map_agent_metadata(session_manager, "edge")
 
         # Should use fallback values
-        self.assertEqual(result.schema_version, "edge")
+        self.assertEqual(result.version, "edge")
         self.assertEqual(result.agent.role, "Session Manager")
         self.assertEqual(result.agent.type, "Strands")
         self.assertIsNone(result.llm)
         self.assertEqual(result.tools, [])  # Empty list, not None
-        self.assertIsNone(result.tool_choice)
-        self.assertIsNone(result.max_iterations)
+        self.assertIsNone(result.agent.tool_choice)
+        self.assertIsNone(result.agent.max_iterations)
         self.assertEqual(result.name, "strands-session-test-session")
 
     def test_map_agent_metadata_with_basic_agent(self):
@@ -76,8 +76,8 @@ class TestStrandsMapper(unittest.TestCase):
         self.assertEqual(result.agent.goal, "Help users")
         self.assertEqual(result.agent.system_prompt, "You are a helpful assistant")
         self.assertEqual(result.name, "strands-test-session-assistant")
-        assert result.agent_metadata is not None
-        self.assertEqual(result.agent_metadata["agent_id"], "assistant")
+        assert result.agent.metadata is not None
+        self.assertEqual(result.agent.metadata["agent_id"], "assistant")
 
     def test_map_agent_metadata_with_llm_config(self):
         """Test mapping with LLM configuration."""
@@ -102,7 +102,7 @@ class TestStrandsMapper(unittest.TestCase):
         self.assertEqual(result.llm.client, "DaprChatClient")
         self.assertEqual(result.llm.provider, "dapr")
         self.assertEqual(result.llm.model, "gpt-4")
-        self.assertEqual(result.llm.component_name, "openai")
+        self.assertEqual(result.llm.resource_name, "openai")
 
     def test_map_agent_metadata_with_tools(self):
         """Test mapping with tools configuration."""
@@ -132,10 +132,10 @@ class TestStrandsMapper(unittest.TestCase):
         # Should extract tools metadata
         assert result.tools is not None
         self.assertEqual(len(result.tools), 2)
-        self.assertEqual(result.tools[0].tool_name, "calculator")
-        self.assertEqual(result.tools[0].tool_description, "Calculate math")
-        self.assertEqual(result.tools[1].tool_name, "search")
-        self.assertEqual(result.tool_choice, "auto")
+        self.assertEqual(result.tools[0].name, "calculator")
+        self.assertEqual(result.tools[0].description, "Calculate math")
+        self.assertEqual(result.tools[1].name, "search")
+        self.assertEqual(result.agent.tool_choice, "auto")
 
     def test_map_agent_metadata_with_instructions(self):
         """Test mapping with instructions."""
@@ -155,7 +155,7 @@ class TestStrandsMapper(unittest.TestCase):
         assert result.agent.instructions is not None
         self.assertEqual(len(result.agent.instructions), 3)
         self.assertEqual(result.agent.instructions[0], "Be concise")
-        self.assertEqual(result.max_iterations, 10)
+        self.assertEqual(result.agent.max_iterations, 10)
 
     def test_extract_llm_metadata_no_config(self):
         """Test LLM metadata extraction with no configuration."""
@@ -179,8 +179,8 @@ class TestStrandsMapper(unittest.TestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].tool_name, "my_tool")
-        self.assertEqual(result[0].tool_description, "My tool description")
+        self.assertEqual(result[0].name, "my_tool")
+        self.assertEqual(result[0].description, "My tool description")
 
 
 if __name__ == "__main__":

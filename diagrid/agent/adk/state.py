@@ -23,7 +23,7 @@ class DaprSessionStore:
         ```python
         from diagrid.agent.adk.state import DaprSessionStore
 
-        session_store = DaprSessionStore(store_name="statestore")
+        session_store = DaprSessionStore(store_name="agent-memory")
 
         # Save session state
         session_store.save_session("session-123", {

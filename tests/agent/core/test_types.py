@@ -6,16 +6,17 @@
 
 import unittest
 
-from diagrid.agent.core.types import (
+from dapr_agents import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     PubSubMetadata,
     RegistryMetadata,
-    SupportedFrameworks,
     ToolMetadata,
 )
+
+from diagrid.agent.core.types import SupportedFrameworks
 
 
 class SupportedFrameworksTest(unittest.TestCase):
@@ -50,8 +51,8 @@ class AgentMetadataTest(unittest.TestCase):
         self.assertEqual(agent.appid, "test-app")
         self.assertEqual(agent.type, "standalone")
         self.assertEqual(agent.orchestrator, False)
-        self.assertEqual(agent.role, "")
-        self.assertEqual(agent.goal, "")
+        self.assertIsNone(agent.role)
+        self.assertIsNone(agent.goal)
 
     def test_full_agent_metadata(self):
         """Test AgentMetadata with all fields populated."""
@@ -62,7 +63,6 @@ class AgentMetadataTest(unittest.TestCase):
             role="coordinator",
             goal="Manage tasks",
             instructions=["Step 1", "Step 2"],
-            statestore="agent-store",
             system_prompt="You are a helpful assistant.",
         )
         self.assertEqual(agent.appid, "test-app")
@@ -71,7 +71,6 @@ class AgentMetadataTest(unittest.TestCase):
         self.assertEqual(agent.role, "coordinator")
         self.assertEqual(agent.goal, "Manage tasks")
         self.assertEqual(agent.instructions, ["Step 1", "Step 2"])
-        self.assertEqual(agent.statestore, "agent-store")
         self.assertEqual(agent.system_prompt, "You are a helpful assistant.")
 
 
@@ -105,15 +104,15 @@ class PubSubMetadataTest(unittest.TestCase):
 
     def test_minimal_pubsub_metadata(self):
         """Test PubSubMetadata with minimal required fields."""
-        pubsub = PubSubMetadata(name="pubsub-component")
-        self.assertEqual(pubsub.name, "pubsub-component")
+        pubsub = PubSubMetadata(resource_name="pubsub-component")
+        self.assertEqual(pubsub.resource_name, "pubsub-component")
         self.assertIsNone(pubsub.broadcast_topic)
         self.assertIsNone(pubsub.agent_topic)
 
     def test_full_pubsub_metadata(self):
         """Test PubSubMetadata with all fields."""
         pubsub = PubSubMetadata(
-            name="pubsub-component",
+            resource_name="pubsub-component",
             broadcast_topic="broadcast",
             agent_topic="agent-topic",
         )
@@ -127,13 +126,13 @@ class ToolMetadataTest(unittest.TestCase):
     def test_tool_metadata(self):
         """Test ToolMetadata creation."""
         tool = ToolMetadata(
-            tool_name="search",
-            tool_description="Search the web",
-            tool_args='{"query": "string"}',
+            name="search",
+            description="Search the web",
+            args='{"query": "string"}',
         )
-        self.assertEqual(tool.tool_name, "search")
-        self.assertEqual(tool.tool_description, "Search the web")
-        self.assertEqual(tool.tool_args, '{"query": "string"}')
+        self.assertEqual(tool.name, "search")
+        self.assertEqual(tool.description, "Search the web")
+        self.assertEqual(tool.args, '{"query": "string"}')
 
 
 class MemoryMetadataTest(unittest.TestCase):
@@ -141,18 +140,23 @@ class MemoryMetadataTest(unittest.TestCase):
 
     def test_minimal_memory_metadata(self):
         """Test MemoryMetadata with minimal required fields."""
-        memory = MemoryMetadata(type="DaprCheckpointer")
-        self.assertEqual(memory.type, "DaprCheckpointer")
-        self.assertIsNone(memory.statestore)
+        memory = MemoryMetadata()
+        self.assertIsNone(memory.short_term)
+        self.assertIsNone(memory.long_term)
 
     def test_full_memory_metadata(self):
-        """Test MemoryMetadata with all fields."""
+        """Test MemoryMetadata with short_term and long_term."""
+        from dapr_agents.agents.configs import MemoryStoreMetadata
+
         memory = MemoryMetadata(
-            type="DaprSessionManager",
-            statestore="session-store",
+            short_term=MemoryStoreMetadata(
+                type="DaprSessionManager",
+                resource_name="session-store",
+            ),
         )
-        self.assertEqual(memory.type, "DaprSessionManager")
-        self.assertEqual(memory.statestore, "session-store")
+        assert memory.short_term is not None
+        self.assertEqual(memory.short_term.type, "DaprSessionManager")
+        self.assertEqual(memory.short_term.resource_name, "session-store")
 
 
 class RegistryMetadataTest(unittest.TestCase):
@@ -161,13 +165,13 @@ class RegistryMetadataTest(unittest.TestCase):
     def test_empty_registry_metadata(self):
         """Test RegistryMetadata with defaults."""
         registry = RegistryMetadata()
-        self.assertIsNone(registry.statestore)
+        self.assertIsNone(registry.resource_name)
         self.assertIsNone(registry.name)
 
     def test_full_registry_metadata(self):
         """Test RegistryMetadata with all fields."""
-        registry = RegistryMetadata(statestore="registry-store", name="team-alpha")
-        self.assertEqual(registry.statestore, "registry-store")
+        registry = RegistryMetadata(resource_name="registry-store", name="team-alpha")
+        self.assertEqual(registry.resource_name, "registry-store")
         self.assertEqual(registry.name, "team-alpha")
 
 
@@ -177,12 +181,12 @@ class AgentMetadataSchemaTest(unittest.TestCase):
     def test_minimal_schema(self):
         """Test AgentMetadataSchema with minimal required fields."""
         schema = AgentMetadataSchema(
-            schema_version="1.0.0",
+            version="1.0.0",
             agent=AgentMetadata(appid="test-app", type="standalone"),
             name="test-agent",
             registered_at="2026-01-01T00:00:00Z",
         )
-        self.assertEqual(schema.schema_version, "1.0.0")
+        self.assertEqual(schema.version, "1.0.0")
         self.assertEqual(schema.agent.appid, "test-app")
         self.assertEqual(schema.name, "test-agent")
         self.assertIsNone(schema.pubsub)
@@ -191,36 +195,40 @@ class AgentMetadataSchemaTest(unittest.TestCase):
 
     def test_full_schema(self):
         """Test AgentMetadataSchema with all fields."""
+        from dapr_agents.agents.configs import MemoryStoreMetadata
+
         schema = AgentMetadataSchema(
-            schema_version="1.0.0",
-            agent=AgentMetadata(appid="test-app", type="durable"),
+            version="1.0.0",
+            agent=AgentMetadata(
+                appid="test-app",
+                type="durable",
+                max_iterations=10,
+                tool_choice="auto",
+                metadata={"custom": "data"},
+            ),
             name="full-agent",
             registered_at="2026-01-01T00:00:00Z",
-            pubsub=PubSubMetadata(name="pubsub"),
-            memory=MemoryMetadata(type="DaprCheckpointer"),
+            pubsub=PubSubMetadata(resource_name="pubsub"),
+            memory=MemoryMetadata(
+                short_term=MemoryStoreMetadata(type="DaprCheckpointer"),
+            ),
             llm=LLMMetadata(client="OpenAI", provider="openai"),
             registry=RegistryMetadata(name="team-1"),
-            tools=[
-                ToolMetadata(
-                    tool_name="search", tool_description="Search tool", tool_args="{}"
-                )
-            ],
-            max_iterations=10,
-            tool_choice="auto",
-            agent_metadata={"custom": "data"},
+            tools=[ToolMetadata(name="search", description="Search tool", args="{}")],
         )
         self.assertEqual(schema.name, "full-agent")
         assert schema.pubsub is not None
-        self.assertEqual(schema.pubsub.name, "pubsub")
+        self.assertEqual(schema.pubsub.resource_name, "pubsub")
         assert schema.memory is not None
-        self.assertEqual(schema.memory.type, "DaprCheckpointer")
+        assert schema.memory.short_term is not None
+        self.assertEqual(schema.memory.short_term.type, "DaprCheckpointer")
         assert schema.llm is not None
         self.assertEqual(schema.llm.client, "OpenAI")
         assert schema.tools is not None
         self.assertEqual(len(schema.tools), 1)
-        self.assertEqual(schema.max_iterations, 10)
-        assert schema.agent_metadata is not None
-        self.assertEqual(schema.agent_metadata["custom"], "data")
+        self.assertEqual(schema.agent.max_iterations, 10)
+        assert schema.agent.metadata is not None
+        self.assertEqual(schema.agent.metadata["custom"], "data")
 
     def test_export_json_schema(self):
         """Test export_json_schema method."""
@@ -236,7 +244,7 @@ class AgentMetadataSchemaTest(unittest.TestCase):
     def test_model_dump(self):
         """Test model_dump produces valid dictionary."""
         schema = AgentMetadataSchema(
-            schema_version="1.0.0",
+            version="1.0.0",
             agent=AgentMetadata(appid="test-app", type="standalone"),
             name="test-agent",
             registered_at="2026-01-01T00:00:00Z",
@@ -244,7 +252,7 @@ class AgentMetadataSchemaTest(unittest.TestCase):
         data = schema.model_dump()
 
         self.assertIsInstance(data, dict)
-        self.assertEqual(data["schema_version"], "1.0.0")
+        self.assertEqual(data["version"], "1.0.0")
         self.assertEqual(data["name"], "test-agent")
         self.assertIn("agent", data)
 

@@ -16,13 +16,19 @@ Key design decisions
   "just works" without a collector.
 * Uses the **gRPC OTLP exporter** — matching the collector endpoint
   (``:4317``) that dapr-agents already export to successfully.
+* Accepts an optional ``AgentObservabilityConfig`` so that callers
+  can pass resolved config (explicit > env > statestore) instead of
+  relying solely on env vars.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dapr_agents.agents.configs import AgentObservabilityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +40,25 @@ _OTEL_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
 _OTEL_SERVICE_ENV = "OTEL_SERVICE_NAME"
 
 
-def _get_otlp_endpoint() -> Optional[str]:
-    """Return the OTLP gRPC endpoint, or *None* when not configured."""
-    raw = os.environ.get(_OTEL_ENDPOINT_ENV)
+def _resolve_endpoint(
+    config: Optional[AgentObservabilityConfig] = None,
+) -> Optional[str]:
+    """Return the OTLP gRPC endpoint from config or env, or *None*."""
+    raw: Optional[str] = None
+
+    if config is not None:
+        # When config says disabled, return None immediately
+        if config.enabled is False:
+            return None
+        raw = config.endpoint
+
+    if not raw:
+        raw = os.environ.get(_OTEL_ENDPOINT_ENV)
+
     if not raw:
         return None
 
     endpoint = raw.rstrip("/")
-    # Strip any path suffix — gRPC exporter only needs host:port
     for suffix in ("/v1/traces", "/v1/metrics", "/v1/logs"):
         if endpoint.endswith(suffix):
             endpoint = endpoint[: -len(suffix)]
@@ -50,12 +67,28 @@ def _get_otlp_endpoint() -> Optional[str]:
     return endpoint
 
 
-def _make_span_processor() -> Any:
+def _resolve_headers(
+    config: Optional[AgentObservabilityConfig] = None,
+) -> Optional[dict[str, str]]:
+    """Extract OTLP headers from config, or None."""
+    if config is not None and config.headers:
+        return dict(config.headers)
+    return None
+
+
+def _get_otlp_endpoint() -> Optional[str]:
+    """Return the OTLP gRPC endpoint, or *None* when not configured."""
+    return _resolve_endpoint()
+
+
+def _make_span_processor(
+    config: Optional[AgentObservabilityConfig] = None,
+) -> Any:
     """Create a BatchSpanProcessor targeting the OTLP gRPC endpoint.
 
     Returns None when the endpoint is not configured.
     """
-    endpoint = _get_otlp_endpoint()
+    endpoint = _resolve_endpoint(config)
     if endpoint is None:
         return None
 
@@ -64,7 +97,10 @@ def _make_span_processor() -> Any:
         OTLPSpanExporter,
     )
 
-    return BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+    headers = _resolve_headers(config)
+    return BatchSpanProcessor(
+        OTLPSpanExporter(endpoint=endpoint, insecure=True, headers=headers)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -84,17 +120,21 @@ def get_tracer(name: str = "diagrid.agent") -> Any:
 
 def setup_telemetry(
     service_name: str | None = None,
+    config: Optional[AgentObservabilityConfig] = None,
 ) -> Any:
     """Create a global ``TracerProvider`` + ``LoggerProvider`` via OTLP/gRPC.
 
     This is the right call for frameworks that rely on
     ``trace.get_tracer()`` at module level (Google ADK, LangGraph).
 
+    When ``config`` is provided, its endpoint/service_name/headers are
+    used with higher priority than env vars.
+
     Returns the TracerProvider so callers can hand it to framework-specific
     bridges (e.g. ``OtelTracingProcessor`` for OpenAI Agents SDK), or
     *None* when no endpoint is configured.
     """
-    endpoint = _get_otlp_endpoint()
+    endpoint = _resolve_endpoint(config)
     if endpoint is None:
         logger.debug("OTEL endpoint not set — telemetry disabled")
         return None
@@ -103,23 +143,33 @@ def setup_telemetry(
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
 
-    svc = os.environ.get(_OTEL_SERVICE_ENV) or service_name or "unknown-service"
+    svc_from_config = config.service_name if config else None
+    svc = (
+        svc_from_config
+        or os.environ.get(_OTEL_SERVICE_ENV)
+        or service_name
+        or "unknown-service"
+    )
     resource = Resource.create({"service.name": svc})
 
     # --- Traces ---
-    processor = _make_span_processor()
+    processor = _make_span_processor(config)
     provider = TracerProvider(resource=resource)
     provider.add_span_processor(processor)
     trace.set_tracer_provider(provider)
     logger.info("OTEL TracerProvider set (service=%s, endpoint=%s)", svc, endpoint)
 
     # --- Logs ---
-    _setup_logging(resource, endpoint)
+    _setup_logging(resource, endpoint, config)
 
     return provider
 
 
-def _setup_logging(resource: Any, endpoint: str) -> None:
+def _setup_logging(
+    resource: Any,
+    endpoint: str,
+    config: Optional[AgentObservabilityConfig] = None,
+) -> None:
     """Set up OTLP log export so Python logs flow to the collector."""
     try:
         from opentelemetry import _logs
@@ -129,9 +179,12 @@ def _setup_logging(resource: Any, endpoint: str) -> None:
             OTLPLogExporter,
         )
 
+        headers = _resolve_headers(config)
         log_provider = LoggerProvider(resource=resource)
         log_provider.add_log_record_processor(
-            BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint, insecure=True))
+            BatchLogRecordProcessor(
+                OTLPLogExporter(endpoint=endpoint, insecure=True, headers=headers)
+            )
         )
         _logs.set_logger_provider(log_provider)
 
@@ -145,7 +198,9 @@ def _setup_logging(resource: Any, endpoint: str) -> None:
         logger.debug("OTEL logging setup failed", exc_info=True)
 
 
-def patch_crewai_telemetry() -> None:
+def patch_crewai_telemetry(
+    config: Optional[AgentObservabilityConfig] = None,
+) -> None:
     """Monkey-patch CrewAI's ``Telemetry.set_tracer`` to also export to our collector.
 
     CrewAI's ``EventListener`` lazily creates a ``Telemetry`` singleton and
@@ -154,7 +209,7 @@ def patch_crewai_telemetry() -> None:
     OTLP span processor into CrewAI's own provider the moment it initialises
     — regardless of timing.
     """
-    endpoint = _get_otlp_endpoint()
+    endpoint = _resolve_endpoint(config)
     if endpoint is None:
         logger.debug("OTEL endpoint not set — skipping CrewAI patch")
         return
@@ -166,12 +221,14 @@ def patch_crewai_telemetry() -> None:
         return
 
     original_set_tracer = Telemetry.set_tracer
+    # Capture config in closure for the patched function
+    _config = config
 
     def _patched_set_tracer(self: Any) -> None:
         original_set_tracer(self)
         # After CrewAI sets its provider, attach our exporter
         if getattr(self, "ready", False) and getattr(self, "provider", None):
-            processor = _make_span_processor()
+            processor = _make_span_processor(_config)
             if processor is not None:
                 self.provider.add_span_processor(processor)
                 logger.info("Injected OTLP exporter into CrewAI TracerProvider")
@@ -180,9 +237,12 @@ def patch_crewai_telemetry() -> None:
     logger.info("CrewAI Telemetry.set_tracer patched")
 
 
-def instrument_grpc() -> None:
+def instrument_grpc(
+    config: Optional[AgentObservabilityConfig] = None,
+) -> None:
     """Patch gRPC client channels so Dapr sidecar calls emit spans."""
-    if not os.environ.get(_OTEL_ENDPOINT_ENV):
+    endpoint = _resolve_endpoint(config)
+    if endpoint is None and not os.environ.get(_OTEL_ENDPOINT_ENV):
         return
 
     try:

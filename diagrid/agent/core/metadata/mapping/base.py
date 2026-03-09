@@ -5,7 +5,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from diagrid.agent.core.types.type import AgentMetadataSchema
+from dapr_agents import AgentMetadataSchema
 
 
 class BaseAgentMapper(ABC):

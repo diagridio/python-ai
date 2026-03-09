@@ -47,7 +47,7 @@ class TestDaprStateStore(TestCase):
 
         self.assertEqual(result, {"msg": "hello"})
         mock_dapr_cls.return_value.get_state.assert_called_once_with(
-            store_name="statestore",
+            store_name="agent-memory",
             key="key1",
         )
 
@@ -68,7 +68,7 @@ class TestDaprStateStore(TestCase):
         store.delete("key1")
 
         mock_dapr_cls.return_value.delete_state.assert_called_once_with(
-            store_name="statestore",
+            store_name="agent-memory",
             key="key1",
         )
 
@@ -118,4 +118,4 @@ class TestDaprStateStore(TestCase):
 
     def test_default_store_name(self):
         store = DaprStateStore()
-        self.assertEqual(store.store_name, "statestore")
+        self.assertEqual(store.store_name, "agent-memory")

@@ -59,12 +59,13 @@ class LangGraphMapperTest(unittest.TestCase):
         mapper = LangGraphMapper()
         metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
 
-        self.assertEqual(metadata.schema_version, "1.0.0")
+        self.assertEqual(metadata.version, "1.0.0")
         self.assertEqual(metadata.agent.type, "MockCompiledStateGraph")
         self.assertEqual(metadata.name, "my-graph")
         assert metadata.memory is not None
-        self.assertEqual(metadata.memory.type, "DaprCheckpointer")
-        self.assertEqual(metadata.memory.statestore, "my-store")
+        assert metadata.memory.short_term is not None
+        self.assertEqual(metadata.memory.short_term.type, "DaprCheckpointer")
+        self.assertEqual(metadata.memory.short_term.resource_name, "my-store")
 
     @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_metadata_without_checkpointer(self, mock_pregel_node):
@@ -79,8 +80,8 @@ class LangGraphMapperTest(unittest.TestCase):
         metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
 
         assert metadata.memory is not None
-        self.assertIsNone(metadata.memory.statestore)
-        self.assertIsNone(metadata.agent.statestore)
+        assert metadata.memory.short_term is not None
+        self.assertIsNone(metadata.memory.short_term.resource_name)
 
     @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_metadata_agent_role_defaults(self, mock_pregel_node):
@@ -116,7 +117,7 @@ class LangGraphMapperTest(unittest.TestCase):
         metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
 
         assert metadata.pubsub is not None
-        self.assertEqual(metadata.pubsub.name, "")
+        self.assertEqual(metadata.pubsub.resource_name, "")
         self.assertIsNone(metadata.pubsub.broadcast_topic)
         self.assertIsNone(metadata.pubsub.agent_topic)
 

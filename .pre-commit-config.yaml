@@ -38,7 +38,7 @@ repos:
       - id: flake8
         name: Flake8 linting
         entry: uv run flake8 diagrid tests
-        args: ['--ignore=E501,F401,W503,E203,E704']
+        args: ['--ignore=E501,F401,W503,E203,E704', '--exclude=.venv']
         language: system
         pass_filenames: false
         stages: [pre-push]

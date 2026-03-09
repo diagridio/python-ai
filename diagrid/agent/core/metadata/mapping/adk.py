@@ -6,15 +6,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
-from diagrid.agent.core.types import (
+from diagrid.agent.core.types import SupportedFrameworks
+from dapr_agents import (
     AgentMetadata,
     AgentMetadataSchema,
     LLMMetadata,
     MemoryMetadata,
     RegistryMetadata,
-    SupportedFrameworks,
     ToolMetadata,
 )
+from dapr_agents.agents.configs import MemoryStoreMetadata
 
 if TYPE_CHECKING:
     from google.adk.agents.llm_agent import LlmAgent
@@ -58,9 +59,9 @@ class ADKMapper(BaseAgentMapper):
 
             tools_metadata.append(
                 ToolMetadata(
-                    tool_name=str(tool_name),
-                    tool_description=str(tool_description),
-                    tool_args="",
+                    name=str(tool_name),
+                    description=str(tool_description),
+                    args="",
                 )
             )
 
@@ -73,7 +74,7 @@ class ADKMapper(BaseAgentMapper):
         )
 
         return AgentMetadataSchema(
-            schema_version=schema_version,
+            version=schema_version,
             agent=AgentMetadata(
                 appid="",
                 type="LlmAgent",
@@ -83,24 +84,24 @@ class ADKMapper(BaseAgentMapper):
                 instructions=[str(system_instruction)] if system_instruction else None,
                 framework=SupportedFrameworks.ADK,
                 system_prompt=str(system_instruction) if system_instruction else None,
+                tool_choice="auto" if tools_metadata else None,
+                max_iterations=100,
+                metadata={
+                    "framework": "adk",
+                    "name": name,
+                    "model": str(model),
+                },
             ),
             name=f"adk-{name}",
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=None,
             memory=MemoryMetadata(
-                type="DaprWorkflow",
+                short_term=MemoryStoreMetadata(type="DaprWorkflow"),
             ),
             llm=llm_metadata,
             tools=tools_metadata,
-            tool_choice="auto" if tools_metadata else None,
-            max_iterations=100,  # Default
             registry=RegistryMetadata(
-                statestore=None,
+                resource_name=None,
                 name="default",
             ),
-            agent_metadata={
-                "framework": "adk",
-                "name": name,
-                "model": str(model),
-            },
         )

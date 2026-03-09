@@ -124,8 +124,8 @@ class TestPydanticAIMapper(unittest.TestCase):
         result = self.mapper.map_agent_metadata(agent, "edge")
 
         self.assertEqual(len(result.tools), 1)
-        self.assertEqual(result.tools[0].tool_name, "my_tool")
-        self.assertEqual(result.tools[0].tool_description, "A test tool")
+        self.assertEqual(result.tools[0].name, "my_tool")
+        self.assertEqual(result.tools[0].description, "A test tool")
 
     def test_tools_via_function_tools_fallback(self):
         """Tools via _function_tools (old API fallback)."""
@@ -144,8 +144,8 @@ class TestPydanticAIMapper(unittest.TestCase):
         result = self.mapper.map_agent_metadata(agent, "edge")
 
         self.assertEqual(len(result.tools), 1)
-        self.assertEqual(result.tools[0].tool_name, "old_tool")
-        self.assertEqual(result.tools[0].tool_description, "Legacy tool")
+        self.assertEqual(result.tools[0].name, "old_tool")
+        self.assertEqual(result.tools[0].description, "Legacy tool")
 
     def test_tools_with_json_schema(self):
         """Tools with function_schema.json_schema should serialize to tool_args."""
@@ -170,7 +170,7 @@ class TestPydanticAIMapper(unittest.TestCase):
         result = self.mapper.map_agent_metadata(agent, "edge")
 
         self.assertEqual(len(result.tools), 1)
-        self.assertIn('"type": "object"', result.tools[0].tool_args)
+        self.assertIn('"type": "object"', result.tools[0].args)
 
     # ------------------------------------------------------------------
     # System prompt extraction
