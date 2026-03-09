@@ -26,9 +26,6 @@ _cached_discovery: Optional[DiscoveredComponents] = None
 class DiscoveredComponents:
     """Result of Dapr sidecar component discovery."""
 
-    conversation_name: Optional[str] = None
-    """First ``conversation.*`` type component found."""
-
     configuration_name: Optional[str] = None
     """``configuration`` type component named ``agent-configuration``."""
 
@@ -49,7 +46,6 @@ def discover_components() -> DiscoveredComponents:
     """Discover Dapr sidecar components by convention.
 
     Calls ``DaprClient.get_metadata()`` and iterates registered components:
-    - ``conversation.*`` type -> ``conversation_name`` (first found; warns if multiple)
     - ``configuration`` type + name ``agent-configuration`` -> ``configuration_name``
     - ``state`` type + name ``agent-memory`` -> ``memory_store_name``
     - ``pubsub`` type + name ``agent-pubsub`` -> ``pubsub_name``
@@ -69,16 +65,9 @@ def discover_components() -> DiscoveredComponents:
         with DaprClient(http_timeout_seconds=10) as client:
             resp = client.get_metadata()
 
-            conversation_components: list[str] = []
-
             for component in resp.registered_components:
                 ctype = component.type
                 cname = component.name
-
-                if ctype.startswith("conversation."):
-                    conversation_components.append(cname)
-                    if result.conversation_name is None:
-                        result.conversation_name = cname
 
                 if "configuration" in ctype and cname == "agent-configuration":
                     result.configuration_name = cname
@@ -102,13 +91,6 @@ def discover_components() -> DiscoveredComponents:
                             result.runtime_conf = json.loads(raw.data)
                     except Exception as exc:
                         logger.debug("Failed to load agent-runtime config: %s", exc)
-
-            if len(conversation_components) > 1:
-                logger.warning(
-                    "Multiple conversation components found: %s; using '%s'",
-                    conversation_components,
-                    result.conversation_name,
-                )
 
     except Exception as exc:
         logger.debug("Dapr sidecar discovery failed: %s", exc)

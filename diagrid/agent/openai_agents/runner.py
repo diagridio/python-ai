@@ -8,7 +8,6 @@ import logging
 import uuid
 from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 
-from diagrid.agent.core.chat import DaprChatClient
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 
 from .models import (
@@ -87,7 +86,6 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         port: Optional[str] = None,
         max_iterations: int = 25,
         registry_config: Optional[Any] = None,
-        component_name: Optional[str] = None,
         state_store: Optional[Any] = None,
     ):
         """Initialize the runner.
@@ -99,9 +97,6 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             port: Dapr sidecar port (default: 50001)
             max_iterations: Maximum number of LLM call iterations (default: 25)
             registry_config: Optional registry configuration for metadata extraction
-            component_name: Dapr conversation component name. If provided, always
-                uses Dapr Conversation API. If None and agent has no model configured,
-                auto-detects a conversation component.
             state_store: Optional DaprStateStore for agent memory persistence.
         """
         self._agent = agent
@@ -112,27 +107,14 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             host=host,
             port=port,
             max_iterations=max_iterations,
-            component_name=component_name,
             state_store=state_store,
         )
-
-        # Auto-detect: if user provided no model on the agent, resolve a component
-        if self._component_name is None and not self._agent_has_model():
-            self._dapr_chat_client = DaprChatClient()
-            self._component_name = self._dapr_chat_client.component_name
-            logger.info(
-                "No model configured on agent; using Dapr conversation component: %s",
-                self._component_name,
-            )
-        elif self._component_name is not None:
-            self._dapr_chat_client = DaprChatClient(component_name=self._component_name)
 
         # Register metadata
         self._register_agent_metadata(
             agent=self._agent,
             framework="openai",
             registry=registry_config,
-            component_name=self._component_name,
             state_store_name=self._state_store.store_name
             if self._state_store
             else None,
@@ -143,15 +125,6 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         # Register agent's tools in the global registry
         self._register_agent_tools()
-
-    def _agent_has_model(self) -> bool:
-        """Check if the agent has an explicit model configured."""
-        model = getattr(self._agent, "model", None)
-        if model is None:
-            return False
-        if isinstance(model, str) and model == "":
-            return False
-        return True
 
     def _register_workflow_components(self) -> None:
         """Register workflow and activities on the workflow runtime."""
@@ -233,7 +206,6 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             instructions=instructions,
             model=model,
             tool_definitions=tool_definitions,
-            component_name=self._component_name,
         )
 
     # ------------------------------------------------------------------

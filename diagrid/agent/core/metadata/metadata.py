@@ -23,7 +23,6 @@ from dapr_agents.storage.daprstores.stateservice import (
 from dapr_agents.agents.configs import (
     AgentMetadataSchema,
     AgentRegistryConfig,
-    LLMMetadata,
 )
 
 from dapr.clients.grpc._state import Concurrency, Consistency
@@ -40,7 +39,6 @@ class AgentRegistryAdapter:
     def create_from_stack(
         cls,
         registry: Optional[AgentRegistryConfig] = None,
-        component_name: Optional[str] = None,
         state_store_name: Optional[str] = None,
     ) -> Optional["AgentRegistryAdapter"]:
         """
@@ -48,7 +46,6 @@ class AgentRegistryAdapter:
 
         Args:
             registry: Optional registry configuration. If None, will attempt auto-discovery.
-            component_name: Optional Dapr conversation component name resolved at runtime.
             state_store_name: Optional Dapr state store name resolved at runtime.
 
         Returns:
@@ -66,7 +63,6 @@ class AgentRegistryAdapter:
             registry=registry,
             framework=framework,
             agent=agent,
-            component_name=component_name,
             state_store_name=state_store_name,
         )
 
@@ -75,11 +71,9 @@ class AgentRegistryAdapter:
         registry: Optional[AgentRegistryConfig],
         framework: str,
         agent: Any,
-        component_name: Optional[str] = None,
         state_store_name: Optional[str] = None,
     ) -> None:
         self._registry = registry
-        self._component_name = component_name
         self._state_store_name = state_store_name
 
         try:
@@ -129,20 +123,6 @@ class AgentRegistryAdapter:
                 _metadata.registry.name = self._registry.team_name
             if _metadata.registry.resource_name is None:
                 _metadata.registry.resource_name = self.registry_state.store_name
-
-        # Patch LLM from runner's resolved conversation component
-        if self._component_name:
-            if _metadata.llm is None:
-                _metadata.llm = LLMMetadata(
-                    client="DaprChatClient",
-                    provider="dapr",
-                    api="chat",
-                    resource_name=self._component_name,
-                )
-            elif not _metadata.llm.resource_name:
-                _metadata.llm.resource_name = self._component_name
-                _metadata.llm.client = "DaprChatClient"
-                _metadata.llm.provider = "dapr"
 
         # Patch memory/agent statestore from runner's state store
         if self._state_store_name:
