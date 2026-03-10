@@ -18,7 +18,8 @@ jobs:
   review:
     if: >-
       !github.event.pull_request.draft &&
-      github.event.pull_request.user.type != 'Bot'
+      github.event.pull_request.user.type != 'Bot' &&
+      !contains(github.actor, '[bot]')
     runs-on: ubuntu-latest
     steps:
       - name: Generate App token
