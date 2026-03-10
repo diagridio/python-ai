@@ -68,16 +68,6 @@ class TestBaseWorkflowRunnerLifecycle(TestCase):
 
         mock_runtime_cls.return_value.shutdown.assert_not_called()
 
-    def test_shutdown_closes_chat_client(self, mock_runtime_cls, mock_client_cls):
-        runner = ConcreteRunner()
-        mock_chat = mock.MagicMock()
-        runner._dapr_chat_client = mock_chat
-        runner.start()
-        runner.shutdown()
-
-        mock_chat.close.assert_called_once()
-        self.assertIsNone(runner._dapr_chat_client)
-
     def test_shutdown_closes_state_store(self, mock_runtime_cls, mock_client_cls):
         mock_store = mock.MagicMock()
         runner = ConcreteRunner(state_store=mock_store)
@@ -293,7 +283,6 @@ class TestConstructor(TestCase):
         self.assertIsNone(runner._host)
         self.assertIsNone(runner._port)
         self.assertEqual(runner._max_iterations, 25)
-        self.assertIsNone(runner._component_name)
         self.assertIsNone(runner._state_store)
         self.assertFalse(runner.is_running)
 
@@ -303,13 +292,11 @@ class TestConstructor(TestCase):
             host="localhost",
             port="50001",
             max_iterations=50,
-            component_name="my-llm",
             state_store=mock_store,
         )
         self.assertEqual(runner._host, "localhost")
         self.assertEqual(runner._port, "50001")
         self.assertEqual(runner._max_iterations, 50)
-        self.assertEqual(runner._component_name, "my-llm")
         self.assertIs(runner._state_store, mock_store)
 
     def test_workflow_runtime_created_with_host_port(

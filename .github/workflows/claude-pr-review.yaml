@@ -87,7 +87,7 @@ jobs:
           github_token: ${{ steps.app-token.outputs.token }}
           use_sticky_comment: true
           track_progress: true
-          claude_args: "--max-turns 12"
+          claude_args: "--max-turns 35"
           prompt: |
             You are the Review Agent. Review the PR changes and provide structured feedback.
 

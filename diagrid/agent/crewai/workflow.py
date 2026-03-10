@@ -14,14 +14,6 @@ from dapr.ext.workflow import (
     RetryPolicy,
 )
 
-from diagrid.agent.core.chat import (
-    ChatMessage,
-    ChatRole,
-    ChatToolCall,
-    ChatToolDefinition,
-    get_chat_client,
-)
-
 from .models import (
     AgentConfig,
     AgentWorkflowInput,
@@ -225,74 +217,6 @@ def agent_workflow(
     ).to_dict()
 
 
-def _call_llm_via_dapr(llm_input: CallLlmInput) -> dict[str, Any]:
-    """Route LLM call through Dapr Conversation API."""
-    # Build system prompt
-    system_content = _build_system_prompt(llm_input.agent_config, llm_input.task_config)
-
-    chat_messages = [ChatMessage(role=ChatRole.SYSTEM, content=system_content)]
-
-    for msg in llm_input.messages:
-        if msg.role == MessageRole.USER:
-            chat_messages.append(
-                ChatMessage(role=ChatRole.USER, content=msg.content or "")
-            )
-        elif msg.role == MessageRole.ASSISTANT:
-            tool_calls = [
-                ChatToolCall(id=tc.id, name=tc.name, arguments=json.dumps(tc.args))
-                for tc in msg.tool_calls
-            ]
-            chat_messages.append(
-                ChatMessage(
-                    role=ChatRole.ASSISTANT,
-                    content=msg.content,
-                    tool_calls=tool_calls,
-                )
-            )
-        elif msg.role == MessageRole.TOOL:
-            chat_messages.append(
-                ChatMessage(
-                    role=ChatRole.TOOL,
-                    content=msg.content or "",
-                    tool_call_id=msg.tool_call_id,
-                    name=msg.name,
-                )
-            )
-
-    # Convert tool definitions
-    tools = [
-        ChatToolDefinition(
-            name=td.name,
-            description=td.description,
-            parameters=td.parameters or {"type": "object", "properties": {}},
-        )
-        for td in llm_input.agent_config.tool_definitions
-    ] or None
-
-    client = get_chat_client(llm_input.agent_config.component_name)
-    response = client.chat(messages=chat_messages, tools=tools)
-
-    # Convert ChatResponse -> CallLlmOutput
-    fw_tool_calls: list[ToolCall] = []
-    for tc in response.tool_calls:
-        try:
-            args = json.loads(tc.arguments)
-        except (json.JSONDecodeError, TypeError):
-            args = {}
-        fw_tool_calls.append(ToolCall(id=tc.id, name=tc.name, args=args))
-
-    output_message = Message(
-        role=MessageRole.ASSISTANT,
-        content=response.content,
-        tool_calls=fw_tool_calls,
-    )
-
-    return CallLlmOutput(
-        message=output_message,
-        is_final=response.is_final,
-    ).to_dict()
-
-
 def call_llm_activity(
     ctx: WorkflowActivityContext, input_data: dict[str, Any]
 ) -> dict[str, Any]:
@@ -300,7 +224,6 @@ def call_llm_activity(
 
     This activity uses the LiteLLM library (via CrewAI's LLM class) to call
     the configured model with the conversation history and tool definitions.
-    If a component_name is set, routes through the Dapr Conversation API instead.
 
     Args:
         ctx: The workflow activity context
@@ -310,10 +233,6 @@ def call_llm_activity(
         CallLlmOutput as a dictionary
     """
     llm_input = CallLlmInput.from_dict(input_data)
-
-    # Route through Dapr if component_name is set
-    if llm_input.agent_config.component_name:
-        return _call_llm_via_dapr(llm_input)
 
     try:
         # Import LiteLLM for model calls

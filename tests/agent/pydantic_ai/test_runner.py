@@ -39,34 +39,6 @@ class FakeAgent:
         self._function_tools = _function_tools or {}
 
 
-class TestAgentHasModel:
-    def _make_runner_partial(self, agent):
-        """Create a runner instance without full init, just to test _agent_has_model."""
-        runner = object.__new__(DaprWorkflowAgentRunner)
-        runner._agent = agent
-        return runner
-
-    def test_model_none(self):
-        agent = FakeAgent(model=None)
-        runner = self._make_runner_partial(agent)
-        assert runner._agent_has_model() is False
-
-    def test_model_empty_string(self):
-        agent = FakeAgent(model="")
-        runner = self._make_runner_partial(agent)
-        assert runner._agent_has_model() is False
-
-    def test_model_valid_string(self):
-        agent = FakeAgent(model="openai:gpt-4o-mini")
-        runner = self._make_runner_partial(agent)
-        assert runner._agent_has_model() is True
-
-    def test_model_object(self):
-        agent = FakeAgent(model=object())
-        runner = self._make_runner_partial(agent)
-        assert runner._agent_has_model() is True
-
-
 class TestCreateToolDefinition:
     def _make_runner_partial(self):
         runner = object.__new__(DaprWorkflowAgentRunner)
@@ -122,7 +94,6 @@ class TestGetAgentConfig:
     def _make_runner_partial(self, agent):
         runner = object.__new__(DaprWorkflowAgentRunner)
         runner._agent = agent
-        runner._component_name = None
         return runner
 
     def test_basic_config(self):

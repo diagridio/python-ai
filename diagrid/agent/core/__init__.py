@@ -10,7 +10,6 @@ from .metadata import (
 from .types import (
     SupportedFrameworks,
 )
-from .chat import DaprChatClient
 from .discovery import discover_components, DiscoveredComponents
 from .observability import resolve_observability_config
 from .state import DaprStateStore
@@ -25,7 +24,6 @@ __all__ = [
     "find_agent_in_stack",
     "detect_framework",
     "AgentRegistryMixin",
-    "DaprChatClient",
     "DaprStateStore",
     "DaprPubSub",
     "BaseWorkflowRunner",

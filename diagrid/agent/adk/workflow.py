@@ -16,14 +16,6 @@ from dapr.ext.workflow import (
     when_all,
 )
 
-from diagrid.agent.core.chat import (
-    ChatMessage,
-    ChatRole,
-    ChatToolCall,
-    ChatToolDefinition,
-    get_chat_client,
-)
-
 from .models import (
     AgentWorkflowInput,
     AgentWorkflowOutput,
@@ -196,93 +188,10 @@ def agent_workflow(
     ).to_dict()
 
 
-def _call_llm_via_dapr(llm_input: CallLlmInput) -> dict[str, Any]:
-    """Route LLM call through Dapr Conversation API."""
-    chat_messages = []
-
-    # Add system instruction
-    if llm_input.agent_config.system_instruction:
-        chat_messages.append(
-            ChatMessage(
-                role=ChatRole.SYSTEM,
-                content=llm_input.agent_config.system_instruction,
-            )
-        )
-
-    for msg in llm_input.messages:
-        if msg.role == MessageRole.USER:
-            # ADK puts tool results on USER messages
-            if msg.tool_results:
-                for tr in msg.tool_results:
-                    result_content = (
-                        json.dumps({"result": tr.result})
-                        if tr.error is None
-                        else json.dumps({"error": tr.error})
-                    )
-                    chat_messages.append(
-                        ChatMessage(
-                            role=ChatRole.TOOL,
-                            content=result_content,
-                            tool_call_id=tr.tool_call_id,
-                            name=tr.tool_name,
-                        )
-                    )
-            elif msg.content:
-                chat_messages.append(
-                    ChatMessage(role=ChatRole.USER, content=msg.content)
-                )
-        elif msg.role == MessageRole.MODEL:
-            tool_calls = [
-                ChatToolCall(id=tc.id, name=tc.name, arguments=json.dumps(tc.args))
-                for tc in msg.tool_calls
-            ]
-            chat_messages.append(
-                ChatMessage(
-                    role=ChatRole.ASSISTANT,
-                    content=msg.content,
-                    tool_calls=tool_calls,
-                )
-            )
-
-    tools = [
-        ChatToolDefinition(
-            name=td.name,
-            description=td.description,
-            parameters=td.parameters,
-        )
-        for td in llm_input.agent_config.tool_definitions
-    ] or None
-
-    client = get_chat_client(llm_input.agent_config.component_name)
-    response = client.chat(messages=chat_messages, tools=tools)
-
-    # Convert back to ADK format (MODEL role)
-    tool_calls_out = []
-    for tc in response.tool_calls:
-        try:
-            args = json.loads(tc.arguments)
-        except (json.JSONDecodeError, TypeError):
-            args = {}
-        tool_calls_out.append(ToolCall(id=tc.id, name=tc.name, args=args))
-
-    output_message = Message(
-        role=MessageRole.MODEL,
-        content=response.content,
-        tool_calls=tool_calls_out,
-    )
-
-    return CallLlmOutput(
-        message=output_message,
-        is_final=response.is_final,
-    ).to_dict()
-
-
 def call_llm_activity(
     ctx: WorkflowActivityContext, input_data: dict[str, Any]
 ) -> dict[str, Any]:
     """Activity that calls the LLM model using Google's genai client.
-
-    If a component_name is set, routes through the Dapr Conversation API instead.
 
     Args:
         ctx: The workflow activity context
@@ -292,10 +201,6 @@ def call_llm_activity(
         CallLlmOutput as a dictionary
     """
     llm_input = CallLlmInput.from_dict(input_data)
-
-    # Route through Dapr if component_name is set
-    if llm_input.agent_config.component_name:
-        return _call_llm_via_dapr(llm_input)
 
     try:
         from google.genai import Client

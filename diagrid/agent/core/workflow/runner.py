@@ -12,7 +12,6 @@ from typing import Any, AsyncIterator, Optional
 
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
 
-from diagrid.agent.core.chat import close_chat_clients
 from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
 from diagrid.agent.core.observability import resolve_observability_config
@@ -43,7 +42,6 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
         host: Optional[str] = None,
         port: Optional[str] = None,
         max_iterations: int = 25,
-        component_name: Optional[str] = None,
         state_store: Any = None,
     ) -> None:
         self._name = name
@@ -51,9 +49,7 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
         self._host = host
         self._port = port
         self._max_iterations = max_iterations
-        self._component_name = component_name
         self._state_store = state_store
-        self._dapr_chat_client: Any = None
         self._workflow_runtime = WorkflowRuntime(host=host, port=port)
         self._workflow_client: Optional[DaprWorkflowClient] = None
         self._started = False
@@ -98,10 +94,6 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
             return
 
         self._workflow_runtime.shutdown()
-        if self._dapr_chat_client:
-            self._dapr_chat_client.close()
-            self._dapr_chat_client = None
-        close_chat_clients()
         if self._state_store is not None:
             self._state_store.close()
         self._started = False
