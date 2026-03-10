@@ -63,6 +63,7 @@ def test_deploy_full_flow(
     mock_push.assert_called_once()
     mock_apply.assert_called_once()
     mock_resolve_keys.assert_called_once()
+    mock_patch_secret.assert_called_once()
     # Verify the manifest contains Dapr env vars
     manifest = mock_apply.call_args[0][0]
     assert "DAPR_API_TOKEN" in manifest
