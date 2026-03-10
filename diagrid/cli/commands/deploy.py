@@ -128,14 +128,23 @@ _SECRET_ENV_ENTRY = """\
 """
 
 
-def _secret_env_block(agent: OrchestratorAgent) -> str:
-    """Return secretKeyRef env entries for an agent's required LLM keys."""
-    if not agent.secret_env:
+def _secret_env_block(
+    secret_env: tuple[tuple[str, str], ...],
+) -> str:
+    """Return secretKeyRef env entries for the given (env_name, secret_key) pairs."""
+    if not secret_env:
         return ""
     return "".join(
         _SECRET_ENV_ENTRY.format(env_name=name, secret_key=key)
-        for name, key in agent.secret_env
+        for name, key in secret_env
     )
+
+
+# Default secret env entries for single-agent deploys
+_SINGLE_AGENT_LLM_ENV: tuple[tuple[str, str], ...] = (
+    ("OPENAI_API_KEY", "apiKey"),
+    ("GOOGLE_API_KEY", "googleApiKey"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -326,11 +335,11 @@ def deploy(
         # Ensure local registry is healthy before building images
         _ensure_registry_healthy()
 
-        if _is_orchestrator_project():
-            # Resolve LLM keys for orchestrator deploys
-            resolved_keys = _resolve_llm_keys(openai_api_key, google_api_key, namespace)
-            _patch_llm_secret(namespace, resolved_keys)
+        # Resolve LLM keys and persist to K8s secret for all deploy paths
+        resolved_keys = _resolve_llm_keys(openai_api_key, google_api_key, namespace)
+        _patch_llm_secret(namespace, resolved_keys)
 
+        if _is_orchestrator_project():
             _deploy_orchestrator(
                 api_url=api_url,
                 api_key=api_key,
@@ -451,7 +460,7 @@ def _deploy_single_agent(
             http_endpoint=conn["http_endpoint"],
             grpc_endpoint=conn["grpc_endpoint"],
             otel_env_block="",
-            secret_env_block="",
+            secret_env_block=_secret_env_block(_SINGLE_AGENT_LLM_ENV),
         )
         apply_stdin(manifest, namespace=namespace)
         rollout_restart(image, namespace=namespace)
@@ -589,7 +598,7 @@ def _deploy_orchestrator(
         for agent in agents:
             conn = connections[agent.app_id]
             otel_block = _otel_env_block(agent.app_id, OTEL_COLLECTOR_ENDPOINT)
-            secret_block = _secret_env_block(agent)
+            secret_block = _secret_env_block(agent.secret_env)
             agent_image = registry_map[f"{agent.app_id}:{tag}"]
             manifest = DEPLOYMENT_TEMPLATE.format(
                 name=agent.app_id,

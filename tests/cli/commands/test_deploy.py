@@ -22,6 +22,11 @@ _MOCK_CONN = {
 
 
 @patch("diagrid.cli.commands.deploy.rollout_restart")
+@patch("diagrid.cli.commands.deploy._patch_llm_secret")
+@patch(
+    "diagrid.cli.commands.deploy._resolve_llm_keys",
+    return_value={"OPENAI_API_KEY": "", "GOOGLE_API_KEY": ""},
+)
 @patch("diagrid.cli.commands.deploy._ensure_registry_healthy")
 @patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
@@ -40,6 +45,8 @@ def test_deploy_full_flow(
     mock_auth: MagicMock,
     mock_preflight: MagicMock,
     mock_registry: MagicMock,
+    mock_resolve_keys: MagicMock,
+    mock_patch_secret: MagicMock,
     mock_rollout: MagicMock,
 ) -> None:
     """Deploy command runs all steps."""
@@ -55,15 +62,26 @@ def test_deploy_full_flow(
     mock_build.assert_called_once_with("my-agent", "v1")
     mock_push.assert_called_once()
     mock_apply.assert_called_once()
+    mock_resolve_keys.assert_called_once()
+    mock_patch_secret.assert_called_once()
     # Verify the manifest contains Dapr env vars
     manifest = mock_apply.call_args[0][0]
     assert "DAPR_API_TOKEN" in manifest
     assert "DAPR_HTTP_ENDPOINT" in manifest
     # Verify the manifest uses the registry-qualified image
     assert "localhost:5001/agent:latest" in manifest
+    # Verify LLM secret env vars are injected
+    assert "OPENAI_API_KEY" in manifest
+    assert "GOOGLE_API_KEY" in manifest
+    assert "llm-secret" in manifest
 
 
 @patch("diagrid.cli.commands.deploy.rollout_restart")
+@patch("diagrid.cli.commands.deploy._patch_llm_secret")
+@patch(
+    "diagrid.cli.commands.deploy._resolve_llm_keys",
+    return_value={"OPENAI_API_KEY": "", "GOOGLE_API_KEY": ""},
+)
 @patch("diagrid.cli.commands.deploy._ensure_registry_healthy")
 @patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
@@ -82,6 +100,8 @@ def test_deploy_default_options(
     mock_auth: MagicMock,
     mock_preflight: MagicMock,
     mock_registry: MagicMock,
+    mock_resolve_keys: MagicMock,
+    mock_patch_secret: MagicMock,
     mock_rollout: MagicMock,
 ) -> None:
     """Deploy with defaults uses agent:latest."""
@@ -95,6 +115,11 @@ def test_deploy_default_options(
 
 
 @patch("diagrid.cli.commands.deploy.rollout_restart")
+@patch("diagrid.cli.commands.deploy._patch_llm_secret")
+@patch(
+    "diagrid.cli.commands.deploy._resolve_llm_keys",
+    return_value={"OPENAI_API_KEY": "", "GOOGLE_API_KEY": ""},
+)
 @patch("diagrid.cli.commands.deploy._ensure_registry_healthy")
 @patch("diagrid.cli.commands.deploy.preflight_check")
 @patch("diagrid.cli.commands.deploy.DeviceCodeAuth")
@@ -113,6 +138,8 @@ def test_deploy_passes_api_url_from_context(
     mock_auth: MagicMock,
     mock_preflight: MagicMock,
     mock_registry: MagicMock,
+    mock_resolve_keys: MagicMock,
+    mock_patch_secret: MagicMock,
     mock_rollout: MagicMock,
 ) -> None:
     """Deploy passes the api_url from CLI context to DeviceCodeAuth."""

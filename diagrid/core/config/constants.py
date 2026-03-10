@@ -129,8 +129,18 @@ ORCHESTRATOR_AGENTS: tuple[OrchestratorAgent, ...] = (
     OrchestratorAgent(
         "langgraph-agent", "langgraph", 8005, secret_env=(("OPENAI_API_KEY", "apiKey"),)
     ),
-    OrchestratorAgent("dapr-agent", "dapr-agents/durable-agent", 8006),
-    OrchestratorAgent("event-orchestrator", "dapr-agents/orchestrator", 8007),
+    OrchestratorAgent(
+        "dapr-agent",
+        "dapr-agents/durable-agent",
+        8006,
+        secret_env=(("OPENAI_API_KEY", "apiKey"),),
+    ),
+    OrchestratorAgent(
+        "event-orchestrator",
+        "dapr-agents/orchestrator",
+        8007,
+        secret_env=(("OPENAI_API_KEY", "apiKey"),),
+    ),
     OrchestratorAgent(
         "pydantic-ai-agent",
         "pydantic-ai",
