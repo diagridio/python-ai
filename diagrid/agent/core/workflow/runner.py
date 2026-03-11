@@ -69,7 +69,7 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
     @property
     def workflow_name(self) -> str:
         """Return the canonical workflow name: ``dapr.<framework>.<name>.workflow``."""
-        return f"dapr.{self._framework}.{self._name}.workflow"
+        return f"dapr.{self._framework.lower()}.{self._name}.workflow"
 
     # ------------------------------------------------------------------
     # Shared lifecycle

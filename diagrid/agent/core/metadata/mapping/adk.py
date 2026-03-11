@@ -28,19 +28,20 @@ class ADKMapper(BaseAgentMapper):
         pass
 
     def map_agent_metadata(
-        self, agent: Any, schema_version: str
+        self, agent: Any, schema_version: str, *, name: Optional[str] = None
     ) -> AgentMetadataSchema:
         """Map Google ADK Agent to AgentMetadataSchema.
 
         Args:
             agent: A google.adk.agents.llm_agent.LlmAgent instance
             schema_version: Version of the schema
+            name: Runner-provided canonical name
 
         Returns:
             AgentMetadataSchema with extracted metadata
         """
         # Basic agent info
-        name = getattr(agent, "name", "agent")
+        agent_name = getattr(agent, "name", "agent")
         model = getattr(agent, "model", "gemini-2.0-flash")
 
         # System instruction
@@ -79,7 +80,7 @@ class ADKMapper(BaseAgentMapper):
                 appid="",
                 type="LlmAgent",
                 orchestrator=False,
-                role=str(name),
+                role=str(agent_name),
                 goal=str(system_instruction) if system_instruction else "",
                 instructions=[str(system_instruction)] if system_instruction else None,
                 framework=SupportedFrameworks.ADK,
@@ -88,11 +89,11 @@ class ADKMapper(BaseAgentMapper):
                 max_iterations=100,
                 metadata={
                     "framework": "adk",
-                    "name": name,
+                    "name": agent_name,
                     "model": str(model),
                 },
             ),
-            name=f"adk-{name}",
+            name=name or f"adk-{agent_name}",
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=None,
             memory=MemoryMetadata(

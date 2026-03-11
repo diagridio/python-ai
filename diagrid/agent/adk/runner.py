@@ -6,6 +6,7 @@ import logging
 import uuid
 from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 
+from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 
 from .models import (
@@ -101,7 +102,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         super().__init__(
             name,
-            framework="adk",
+            framework=SupportedFrameworks.ADK,
             host=host,
             port=port,
             max_iterations=max_iterations,
@@ -111,11 +112,12 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         # Register metadata
         self._register_agent_metadata(
             agent=self._agent,
-            framework="adk",
+            framework=SupportedFrameworks.ADK,
             registry=registry_config,
             state_store_name=self._state_store.store_name
             if self._state_store
             else None,
+            name=self._name,
         )
 
         # Register workflow and activities

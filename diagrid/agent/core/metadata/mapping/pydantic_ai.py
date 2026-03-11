@@ -4,7 +4,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
 from diagrid.agent.core.types import SupportedFrameworks
@@ -30,19 +30,20 @@ class PydanticAIMapper(BaseAgentMapper):
         pass
 
     def map_agent_metadata(
-        self, agent: Any, schema_version: str
+        self, agent: Any, schema_version: str, *, name: Optional[str] = None
     ) -> AgentMetadataSchema:
         """Map Pydantic AI Agent to AgentMetadataSchema.
 
         Args:
             agent: A pydantic_ai.Agent instance
             schema_version: Version of the schema
+            name: Runner-provided canonical name
 
         Returns:
             AgentMetadataSchema with extracted metadata
         """
         # Basic agent info
-        name = self._extract_name(agent)
+        agent_name = self._extract_name(agent)
         system_prompt = self._extract_system_prompt(agent)
 
         # Tools
@@ -64,7 +65,7 @@ class PydanticAIMapper(BaseAgentMapper):
                 appid="",
                 type="Agent",
                 orchestrator=False,
-                role=str(name),
+                role=str(agent_name),
                 goal=str(system_prompt),
                 instructions=[str(system_prompt)] if system_prompt else None,
                 framework=SupportedFrameworks.PYDANTIC_AI,
@@ -73,11 +74,11 @@ class PydanticAIMapper(BaseAgentMapper):
                 max_iterations=25,
                 metadata={
                     "framework": "pydantic-ai",
-                    "name": name,
+                    "name": agent_name,
                     "model": model_str,
                 },
             ),
-            name=f"pydantic-ai-{name}",
+            name=name or f"pydantic-ai-{agent_name}",
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=None,
             memory=MemoryMetadata(

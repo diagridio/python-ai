@@ -30,7 +30,7 @@ class LangGraphMapper(BaseAgentMapper):
         pass
 
     def map_agent_metadata(
-        self, agent: Any, schema_version: str
+        self, agent: Any, schema_version: str, *, name: Optional[str] = None
     ) -> AgentMetadataSchema:
         introspected_vars: Dict[str, Any] = vars(agent)  # type: ignore
 
@@ -56,13 +56,13 @@ class LangGraphMapper(BaseAgentMapper):
                         tools.extend(
                             [
                                 {
-                                    "name": name,
+                                    "name": tool_name,
                                     "description": getattr(tool, "description", ""),
                                     "args_schema": getattr(
                                         tool, "args_schema", {}
                                     ),  # TODO: See if we can extract the pydantic model
                                 }
-                                for name, tool in tools_by_name.items()
+                                for tool_name, tool in tools_by_name.items()
                             ]
                         )
 
@@ -110,11 +110,14 @@ class LangGraphMapper(BaseAgentMapper):
         custom_role = getattr(agent, "_diagrid_role", None)
         custom_goal = getattr(agent, "_diagrid_goal", None)
 
-        raw_name = custom_name or (
-            agent.get_name() if hasattr(agent, "get_name") else ""
-        )
-        agent_id = raw_name.lower().replace(" ", "-") if raw_name else "graph"
-        full_name = f"langgraph-{agent_id}"
+        if name:
+            full_name = name
+        else:
+            raw_name = custom_name or (
+                agent.get_name() if hasattr(agent, "get_name") else ""
+            )
+            agent_id = raw_name.lower().replace(" ", "-") if raw_name else "graph"
+            full_name = f"langgraph-{agent_id}"
         role = custom_role or "Assistant"
         goal = custom_goal or system_prompt or ""
 

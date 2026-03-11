@@ -19,6 +19,7 @@ class AgentRegistryMixin:
         framework: Optional[str] = None,
         registry: Optional[Any] = None,
         state_store_name: Optional[str] = None,
+        name: Optional[str] = None,
     ) -> None:
         """
         Register agent metadata with the registry.
@@ -28,6 +29,7 @@ class AgentRegistryMixin:
             framework: Optional framework name. If None, will be auto-detected.
             registry: Optional registry configuration.
             state_store_name: Optional Dapr state store name resolved at runtime.
+            name: Runner-provided canonical name for the agent metadata entry.
         """
         try:
             # Avoid duplicate registration for the same agent object in the same process
@@ -45,6 +47,7 @@ class AgentRegistryMixin:
                 framework=fw,
                 agent=agent,
                 state_store_name=state_store_name,
+                name=name,
             )
 
             # Mark as registered

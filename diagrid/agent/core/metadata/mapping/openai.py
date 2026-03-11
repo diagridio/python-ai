@@ -3,7 +3,7 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from diagrid.agent.core.metadata.mapping.base import BaseAgentMapper
 from diagrid.agent.core.types import SupportedFrameworks
@@ -28,19 +28,20 @@ class OpenAIAgentsMapper(BaseAgentMapper):
         pass
 
     def map_agent_metadata(
-        self, agent: Any, schema_version: str
+        self, agent: Any, schema_version: str, *, name: Optional[str] = None
     ) -> AgentMetadataSchema:
         """Map OpenAI Agents SDK Agent to AgentMetadataSchema.
 
         Args:
             agent: An agents.Agent instance
             schema_version: Version of the schema
+            name: Runner-provided canonical name
 
         Returns:
             AgentMetadataSchema with extracted metadata
         """
         # Basic agent info
-        name = getattr(agent, "name", "agent")
+        agent_name = getattr(agent, "name", "agent")
         model = getattr(agent, "model", "gpt-4o-mini")
         instructions = getattr(agent, "instructions", "") or ""
 
@@ -73,7 +74,7 @@ class OpenAIAgentsMapper(BaseAgentMapper):
                 appid="",
                 type="Agent",
                 orchestrator=False,
-                role=str(name),
+                role=str(agent_name),
                 goal=str(instructions),
                 instructions=[str(instructions)] if instructions else None,
                 framework=SupportedFrameworks.OPENAI,
@@ -82,11 +83,11 @@ class OpenAIAgentsMapper(BaseAgentMapper):
                 max_iterations=25,
                 metadata={
                     "framework": "openai-agents",
-                    "name": name,
+                    "name": agent_name,
                     "model": str(model),
                 },
             ),
-            name=f"openai-agents-{name}",
+            name=name or f"openai-agents-{agent_name}",
             registered_at=datetime.now(timezone.utc).isoformat(),
             pubsub=None,
             memory=MemoryMetadata(

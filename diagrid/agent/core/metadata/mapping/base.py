@@ -3,7 +3,7 @@
 
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 from dapr_agents import AgentMetadataSchema
 
@@ -49,13 +49,15 @@ class BaseAgentMapper(ABC):
 
     @abstractmethod
     def map_agent_metadata(
-        self, agent: Any, schema_version: str
+        self, agent: Any, schema_version: str, *, name: Optional[str] = None
     ) -> AgentMetadataSchema:
         """Map agent to standardized metadata schema.
 
         Args:
             agent: Framework-specific agent instance
             schema_version: Schema version to use
+            name: Runner-provided name. When set, used as the canonical
+                  metadata name instead of deriving one from agent properties.
 
         Returns:
             AgentMetadataSchema with extracted metadata

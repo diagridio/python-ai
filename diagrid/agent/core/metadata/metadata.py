@@ -7,7 +7,7 @@ import logging
 import random
 import time
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .introspection import (
     detect_framework,
@@ -18,6 +18,7 @@ from diagrid.agent.core.types import (
 )
 
 from dapr_agents.storage.daprstores.stateservice import (
+    StateStoreError,
     StateStoreService,
 )
 from dapr_agents.agents.configs import (
@@ -32,6 +33,26 @@ from diagrid.agent.core.discovery import discover_components
 logger = logging.getLogger(__name__)
 
 _REGISTRY_AGENTS_KEY = "agents"
+
+
+def _is_etag_conflict(exc: Exception) -> bool:
+    """Return True if *exc* was caused by an ETag / optimistic-concurrency conflict.
+
+    Dapr signals ETag mismatches with gRPC ``StatusCode.ABORTED``.
+    ``StateStoreService`` wraps the gRPC error as the ``__cause__`` of a
+    ``StateStoreError``, so we inspect the chain.
+    """
+    cause = exc.__cause__ if isinstance(exc, StateStoreError) else exc
+    try:
+        import grpc
+
+        if isinstance(cause, grpc.RpcError) and cause.code() == grpc.StatusCode.ABORTED:
+            return True
+    except ImportError:
+        pass
+    # Fallback: heuristic on the error message
+    msg = str(exc).lower()
+    return "etag" in msg or "aborted" in msg
 
 
 class AgentRegistryAdapter:
@@ -72,9 +93,11 @@ class AgentRegistryAdapter:
         framework: str,
         agent: Any,
         state_store_name: Optional[str] = None,
+        name: Optional[str] = None,
     ) -> None:
         self._registry = registry
         self._state_store_name = state_store_name
+        self._agent_name = name
 
         try:
             from dapr.clients import DaprClient
@@ -199,7 +222,7 @@ class AgentRegistryAdapter:
         if not mapper:
             raise ValueError(f"Adapter cannot handle framework '{self._framework}'")
 
-        return mapper(agent=agent, schema_version=schema_version)
+        return mapper(agent=agent, schema_version=schema_version, name=self._agent_name)
 
     def _register(self, metadata: AgentMetadataSchema) -> None:
         """
@@ -229,39 +252,17 @@ class AgentRegistryAdapter:
         index_key = self._team_registry_index_key(team)
         self._ensure_registry_initialized(key=index_key, meta=partition_meta)
 
-        attempts = self._max_etag_attempts
-        for attempt in range(1, attempts + 1):
-            try:
-                current_index, etag = self.registry_state.load_with_etag(
-                    key=index_key,
-                    default={_REGISTRY_AGENTS_KEY: []},
-                    state_metadata=partition_meta,
-                )
-                agents_list = current_index.get(_REGISTRY_AGENTS_KEY, [])  # type: ignore[union-attr]
-                if agent_name not in agents_list:
-                    agents_list.append(agent_name)
-                    self.registry_state.save(
-                        key=index_key,
-                        value={_REGISTRY_AGENTS_KEY: agents_list},
-                        etag=etag,
-                        state_metadata=partition_meta,
-                        state_options=self._save_options,
-                    )
-                break
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Conflict updating registry index (attempt %d/%d) for '%s': %s",
-                    attempt,
-                    attempts,
-                    index_key,
-                    exc,
-                )
-                if attempt == attempts:
-                    logger.exception(
-                        "Failed to update registry index after %d attempts.", attempts
-                    )
-                    return
-                time.sleep(min(0.25 * attempt, 1.0) * (1 + random.uniform(0, 0.25)))
+        def _add_agent(agents_list: list[str]) -> bool:
+            if agent_name not in agents_list:
+                agents_list.append(agent_name)
+                return True
+            return False
+
+        self._update_index(
+            index_key=index_key,
+            partition_meta=partition_meta,
+            mutate=_add_agent,
+        )
 
     def _remove_agent_entry(
         self,
@@ -291,8 +292,40 @@ class AgentRegistryAdapter:
 
         # Step 2: Remove agent name from index (ETag-protected)
         index_key = self._team_registry_index_key(team)
-        attempts = self._max_etag_attempts
-        for attempt in range(1, attempts + 1):
+
+        def _remove_agent(agents_list: list[str]) -> bool:
+            if agent_name in agents_list:
+                agents_list.remove(agent_name)
+                return True
+            return False
+
+        self._update_index(
+            index_key=index_key,
+            partition_meta=partition_meta,
+            mutate=_remove_agent,
+        )
+
+    def _update_index(
+        self,
+        *,
+        index_key: str,
+        partition_meta: Dict[str, str],
+        mutate: Callable[[list[str]], bool],
+    ) -> None:
+        """Read-modify-write the registry index with ETag-protected retries.
+
+        Only retries on ETag/concurrency conflicts (``StatusCode.ABORTED``).
+        Transient infrastructure errors are already retried by
+        ``StateStoreService._with_retries``; re-raising them here avoids
+        wasteful double-retry loops.
+
+        Args:
+            index_key: The state store key for the team index.
+            partition_meta: Dapr state metadata (partition key, content type).
+            mutate: A function that receives the agents list and returns
+                    ``True`` if the list was modified and needs saving.
+        """
+        for attempt in range(1, self._max_etag_attempts + 1):
             try:
                 current_index, etag = self.registry_state.load_with_etag(
                     key=index_key,
@@ -300,28 +333,37 @@ class AgentRegistryAdapter:
                     state_metadata=partition_meta,
                 )
                 agents_list = current_index.get(_REGISTRY_AGENTS_KEY, [])  # type: ignore[union-attr]
-                if agent_name not in agents_list:
-                    break
-                agents_list.remove(agent_name)
-                self.registry_state.save(
-                    key=index_key,
-                    value={_REGISTRY_AGENTS_KEY: agents_list},
-                    etag=etag,
-                    state_metadata=partition_meta,
-                    state_options=self._save_options,
-                )
-                break
+                if mutate(agents_list):
+                    self.registry_state.save(
+                        key=index_key,
+                        value={_REGISTRY_AGENTS_KEY: agents_list},
+                        etag=etag,
+                        state_metadata=partition_meta,
+                        state_options=self._save_options,
+                    )
+                return  # success (or no mutation needed)
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Conflict updating registry index (attempt %d/%d) for '%s': %s",
+                if not _is_etag_conflict(exc):
+                    # Infrastructure error already retried by StateStoreService;
+                    # do not double-retry.
+                    logger.warning(
+                        "Registry index update failed for '%s': %s",
+                        index_key,
+                        exc,
+                    )
+                    return
+
+                logger.debug(
+                    "ETag conflict updating registry index (attempt %d/%d) for '%s'",
                     attempt,
-                    attempts,
+                    self._max_etag_attempts,
                     index_key,
-                    exc,
                 )
-                if attempt == attempts:
-                    logger.exception(
-                        "Failed to update registry index after %d attempts.", attempts
+                if attempt == self._max_etag_attempts:
+                    logger.warning(
+                        "Failed to update registry index after %d ETag retries for '%s'.",
+                        self._max_etag_attempts,
+                        index_key,
                     )
                     return
                 time.sleep(min(0.25 * attempt, 1.0) * (1 + random.uniform(0, 0.25)))
