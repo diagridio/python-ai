@@ -15,6 +15,7 @@ from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatu
 from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
 from diagrid.agent.core.observability import resolve_observability_config
+from diagrid.agent.core.workflow.naming import sanitize_agent_name
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,14 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
 
     @property
     def workflow_name(self) -> str:
-        """Return the canonical workflow name: ``dapr.<framework>.<name>.workflow``."""
-        return f"dapr.{self._framework.lower()}.{self._name}.workflow"
+        """Return the canonical workflow name: ``dapr.<framework>.<name>.workflow``.
+
+        The agent name is sanitized to TitleCase to match the convention
+        used by dapr-agents (e.g. ``dapr.openai.CateringCoordinator.workflow``).
+        """
+        return (
+            f"dapr.{self._framework.lower()}.{sanitize_agent_name(self._name)}.workflow"
+        )
 
     # ------------------------------------------------------------------
     # Shared lifecycle
