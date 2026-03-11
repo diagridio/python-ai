@@ -66,6 +66,7 @@ async def main():
     # Create the Dapr Workflow runner
     runner = DaprWorkflowAgentRunner(
         agent=agent,
+        name="simple-agent",
         max_iterations=10,
     )
 
