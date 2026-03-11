@@ -410,7 +410,7 @@ def execute_tool_activity(
 
     try:
         # Execute the tool based on its type
-        result = _execute_tool(tool, tool_call.args)
+        result = _execute_tool(tool, tool_call.args, tool_call.name, tool_call.id)
 
         # Serialize result
         if hasattr(result, "model_dump"):
@@ -443,7 +443,9 @@ def execute_tool_activity(
         ).to_dict()
 
 
-def _execute_tool(tool: Any, args: dict[str, Any]) -> Any:
+def _execute_tool(
+    tool: Any, args: dict[str, Any], tool_name: str = "", tool_call_id: str = ""
+) -> Any:
     """Execute a tool and return the result.
 
     Handles different tool types:
@@ -455,7 +457,16 @@ def _execute_tool(tool: Any, args: dict[str, Any]) -> Any:
 
     # OpenAI Agents SDK FunctionTool: invoke via on_invoke_tool(ctx, json_input)
     if hasattr(tool, "on_invoke_tool"):
-        result = tool.on_invoke_tool(None, json.dumps(args))
+        from agents.tool_context import ToolContext
+
+        args_json = json.dumps(args)
+        ctx = ToolContext(
+            context=None,
+            tool_name=tool_name or getattr(tool, "name", "unknown"),
+            tool_call_id=tool_call_id,
+            tool_arguments=args_json,
+        )
+        result = tool.on_invoke_tool(ctx, args_json)
         if asyncio.iscoroutine(result):
             loop = asyncio.new_event_loop()
             try:
