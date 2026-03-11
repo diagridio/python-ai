@@ -3,4 +3,4 @@ dapr-ext-workflow>=1.17.0
 langgraph>=1.0.8
 langchain-core>=0.3.0
 langchain-openai>=0.3.0
-diagrid>=0.1.15
+diagrid>=0.2.0

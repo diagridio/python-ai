@@ -2,4 +2,4 @@ dapr>=1.17.0
 dapr-ext-workflow>=1.17.0
 openai>=2.21.0
 strands-agents>=1.26.0
-diagrid>=0.1.15
+diagrid>=0.2.0
