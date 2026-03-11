@@ -28,13 +28,14 @@ class CrewAIMapper(BaseAgentMapper):
         pass
 
     def map_agent_metadata(
-        self, agent: Any, schema_version: str
+        self, agent: Any, schema_version: str, *, name: Optional[str] = None
     ) -> AgentMetadataSchema:
         """Map CrewAI Agent to AgentMetadataSchema.
 
         Args:
             agent: A crewai.Agent instance
             schema_version: Version of the schema
+            name: Runner-provided canonical name
 
         Returns:
             AgentMetadataSchema with extracted metadata
@@ -80,19 +81,22 @@ class CrewAIMapper(BaseAgentMapper):
         tools_metadata = []
         tools = getattr(agent, "tools", []) or []
         for tool in tools:
-            name = getattr(tool, "name", None) or type(tool).__name__
+            tool_name = getattr(tool, "name", None) or type(tool).__name__
             description = getattr(tool, "description", "")
 
             tools_metadata.append(
                 ToolMetadata(
-                    name=str(name),
+                    name=str(tool_name),
                     description=str(description),
                     args="",
                 )
             )
 
-        agent_id = role.lower().replace(" ", "-") if role else "crewai-agent"
-        full_name = f"crewai-{agent_id}"
+        if name:
+            full_name = name
+        else:
+            agent_id = role.lower().replace(" ", "-") if role else "crewai-agent"
+            full_name = f"crewai-{agent_id}"
 
         return AgentMetadataSchema(
             version=schema_version,

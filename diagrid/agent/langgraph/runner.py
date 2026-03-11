@@ -11,6 +11,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, TYPE_CHEC
 
 from dapr.ext.workflow import WorkflowStatus
 
+from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 from .models import (
     ChannelState,
@@ -117,7 +118,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
         super().__init__(
             name,
-            framework="langgraph",
+            framework=SupportedFrameworks.LANGGRAPH,
             host=host,
             port=port,
             max_iterations=max_steps,
@@ -133,7 +134,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
         # Register metadata
         self._register_agent_metadata(
-            agent=self._graph, framework="langgraph", registry=registry_config
+            agent=self._graph,
+            framework=SupportedFrameworks.LANGGRAPH,
+            registry=registry_config,
+            name=self._name,
         )
 
         # Register workflow and activities

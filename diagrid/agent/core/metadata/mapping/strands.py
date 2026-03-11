@@ -274,7 +274,7 @@ class StrandsMapper(BaseAgentMapper):
         return tool_metadata_list
 
     def map_agent_metadata(
-        self, agent: Any, schema_version: str
+        self, agent: Any, schema_version: str, *, name: Optional[str] = None
     ) -> AgentMetadataSchema:
         """
         Map Strands Agent or DaprSessionManager to AgentMetadataSchema.
@@ -286,6 +286,7 @@ class StrandsMapper(BaseAgentMapper):
         Args:
             agent: Either a strands.Agent or DaprSessionManager instance
             schema_version: Version of the schema
+            name: Runner-provided canonical name
 
         Returns:
             AgentMetadataSchema with extracted metadata
@@ -300,7 +301,9 @@ class StrandsMapper(BaseAgentMapper):
             session_id = extracted.get("session_id")
 
             # Build full agent name
-            if session_id:
+            if name:
+                full_name = name
+            elif session_id:
                 full_name = f"strands-{session_id}-{agent_id}"
             else:
                 full_name = f"strands-{agent_id}"
@@ -418,7 +421,7 @@ class StrandsMapper(BaseAgentMapper):
             # Extract tools metadata
             tools_metadata = self._extract_tools_metadata(agent_state)
 
-            agent_name = f"strands-{session_id}-{agent_id}"
+            agent_name = name or f"strands-{session_id}-{agent_id}"
         else:
             # Fallback when no SessionAgent found
             agent_id = None
@@ -431,7 +434,7 @@ class StrandsMapper(BaseAgentMapper):
             max_iterations = None
             llm_metadata = None
             tools_metadata = []
-            agent_name = (
+            agent_name = name or (
                 f"strands-session-{session_id}" if session_id else "strands-session"
             )
 
