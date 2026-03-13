@@ -196,9 +196,7 @@ async def main():
         log("Workflow runtime stopped")
 
 
-async def poll_for_completion(
-    runner: DaprWorkflowDeepAgentRunner, workflow_id: str
-):
+async def poll_for_completion(runner: DaprWorkflowDeepAgentRunner, workflow_id: str):
     """Poll an existing workflow until it completes."""
     from diagrid.agent.langgraph.models import GraphWorkflowOutput
 

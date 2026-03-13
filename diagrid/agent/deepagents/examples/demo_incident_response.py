@@ -204,6 +204,7 @@ sandbox_backend = setup_sandbox()
 # Output helpers
 # ---------------------------------------------------------------------------
 
+
 def log(msg: str = ""):
     print(msg, flush=True)
 
@@ -262,6 +263,7 @@ log(f"{'-' * 64}")
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
 
 @tool
 def diagnose_incident(service_name: str) -> str:
@@ -510,6 +512,7 @@ PROMPT = (
 # Execution
 # ---------------------------------------------------------------------------
 
+
 def print_verification():
     """Print the durability verification report."""
     final = load_state()
@@ -595,9 +598,7 @@ async def poll_for_completion(runner: DaprWorkflowDeepAgentRunner, workflow_id: 
     previous_status = None
     while True:
         await asyncio.sleep(1.0)
-        wf_state = runner._workflow_client.get_workflow_state(
-            instance_id=workflow_id
-        )
+        wf_state = runner._workflow_client.get_workflow_state(instance_id=workflow_id)
         if wf_state is None:
             log("  Workflow state not found!")
             break
@@ -659,7 +660,9 @@ async def main():
                 if count > 0:
                     step_num = list(state["tools"].keys()).index(name) + 1
                     name_display = name.upper().replace("_", " ")
-                    log(f"  [{step_num}/5] {name_display} ... SKIPPED (already checkpointed)")
+                    log(
+                        f"  [{step_num}/5] {name_display} ... SKIPPED (already checkpointed)"
+                    )
             log()
             log(f"  Resuming workflow: {state.get('workflow_id', '?')}")
             log()

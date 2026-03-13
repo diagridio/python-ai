@@ -296,9 +296,7 @@ def agent_workflow(
                             input=cond_input.to_dict(),
                             retry_policy=retry_policy,
                         )
-                        cond_output = EvaluateConditionOutput.from_dict(
-                            cond_result
-                        )
+                        cond_output = EvaluateConditionOutput.from_dict(cond_result)
                         if cond_output.error:
                             if not ctx.is_replaying:
                                 _close_langsmith_parent_trace_async(config)

@@ -124,9 +124,7 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
                 register_node(node_name, node_obj)
                 logger.info(f"Registered node (deep agent): {node_name}")
             else:
-                logger.warning(
-                    f"Could not extract callable for node: {node_name}"
-                )
+                logger.warning(f"Could not extract callable for node: {node_name}")
 
         channels = getattr(self._graph, "channels", {})
         for channel_name, channel in channels.items():
