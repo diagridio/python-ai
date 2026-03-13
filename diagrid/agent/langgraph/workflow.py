@@ -372,15 +372,32 @@ def execute_node_activity(
     config = node_input.config or {}
 
     def _run_node() -> Any:
-        import inspect
+        # If the registered object is a LangChain Runnable (e.g. RunnableCallable),
+        # call .invoke() so that argument injection (runtime, config, store) works.
+        if hasattr(node_func, "invoke") and callable(getattr(node_func, "invoke")):
+            # Ensure the config has a Runtime object for deep agent middleware
+            # nodes that require it (runtime injection via RunnableCallable).
+            _config = dict(config) if config else {}
+            if "configurable" not in _config:
+                _config["configurable"] = {}
+            if "__pregel_runtime" not in _config["configurable"]:
+                try:
+                    from langgraph.runtime import Runtime
 
-        sig = inspect.signature(node_func)
-        params = list(sig.parameters.keys())
-
-        if len(params) >= 2 and "config" in params:
-            r = node_func(state, config=config)
+                    _config["configurable"]["__pregel_runtime"] = Runtime()
+                except ImportError:
+                    pass
+            r = node_func.invoke(state, config=_config)
         else:
-            r = node_func(state)
+            import inspect
+
+            sig = inspect.signature(node_func)
+            params = list(sig.parameters.keys())
+
+            if len(params) >= 2 and "config" in params:
+                r = node_func(state, config=config)
+            else:
+                r = node_func(state)
 
         import asyncio
 
@@ -458,8 +475,13 @@ def evaluate_condition_activity(
     # Reconstruct state from channel values
     state = _reconstruct_state(cond_input.channel_state)
 
-    # Evaluate the condition
-    result = cond_func(state)
+    # Evaluate the condition.
+    # If the condition is a LangChain Runnable (e.g. RunnableCallable from
+    # Deep Agents branches), call .invoke() instead of direct call.
+    if hasattr(cond_func, "invoke") and callable(getattr(cond_func, "invoke")):
+        result = cond_func.invoke(state)
+    else:
+        result = cond_func(state)
 
     # Handle async functions
     import asyncio
@@ -472,11 +494,22 @@ def evaluate_condition_activity(
         finally:
             loop.close()
 
-    # Result should be a node name or list of node names
+    # Result should be a node name, list of node names, or Send objects.
+    # LangGraph Send objects have a .node attribute with the target node name.
+    def _extract_node_name(item: Any) -> str:
+        if isinstance(item, str):
+            return item
+        if hasattr(item, "node"):
+            return item.node
+        return str(item)
+
     if isinstance(result, str):
         next_nodes = [result]
     elif isinstance(result, (list, tuple)):
-        next_nodes = list(result)
+        next_nodes = [_extract_node_name(r) for r in result]
+    elif hasattr(result, "node"):
+        # Single Send object
+        next_nodes = [result.node]
     else:
         next_nodes = [str(result)]
 
@@ -552,8 +585,17 @@ def _apply_write(channel_state: ChannelState, channel: str, value: Any) -> None:
             channel_state.values[channel] = reducer(
                 channel_state.values[channel], value
             )
-        except Exception:
+            # Re-serialize the reducer output so channel state stays
+            # JSON-compatible (reducers like add_messages may return
+            # BaseMessage objects from dict inputs).
+            reduced = channel_state.values[channel]
+            if isinstance(reduced, list):
+                channel_state.values[channel] = [
+                    _serialize_value(item) for item in reduced
+                ]
+        except Exception as e:
             # If reducer fails, just overwrite
+            logger.warning(f"Reducer failed for channel '{channel}': {e}")
             channel_state.values[channel] = value
     else:
         # No reducer or first value, just set
@@ -590,6 +632,21 @@ def _reconstruct_state(channel_state: ChannelState) -> Dict[str, Any]:
         else:
             state[channel] = value
 
+    # Reconstruct LangChain message objects from serialized dicts.
+    # Nodes (e.g. Deep Agent middleware) expect BaseMessage instances, not
+    # plain dicts, so we convert the "messages" channel back.
+    # Convert when items are dicts (either {"type": "human", ...} or
+    # {"role": "user", ...} format).
+    if "messages" in state and isinstance(state["messages"], list):
+        msgs = state["messages"]
+        if msgs and isinstance(msgs[0], dict):
+            try:
+                from langchain_core.messages import convert_to_messages
+
+                state["messages"] = convert_to_messages(msgs)
+            except (ImportError, Exception):
+                pass
+
     return state
 
 
@@ -607,6 +664,22 @@ def _result_to_writes(result: Any) -> List[NodeWrite]:
     if result is None:
         return writes
 
+    # Handle LangGraph Command objects (used by Deep Agents and newer LangGraph)
+    try:
+        from langgraph.types import Command
+
+        # Single Command
+        if isinstance(result, Command):
+            return _command_to_writes(result)
+
+        # List of Commands
+        if isinstance(result, list) and result and isinstance(result[0], Command):
+            for cmd in result:
+                writes.extend(_command_to_writes(cmd))
+            return writes
+    except ImportError:
+        pass
+
     if isinstance(result, dict):
         for key, value in result.items():
             # Serialize value if needed
@@ -616,6 +689,35 @@ def _result_to_writes(result: Any) -> List[NodeWrite]:
         # Non-dict results - write to a default channel
         serialized_value = _serialize_value(result)
         writes.append(NodeWrite(channel="__result__", value=serialized_value))
+
+    return writes
+
+
+def _command_to_writes(cmd: Any) -> List[NodeWrite]:
+    """Extract writes from a LangGraph Command object.
+
+    Args:
+        cmd: A LangGraph Command with .update and .goto fields
+
+    Returns:
+        List of NodeWrite objects
+    """
+    writes: List[NodeWrite] = []
+    update = getattr(cmd, "update", None)
+    if update is None:
+        return writes
+
+    if isinstance(update, dict):
+        for key, value in update.items():
+            serialized_value = _serialize_value(value)
+            writes.append(NodeWrite(channel=key, value=serialized_value))
+    elif isinstance(update, (list, tuple)):
+        # update can be a list of (channel, value) tuples
+        for item in update:
+            if isinstance(item, tuple) and len(item) == 2:
+                key, value = item
+                serialized_value = _serialize_value(value)
+                writes.append(NodeWrite(channel=key, value=serialized_value))
 
     return writes
 

@@ -143,9 +143,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         # Register workflow and activities
         self._register_workflow_components()
 
-        # Extract and register graph components
-        self._graph_config = self._extract_graph_config()
+        # Register graph components (nodes, channels, serializer) first.
+        # This calls clear_registries() internally.
         self._register_graph_components()
+        # Then extract graph config, which also registers conditions.
+        # Must run AFTER _register_graph_components so conditions are not wiped.
+        self._graph_config = self._extract_graph_config()
 
     def _register_workflow_components(self) -> None:
         """Register workflow and activities on the workflow runtime."""
@@ -293,8 +296,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
         channels = getattr(self._graph, "channels", {})
         for channel_name, channel in channels.items():
-            if hasattr(channel, "reducer") and channel.reducer:
-                register_channel_reducer(channel_name, channel.reducer)
+            # BinaryOperatorAggregate uses "operator" not "reducer"
+            reducer = getattr(channel, "reducer", None) or getattr(
+                channel, "operator", None
+            )
+            if reducer:
+                register_channel_reducer(channel_name, reducer)
                 logger.info(f"Registered reducer for channel: {channel_name}")
 
         try:
