@@ -27,6 +27,6 @@ dependencies:
     condition: monitoring.enabled
 
   - name: dapr
-    version: 1.17.0-rc.3
+    version: 1.17.1
     repository: https://dapr.github.io/helm-charts/
     condition: dapr.enabled
