@@ -14,6 +14,9 @@ from dapr.ext.workflow import (
     when_all,
 )
 
+from langgraph.runtime import Runtime
+from langgraph.types import Command
+
 from .models import (
     ChannelState,
     ExecuteNodeInput,
@@ -25,6 +28,8 @@ from .models import (
     GraphWorkflowOutput,
     NodeWrite,
 )
+
+import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -382,15 +387,11 @@ def execute_node_activity(
                 _config["configurable"] = {}
             if "__pregel_runtime" not in _config["configurable"]:
                 try:
-                    from langgraph.runtime import Runtime
-
                     _config["configurable"]["__pregel_runtime"] = Runtime()
                 except ImportError:
                     pass
             r = node_func.invoke(state, config=_config)
         else:
-            import inspect
-
             sig = inspect.signature(node_func)
             params = list(sig.parameters.keys())
 
@@ -666,8 +667,6 @@ def _result_to_writes(result: Any) -> List[NodeWrite]:
 
     # Handle LangGraph Command objects (used by Deep Agents and newer LangGraph)
     try:
-        from langgraph.types import Command
-
         # Single Command
         if isinstance(result, Command):
             return _command_to_writes(result)
