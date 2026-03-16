@@ -694,13 +694,17 @@ def _result_to_writes(result: Any) -> List[NodeWrite]:
 
 
 def _command_to_writes(cmd: Any) -> List[NodeWrite]:
-    """Extract writes from a LangGraph Command object.
+    """Extract channel writes from the ``update`` field of a LangGraph Command.
+
+    This helper only inspects ``cmd.update`` to generate ``NodeWrite`` entries.
+    Any ``goto`` / control-flow information on the Command is ignored by this
+    workflow runner.
 
     Args:
-        cmd: A LangGraph Command with .update and .goto fields
+        cmd: A LangGraph Command instance whose ``update`` field encodes channel writes.
 
     Returns:
-        List of NodeWrite objects
+        List of NodeWrite objects derived from ``cmd.update``
     """
     writes: List[NodeWrite] = []
     update = getattr(cmd, "update", None)
