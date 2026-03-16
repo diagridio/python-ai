@@ -1,0 +1,5 @@
+dapr>=1.17.2
+dapr-ext-workflow>=1.17.2
+deepagents>=0.1.0
+langchain-openai>=0.1.0
+diagrid>=0.2.2
