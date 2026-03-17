@@ -1,0 +1,77 @@
+name: E2E Tests (Ollama)
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * *" # Nightly at 4am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-ollama:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies
+        run: uv sync --all-packages --extra all --group test
+
+      - name: Cache Ollama model
+        id: cache-ollama
+        uses: actions/cache@v5
+        with:
+          path: ~/.ollama
+          key: ollama-qwen3-0.6b-${{ runner.os }}
+
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama and pull model
+        run: |
+          ollama serve &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "Ollama server is ready"
+              break
+            fi
+            echo "Waiting for Ollama... ($i/30)"
+            sleep 2
+          done
+          ollama pull qwen3:0.6b
+          echo "Warming up model..."
+          curl -sf http://localhost:11434/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model":"qwen3:0.6b","messages":[{"role":"user","content":"Say hello in one word"}]}' \
+            > /dev/null 2>&1 || echo "WARNING: Model warm-up failed, tests may be slower"
+          echo "Ollama ready with qwen3:0.6b"
+
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v5
+
+      - name: Install Dapr CLI
+        run: |
+          wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O - | /bin/bash
+
+      - name: Initialize Dapr
+        run: dapr init
+
+      - name: Run E2E tests
+        env:
+          OLLAMA_ENDPOINT: http://localhost:11434/v1
+          OLLAMA_MODEL: qwen3:0.6b
+          OPENAI_API_KEY: ollama
+          OPENAI_BASE_URL: http://localhost:11434/v1
+        run: uv run pytest tests/e2e/ -m ollama -v

@@ -1040,6 +1040,7 @@ all = [
     { name = "fastapi" },
     { name = "google-adk" },
     { name = "langchain-core" },
+    { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "litellm" },
     { name = "openai" },
@@ -1067,6 +1068,7 @@ deepagents = [
     { name = "deepagents" },
     { name = "fastapi" },
     { name = "langchain-core" },
+    { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "pydantic" },
     { name = "uvicorn" },
@@ -1149,6 +1151,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'agent-core'", specifier = ">=0.129.0" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.0.0" },
     { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=0.3.0" },
+    { name = "langchain-openai", marker = "extra == 'deepagents'", specifier = ">=1.1.11" },
     { name = "langgraph", marker = "extra == 'agent-core'", specifier = ">=0.3.6" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=1.0.8" },
     { name = "litellm", marker = "extra == 'crewai'", specifier = ">=1.0.0" },
@@ -2735,6 +2738,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/14/63/e7d148f903cebfef50109da71378f411166f068d66f79b9e16a62dbacf41/langchain_google_genai-4.2.1.tar.gz", hash = "sha256:7f44487a0337535897e3bba9a1d6605d722629e034f757ffa8755af0aa85daa8", size = 278288, upload-time = "2026-02-19T19:29:19.416Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/7e/46c5973bd8b10a5c4c8a77136cf536e658796380a17c740246074901b038/langchain_google_genai-4.2.1-py3-none-any.whl", hash = "sha256:a7735289cf94ca3a684d830e09196aac8f6e75e647e3a0a1c3c9dc534ceb985e", size = 66500, upload-time = "2026-02-19T19:29:18.002Z" },
+]
+
+[[package]]
+name = "langchain-openai"
+version = "1.1.11"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "openai" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/40/cd/439be2b8deb8bd0d4c470c7c7f66698a84d823e583c3d36a322483cb7cab/langchain_openai-1.1.11.tar.gz", hash = "sha256:44b003a2960d1f6699f23721196b3b97d0c420d2e04444950869213214b7a06a", size = 1088560, upload-time = "2026-03-09T23:02:36.894Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f0/0f/e4cb42848c25f65969adfb500a06dea1a541831604250fd0d8aa6e54fef5/langchain_openai-1.1.11-py3-none-any.whl", hash = "sha256:a03596221405d38d6852fb865467cb0d9ff9e79f335905eb6a576e8c4874ac71", size = 87694, upload-time = "2026-03-09T23:02:35.651Z" },
 ]
 
 [[package]]
