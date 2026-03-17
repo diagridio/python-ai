@@ -7,7 +7,9 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.request
 from typing import Generator
+from dapr.conf import settings as _dapr_settings
 
 import pytest
 
@@ -15,6 +17,15 @@ logger = logging.getLogger(__name__)
 
 _DAPR_GRPC_PORT = 50001
 _DAPR_HTTP_PORT = 3500
+
+# Prevent DaprClient from blocking 60s per instantiation when the sidecar's
+# HTTP health endpoint is slow to respond.  The _dapr_sidecar fixture already
+# verifies full readiness before yielding; this is a safety net.
+# NOTE: dapr.conf.Settings caches env vars at import time, so os.environ
+# changes after import are ignored.  Patch the settings object directly.
+
+
+_dapr_settings.DAPR_HEALTH_TIMEOUT = 5
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -34,6 +45,17 @@ def _is_port_open(host: str, port: int, timeout: float = 2.0) -> bool:
         with socket.create_connection((host, port), timeout=timeout):
             return True
     except (OSError, ConnectionRefusedError):
+        return False
+
+
+def _is_dapr_healthy(http_port: int, timeout: float = 2.0) -> bool:
+    """Check if the Dapr sidecar HTTP health endpoint responds."""
+    url = f"http://127.0.0.1:{http_port}/v1.0/healthz/outbound"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout):
+            return True
+    except Exception:
         return False
 
 
@@ -88,7 +110,7 @@ def _dapr_sidecar() -> Generator[None, None, None]:
 
     ready = False
     for i in range(30):
-        if _is_port_open("127.0.0.1", grpc_port):
+        if _is_port_open("127.0.0.1", grpc_port) and _is_dapr_healthy(http_port):
             ready = True
             logger.info("Dapr sidecar ready after %ds", i + 1)
             break
@@ -267,12 +289,17 @@ def skip_without_prerequisites(
     has_ollama_marker = request.node.get_closest_marker("ollama") is not None
     has_integration_marker = request.node.get_closest_marker("integration") is not None
     grpc_port = int(os.environ.get("DAPR_GRPC_PORT", str(_DAPR_GRPC_PORT)))
+    http_port = int(os.environ.get("DAPR_HTTP_PORT", str(_DAPR_HTTP_PORT)))
 
     if has_ollama_marker:
         if not os.environ.get("OLLAMA_ENDPOINT"):
             pytest.skip("OLLAMA_ENDPOINT not set")
         if not _is_port_open("127.0.0.1", grpc_port):
             pytest.skip(f"Dapr sidecar not reachable on port {grpc_port}")
+        if not _is_dapr_healthy(http_port):
+            pytest.skip(f"Dapr sidecar HTTP health check failed on port {http_port}")
     elif has_integration_marker:
         if not _is_port_open("127.0.0.1", grpc_port):
             pytest.skip(f"Dapr sidecar not reachable on port {grpc_port}")
+        if not _is_dapr_healthy(http_port):
+            pytest.skip(f"Dapr sidecar HTTP health check failed on port {http_port}")
