@@ -74,4 +74,4 @@ jobs:
           OLLAMA_MODEL: qwen3:0.6b
           OPENAI_API_KEY: ollama
           OPENAI_BASE_URL: http://localhost:11434/v1
-        run: uv run pytest tests/e2e/ -m ollama -v
+        run: uv run pytest tests/e2e/ -m integration -v
