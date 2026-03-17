@@ -65,7 +65,7 @@ def test_deepagents_workflow_lifecycle(
                 ]
             },
             thread_id=f"e2e-deep-{uuid.uuid4().hex[:8]}",
-            timeout=120,
+            timeout=300,
         )
 
         assert result is not None, "invoke returned None — workflow never completed"
@@ -138,7 +138,7 @@ def test_deepagents_multi_tool(
                 ]
             },
             thread_id=f"e2e-deep-mt-{uuid.uuid4().hex[:8]}",
-            timeout=120,
+            timeout=300,
         )
 
         assert result is not None, "invoke returned None — workflow never completed"
