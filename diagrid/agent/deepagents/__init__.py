@@ -32,7 +32,9 @@ Example:
 """
 
 from diagrid.agent.deepagents.runner import DaprWorkflowDeepAgentRunner
+from diagrid.agent.deepagents.version import __version__
 
 __all__ = [
     "DaprWorkflowDeepAgentRunner",
+    "__version__",
 ]
