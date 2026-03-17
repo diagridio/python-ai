@@ -39,6 +39,9 @@ pip install "diagrid[pydantic_ai]"
 
 # For OpenAI Agents
 pip install "diagrid[openai_agents]"
+
+# For LangChain Deep Agents
+pip install "diagrid[deepagents]"
 ```
 
 ## Prerequisites
