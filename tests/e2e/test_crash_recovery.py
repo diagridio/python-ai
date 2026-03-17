@@ -27,6 +27,8 @@ from pathlib import Path
 
 import pytest
 
+_RESOURCES_DIR = str(Path(__file__).parent / "resources")
+
 
 def _write_helper_script(state_file: Path) -> str:
     """Write the crash-recovery helper script to a temp file.
@@ -175,6 +177,8 @@ def test_crash_recovery() -> None:
         "0",
         "--dapr-http-port",
         "0",
+        "--resources-path",
+        _RESOURCES_DIR,
         "--log-level",
         "warn",
         "--",
@@ -277,6 +281,8 @@ def _run_crash_recovery_test(
         "0",
         "--dapr-http-port",
         "0",
+        "--resources-path",
+        _RESOURCES_DIR,
         "--log-level",
         "warn",
         "--",

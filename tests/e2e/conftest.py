@@ -8,7 +8,9 @@ import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
 from typing import Generator
+
 from dapr.conf import settings as _dapr_settings
 
 import pytest
@@ -17,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _DAPR_GRPC_PORT = 50001
 _DAPR_HTTP_PORT = 3500
+_RESOURCES_DIR = str(Path(__file__).parent / "resources")
 
 # Prevent DaprClient from blocking 60s per instantiation when the sidecar's
 # HTTP health endpoint is slow to respond.  The _dapr_sidecar fixture already
@@ -59,32 +62,28 @@ def _is_dapr_healthy(http_port: int, timeout: float = 2.0) -> bool:
         return False
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _dapr_sidecar() -> Generator[None, None, None]:
-    """Auto-start a Dapr sidecar for the e2e test session.
+_APP_ID = "e2e-test"
 
-    Skips startup if:
-    - OLLAMA_ENDPOINT is not set (tests will skip anyway)
-    - A sidecar is already listening (e.g. pytest is wrapped with ``dapr run``)
-    - The ``dapr`` CLI is not installed
-    """
-    if not os.environ.get("OLLAMA_ENDPOINT") and not os.environ.get("DAPR_E2E"):
-        yield
-        return
 
-    grpc_port = int(os.environ.get("DAPR_GRPC_PORT", str(_DAPR_GRPC_PORT)))
-    http_port = int(os.environ.get("DAPR_HTTP_PORT", str(_DAPR_HTTP_PORT)))
+def _stop_sidecar(dapr_bin: str) -> None:
+    """Stop any running sidecar for the e2e app-id."""
+    subprocess.run(
+        [dapr_bin, "stop", "--app-id", _APP_ID],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    )
+    # Give the placement service time to deregister.
+    time.sleep(1)
 
+
+def _start_sidecar(
+    dapr_bin: str, grpc_port: int, http_port: int
+) -> subprocess.Popen[bytes] | None:
+    """Start a fresh Dapr sidecar and wait for readiness."""
+    # Stop any stale sidecar first so the ports are free.
     if _is_port_open("127.0.0.1", grpc_port):
-        logger.info("Dapr sidecar already running on port %d", grpc_port)
-        yield
-        return
-
-    dapr_bin = shutil.which("dapr")
-    if dapr_bin is None:
-        logger.warning("dapr CLI not found — tests will skip")
-        yield
-        return
+        _stop_sidecar(dapr_bin)
 
     logger.info("Starting Dapr sidecar (grpc=%d, http=%d)", grpc_port, http_port)
     proc = subprocess.Popen(
@@ -92,11 +91,13 @@ def _dapr_sidecar() -> Generator[None, None, None]:
             dapr_bin,
             "run",
             "--app-id",
-            "e2e-test",
+            _APP_ID,
             "--dapr-grpc-port",
             str(grpc_port),
             "--dapr-http-port",
             str(http_port),
+            "--resources-path",
+            _RESOURCES_DIR,
             "--log-level",
             "warn",
             "--",
@@ -108,40 +109,65 @@ def _dapr_sidecar() -> Generator[None, None, None]:
         stderr=subprocess.PIPE,
     )
 
-    ready = False
     for i in range(30):
         if _is_port_open("127.0.0.1", grpc_port) and _is_dapr_healthy(http_port):
-            ready = True
             logger.info("Dapr sidecar ready after %ds", i + 1)
-            break
+            return proc
         time.sleep(1)
 
-    if not ready:
-        proc.terminate()
-        stderr = proc.stderr.read().decode() if proc.stderr else ""
-        logger.error("Dapr sidecar failed to start: %s", stderr[:500])
-        proc.wait(timeout=5)
+    proc.terminate()
+    stderr = proc.stderr.read().decode() if proc.stderr else ""
+    logger.error("Dapr sidecar failed to start: %s", stderr[:500])
+    proc.wait(timeout=5)
+    return None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _dapr_sidecar() -> Generator[None, None, None]:
+    """Start a fresh Dapr sidecar for each test module.
+
+    Module scope ensures the sidecar is restarted between test files,
+    preventing stale placement/scheduler state after crash-recovery
+    tests (which spawn and destroy many short-lived sidecars).
+
+    Skips startup if:
+    - OLLAMA_ENDPOINT and DAPR_E2E are both unset
+    - The ``dapr`` CLI is not installed
+    """
+    if not os.environ.get("OLLAMA_ENDPOINT") and not os.environ.get("DAPR_E2E"):
         yield
         return
 
+    dapr_bin = shutil.which("dapr")
+    if dapr_bin is None:
+        logger.warning("dapr CLI not found — tests will skip")
+        yield
+        return
+
+    grpc_port = int(os.environ.get("DAPR_GRPC_PORT", str(_DAPR_GRPC_PORT)))
+    http_port = int(os.environ.get("DAPR_HTTP_PORT", str(_DAPR_HTTP_PORT)))
+
+    proc = _start_sidecar(dapr_bin, grpc_port, http_port)
+
     yield
 
-    logger.info("Stopping Dapr sidecar")
-    proc.terminate()
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5)
+    if proc is not None:
+        logger.info("Stopping Dapr sidecar")
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def ollama_endpoint() -> str:
     """Ollama-compatible OpenAI API endpoint URL."""
     return os.environ.get("OLLAMA_ENDPOINT", "http://localhost:11434/v1")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def ollama_model() -> str:
     """Ollama model name to use for tests."""
     return os.environ.get("OLLAMA_MODEL", "qwen3:0.6b")
@@ -270,7 +296,7 @@ def clear_agent_registration(framework_workflow_module: str) -> None:
     _clear_fn_registration(*(fn for fn in fns if fn is not None))
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def ollama_litellm_model(ollama_model: str) -> str:
     """LiteLLM-prefixed model name for CrewAI/LiteLLM routing."""
     return f"openai/{ollama_model}"
