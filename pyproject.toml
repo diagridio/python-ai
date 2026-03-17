@@ -55,8 +55,12 @@ pydantic_ai = [
     "pydantic-ai>=0.1.0",
     "diagrid[agent-core]",
 ]
+deepagents = [
+    "deepagents>=0.1.0",
+    "diagrid[langgraph]",
+]
 all = [
-    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai]",
+    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents]",
 ]
 
 [dependency-groups]
