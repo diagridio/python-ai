@@ -10,9 +10,9 @@ dependencies:
   version: 82.10.1
 - name: opentelemetry-collector
   repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-  version: 0.147.0
+  version: 0.147.1
 - name: dapr
   repository: https://dapr.github.io/helm-charts/
   version: 1.17.1
-digest: sha256:61dc563d704aebe68101f25f8b12e349f1b295f0b4c8ff7f19beaa5fd376c056
-generated: "2026-03-16T21:19:38.980907611Z"
+digest: sha256:c399baf07d93cac54a0c4e0f4e9d636e001e6232155e9af6b05fa4525ff40269
+generated: "2026-03-20T07:33:46.859701075Z"
