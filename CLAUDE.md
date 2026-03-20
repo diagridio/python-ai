@@ -40,28 +40,6 @@ uv run pytest tests -m "not integration"
 - **Dataclasses**: Used for internal workflow models (LangGraph); provide `to_dict()`/`from_dict()` serialization
 - **Telemetry**: OpenTelemetry SDK with gRPC OTLP exporter; no-op when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset
 
-## Agent Guardrails
-
-### CI Fix Agent (`claude-ci-fix.yaml`)
-- **CAN**: Fix formatting issues, lint errors, type errors, and test failures reported by CI
-- **CAN**: Run `uv run ruff format`, `uv run flake8`, `uv run mypy`, `uv run pytest`
-- **CANNOT**: Refactor code beyond what's needed to fix the specific failure
-- **CANNOT**: Add new features or change behavior
-- **CANNOT**: Modify files listed in the "Never Modify" section
-
-### Review Agent (`claude-pr-review.yaml`)
-- **CAN**: Read code, run diffs, analyze changes
-- **CAN**: Post structured review comments categorized as architectural or non-architectural
-- **CANNOT**: Modify any files
-- **CANNOT**: Push commits
-
-### Implementation Agent (`claude-implement.yaml`)
-- **CAN**: Implement ONLY the specific non-architectural suggestions listed in its prompt
-- **CAN**: Run quality commands to verify changes don't break anything
-- **CANNOT**: Make architectural changes (new patterns, restructuring, new dependencies)
-- **CANNOT**: Implement suggestions not explicitly listed in its prompt
-- **CANNOT**: Modify files listed in the "Never Modify" section
-
 ## Never Modify
 
 These files must not be changed by any agent:
