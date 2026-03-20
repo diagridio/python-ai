@@ -11,10 +11,6 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "catalyst-agents.redis-host" -}}
-{{ printf "%s.%s.svc.cluster.local:6379" .Values.redisConfig.serviceName .Release.Namespace }}
-{{- end -}}
-
 {{- define "catalyst-agents.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{ include "catalyst-agents.selectorLabels" . }}

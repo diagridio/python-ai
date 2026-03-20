@@ -119,38 +119,34 @@ opentelemetry-collector:
     metrics: { enabled: true, containerPort: 8888, servicePort: 8888, protocol: TCP }
 
 # ------------------------------------------------------------------------------
-# 3. DAPR CONTROL PLANE
+# 3. CHAOS ENGINEERING
 # ------------------------------------------------------------------------------
-dapr:
+chaos:
   enabled: true
+  chartVersion: "2.7.3"  # must match Chart.yaml chaos-mesh dependency version
+
+chaos-mesh:
+  controllerManager:
+    replicaCount: 1
+  dashboard:
+    create: false
 
 # ------------------------------------------------------------------------------
-# 4. DEVELOPER AGENTS & TOOLS
+# 4. CATALYST OPERATOR
 # ------------------------------------------------------------------------------
-redis:
-  enabled: true
-  image: redis
-  tag: 6.2
-  port: 6379
-  password: ""
+# catalystOperator:
+#   enabled: false
+#   catalyst:
+#     apiKey: ""
+#     apiEndpoint: ""
+#   dapr:
+#     webhook:
+#       enabled: true
 
-redisConfig:
-  serviceName: dapr-redis-master
-  passwordSecret: { name: dapr-redis, key: redis-password }
-
+# ------------------------------------------------------------------------------
+# 5. DEVELOPER AGENTS & TOOLS
+# ------------------------------------------------------------------------------
 agents: {}
-
-daprMcpServer:
-  image: dapr-mcp-server
-  tag: latest
-  replicas: 1
-  port: 8080
-
-opentelemetry:
-  enabled: true
-  endpoint: "catalyst-agents-opentelemetry-collector.catalyst-agents.svc.cluster.local:4317"
-  protocol: "grpc"
-  headers: "authorization=Bearer your-secret-token-here"
 
 llm:
   provider: ollama # 'ollama' or 'openAI'
@@ -163,26 +159,8 @@ llm:
   apiKey: "dummy-key"
   googleApiKey: ""
 
-externalWebhook: { url: "http://localhost:8000" }
-
-secrets:
-  apiKeySafe: { keyId: "safe-api-1234", tokenValue: "mock_token_xyz_safe", expiry: "2026-01-01" }
-  database:
-    username: "dapr_agent_user"
-    password: "mock_db_password_890"
-    connectionString: "host=localhost;port=5432;database=prod"
-  agentConfig: { logLevel: "DEBUG", maxRetries: "3", cacheTtlSeconds: "300" }
-
-redisInsight:
-  enabled: true
-  service: { nodePort: 30540 }
-
-diagridDashboard:
-  enabled: true
-  service: { nodePort: 30088 }
-
 # ------------------------------------------------------------------------------
-# 5. GATEWAY
+# 7. GATEWAY
 # ------------------------------------------------------------------------------
 gateway:
   enabled: true

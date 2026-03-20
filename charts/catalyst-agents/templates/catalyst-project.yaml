@@ -1,0 +1,9 @@
+{{- if and .Values.catalystOperator .Values.catalystOperator.enabled }}
+apiVersion: catalyst.diagrid.io/v1alpha1
+kind: Project
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  region: {{ .Values.catalystOperator.region | default "aws-us-west" }}
+  defaultWorkflowStoreEnabled: true
+{{- end }}
