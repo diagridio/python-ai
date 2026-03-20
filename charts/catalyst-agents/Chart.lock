@@ -1,7 +1,7 @@
 dependencies:
 - name: loki
   repository: https://grafana.github.io/helm-charts
-  version: 6.6.6
+  version: 6.55.0
 - name: tempo
   repository: https://grafana.github.io/helm-charts
   version: 1.10.3
@@ -14,5 +14,5 @@ dependencies:
 - name: dapr
   repository: https://dapr.github.io/helm-charts/
   version: 1.17.1
-digest: sha256:61dc563d704aebe68101f25f8b12e349f1b295f0b4c8ff7f19beaa5fd376c056
-generated: "2026-03-16T21:19:38.980907611Z"
+digest: sha256:ced7f78fdd7185ba4848d0969600cd7c253ad15aac24bbef4f5871a975ac5da1
+generated: "2026-03-20T07:33:51.612623253Z"
