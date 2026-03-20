@@ -26,7 +26,12 @@ dependencies:
     repository: https://open-telemetry.github.io/opentelemetry-helm-charts
     condition: monitoring.enabled
 
-  - name: dapr
-    version: 1.17.1
-    repository: https://dapr.github.io/helm-charts/
-    condition: dapr.enabled
+  - name: chaos-mesh
+    version: 2.7.3
+    repository: https://charts.chaos-mesh.org
+    condition: chaos.enabled
+
+  # - name: catalyst-operator
+  #   version: 0.1.0
+  #   repository: oci://ghcr.io/diagridio
+  #   condition: catalystOperator.enabled

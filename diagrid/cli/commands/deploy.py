@@ -29,6 +29,7 @@ from diagrid.cli.infra.kind import (
     ensure_registry_config,
     kind_available,
 )
+from diagrid.cli.infra.catalyst_operator import catalyst_operator_active
 from diagrid.cli.infra.kubectl import apply_stdin, rollout_restart
 from diagrid.cli.utils import console
 from diagrid.cli.utils.deps import preflight_check
@@ -83,6 +84,40 @@ spec:
           value: "{http_endpoint}"
         - name: DAPR_GRPC_ENDPOINT
           value: "{grpc_endpoint}"
+{otel_env_block}{secret_env_block}\
+"""
+
+CATALYST_DEPLOYMENT_TEMPLATE = """\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {name}
+  namespace: {namespace}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {name}
+  template:
+    metadata:
+      labels:
+        app: {name}
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/provider: "catalyst"
+        catalyst.diagrid.io/project: "{project}"
+    spec:
+      containers:
+      - name: {name}
+        image: {image}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: {port}
+        env:
+        - name: APP_PORT
+          value: "{port}"
+        - name: DAPR_APP_ID
+          value: "{app_id}"
 {otel_env_block}{secret_env_block}\
 """
 
@@ -307,6 +342,12 @@ def _patch_llm_secret(namespace: str, resolved_keys: dict[str, str]) -> None:
     default=None,
     help="Google API key for ADK (or set GOOGLE_API_KEY env)",
 )
+@click.option(
+    "--use-operator",
+    is_flag=True,
+    default=False,
+    help="Use Catalyst k8s operator for credential injection (webhook-based)",
+)
 @click.pass_context
 def deploy(
     ctx: click.Context,
@@ -322,6 +363,7 @@ def deploy(
     trigger: str | None,
     openai_api_key: str | None,
     google_api_key: str | None,
+    use_operator: bool,
 ) -> None:
     """Build and deploy an agent to the kind cluster."""
     preflight_check()
@@ -339,6 +381,9 @@ def deploy(
         resolved_keys = _resolve_llm_keys(openai_api_key, google_api_key, namespace)
         _patch_llm_secret(namespace, resolved_keys)
 
+        # Auto-detect Catalyst operator if --use-operator or operator CRDs present
+        operator_mode = use_operator or catalyst_operator_active(namespace)
+
         if _is_orchestrator_project():
             _deploy_orchestrator(
                 api_url=api_url,
@@ -348,6 +393,7 @@ def deploy(
                 namespace=namespace,
                 project=project,
                 trigger=trigger,
+                operator_mode=operator_mode,
             )
         else:
             _deploy_single_agent(
@@ -361,6 +407,7 @@ def deploy(
                 app_id=app_id,
                 port=port,
                 trigger=trigger,
+                operator_mode=operator_mode,
             )
     except CommandError as exc:
         console.error(str(exc))
@@ -419,9 +466,26 @@ def _deploy_single_agent(
     app_id: str | None,
     port: int,
     trigger: str | None,
+    operator_mode: bool = False,
 ) -> None:
     """Build and deploy a single agent (the original deploy flow)."""
     appid_name = app_id or f"{project}-agent"
+
+    if operator_mode:
+        _deploy_single_agent_operator(
+            api_url=api_url,
+            api_key=api_key,
+            no_browser=no_browser,
+            image=image,
+            tag=tag,
+            namespace=namespace,
+            project=project,
+            appid_name=appid_name,
+            port=port,
+            trigger=trigger,
+        )
+        return
+
     total_steps = 6 if trigger else 5
 
     # Step 1: Authenticate
@@ -487,6 +551,86 @@ def _deploy_single_agent(
 
 
 # ---------------------------------------------------------------------------
+# Catalyst operator single-agent deploy
+# ---------------------------------------------------------------------------
+
+
+def _deploy_single_agent_operator(
+    *,
+    api_url: str | None,
+    api_key: str | None,
+    no_browser: bool,
+    image: str,
+    tag: str,
+    namespace: str,
+    project: str,
+    appid_name: str,
+    port: int,
+    trigger: str | None,
+) -> None:
+    """Deploy using the Catalyst operator (webhook injects credentials)."""
+    from diagrid.cli.infra.catalyst_operator import create_appid_crd
+
+    total_steps = 5 if trigger else 4
+
+    # Step 1: Authenticate
+    with console.spinner(1, total_steps, "Authenticating..."):
+        auth = DeviceCodeAuth(
+            api_url=api_url, api_key_flag=api_key, no_browser=no_browser
+        )
+        auth.authenticate()
+    console.success("Authenticated (operator mode)")
+
+    # Step 2: Ensure AppID CRD exists
+    with console.spinner(2, total_steps, "Creating AppID CRD..."):
+        create_appid_crd(project, appid_name, namespace)
+    console.success(f"AppID CRD '{appid_name}' applied")
+
+    # Step 3: Build and push Docker image
+    with console.spinner(3, total_steps, f"Building Docker image {image}:{tag}..."):
+        full_tag = build_image(image, tag)
+        registry_tag = push_to_registry(full_tag)
+    console.success(f"Image built and pushed: {registry_tag}")
+
+    # Step 4: Apply Kubernetes manifest (operator injects credentials via webhook)
+    with console.spinner(4, total_steps, "Deploying to Kubernetes (operator mode)..."):
+        manifest = CATALYST_DEPLOYMENT_TEMPLATE.format(
+            name=image,
+            namespace=namespace,
+            image=registry_tag,
+            port=port,
+            app_id=appid_name,
+            project=project,
+            otel_env_block="",
+            secret_env_block=_secret_env_block(_SINGLE_AGENT_LLM_ENV),
+        )
+        apply_stdin(manifest, namespace=namespace)
+        rollout_restart(image, namespace=namespace)
+    console.success("Agent deployed (operator mode)")
+
+    # Step 5 (optional): Trigger the agent
+    if trigger:
+        with console.spinner(5, total_steps, "Triggering agent..."):
+            result = _trigger_agent(image, namespace, trigger, container_port=port)
+        console.success("Agent triggered")
+        console.info(f"Instance ID: {result.get('instance_id', 'N/A')}")
+
+    summary_lines = [
+        f"Image: {registry_tag}",
+        f"Namespace: {namespace}",
+        f"Deployment: {image}",
+        f"AppID: {appid_name}",
+        f"Project: {project}",
+        "Mode: Catalyst Operator",
+    ]
+    if trigger:
+        summary_lines.append("")
+        summary_lines.append(f'Prompt: "{trigger}"')
+
+    console.print_summary("Deployment Complete (Operator)", summary_lines)
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator deploy
 # ---------------------------------------------------------------------------
 
@@ -535,6 +679,7 @@ def _deploy_orchestrator(
     namespace: str,
     project: str,
     trigger: str | None = None,
+    operator_mode: bool = False,
 ) -> None:
     """Build and deploy all orchestrator agents."""
     total_steps = 7 if trigger else 6
@@ -600,18 +745,30 @@ def _deploy_orchestrator(
             otel_block = _otel_env_block(agent.app_id, OTEL_COLLECTOR_ENDPOINT)
             secret_block = _secret_env_block(agent.secret_env)
             agent_image = registry_map[f"{agent.app_id}:{tag}"]
-            manifest = DEPLOYMENT_TEMPLATE.format(
-                name=agent.app_id,
-                namespace=namespace,
-                image=agent_image,
-                port=agent.port,
-                app_id=conn["app_id"],
-                api_token=conn["api_token"],
-                http_endpoint=conn["http_endpoint"],
-                grpc_endpoint=conn["grpc_endpoint"],
-                otel_env_block=otel_block,
-                secret_env_block=secret_block,
-            )
+            if operator_mode:
+                manifest = CATALYST_DEPLOYMENT_TEMPLATE.format(
+                    name=agent.app_id,
+                    namespace=namespace,
+                    image=agent_image,
+                    port=agent.port,
+                    app_id=conn["app_id"],
+                    project=project,
+                    otel_env_block=otel_block,
+                    secret_env_block=secret_block,
+                )
+            else:
+                manifest = DEPLOYMENT_TEMPLATE.format(
+                    name=agent.app_id,
+                    namespace=namespace,
+                    image=agent_image,
+                    port=agent.port,
+                    app_id=conn["app_id"],
+                    api_token=conn["api_token"],
+                    http_endpoint=conn["http_endpoint"],
+                    grpc_endpoint=conn["grpc_endpoint"],
+                    otel_env_block=otel_block,
+                    secret_env_block=secret_block,
+                )
             apply_stdin(manifest, namespace=namespace)
             rollout_restart(agent.app_id, namespace=namespace)
     console.success(f"Deployed {len(agents)} agents")

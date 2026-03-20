@@ -40,6 +40,10 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "integration: marks tests requiring Dapr sidecar (no LLM needed)",
     )
+    config.addinivalue_line(
+        "markers",
+        "chaos: marks tests requiring Chaos Mesh on a K8s cluster",
+    )
 
 
 def _is_port_open(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -294,6 +298,24 @@ def clear_agent_registration(framework_workflow_module: str) -> None:
         for name in ("agent_workflow", "call_llm_activity", "execute_tool_activity")
     ]
     _clear_fn_registration(*(fn for fn in fns if fn is not None))
+
+
+@pytest.fixture(scope="module")
+def chaos_enabled() -> bool:
+    """True when the ``CHAOS_ENABLED`` env var is set."""
+    return bool(os.environ.get("CHAOS_ENABLED"))
+
+
+@pytest.fixture(scope="module")
+def catalyst_operator_mode() -> bool:
+    """True when running against a Catalyst-backed cluster."""
+    return bool(os.environ.get("DAPR_HTTP_ENDPOINT"))
+
+
+@pytest.fixture(scope="module")
+def target_namespace() -> str:
+    """Namespace for E2E tests (default: catalyst-agents)."""
+    return os.environ.get("E2E_NAMESPACE", "catalyst-agents")
 
 
 @pytest.fixture(scope="module")

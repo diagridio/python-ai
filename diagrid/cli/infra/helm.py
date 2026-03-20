@@ -78,6 +78,8 @@ def install_dapr_agents(
     llm_api_key: str,
     *,
     google_api_key: str = "",
+    catalyst_api_key: str | None = None,
+    catalyst_api_endpoint: str | None = None,
     chart: str = DEFAULT_HELM_OCI_CHART,
     version: str = DEFAULT_HELM_CHART_VERSION,
     namespace: str = DEFAULT_NAMESPACE,
@@ -105,4 +107,20 @@ def install_dapr_agents(
         args.extend(["--version", version])
     if google_api_key:
         args.extend(["--set", f"llm.googleApiKey={google_api_key}"])
+    if catalyst_api_key:
+        args.extend(
+            [
+                "--set",
+                "catalystOperator.enabled=true",
+                "--set",
+                f"catalystOperator.catalyst.apiKey={catalyst_api_key}",
+            ]
+        )
+        if catalyst_api_endpoint:
+            args.extend(
+                [
+                    "--set",
+                    f"catalystOperator.catalyst.apiEndpoint={catalyst_api_endpoint}",
+                ]
+            )
     run(*args)
