@@ -433,7 +433,7 @@ def _start_or_wait_for_docker() -> None:
     elif _is_mac():
         subprocess.run(["open", "-a", "Docker"], capture_output=True)
     elif _is_windows():
-        subprocess.Popen(["Docker Desktop.exe"], shell=True)  # noqa: S602
+        subprocess.Popen(["Docker Desktop.exe"])  # noqa: S603
 
     # Poll for up to 60 seconds
     deadline = time.monotonic() + 60

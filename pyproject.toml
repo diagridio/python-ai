@@ -58,6 +58,7 @@ pydantic_ai = [
 deepagents = [
     "deepagents>=0.1.0",
     "diagrid[langgraph]",
+    "langchain-openai>=1.1.11",
 ]
 all = [
     "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents]",
