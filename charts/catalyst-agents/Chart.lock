@@ -7,12 +7,12 @@ dependencies:
   version: 1.10.3
 - name: kube-prometheus-stack
   repository: https://prometheus-community.github.io/helm-charts
-  version: 82.10.1
+  version: 82.13.5
 - name: opentelemetry-collector
   repository: https://open-telemetry.github.io/opentelemetry-helm-charts
   version: 0.147.0
 - name: dapr
   repository: https://dapr.github.io/helm-charts/
   version: 1.17.1
-digest: sha256:61dc563d704aebe68101f25f8b12e349f1b295f0b4c8ff7f19beaa5fd376c056
-generated: "2026-03-16T21:19:38.980907611Z"
+digest: sha256:59e912299468ec89d2081bac7c4b01147858e0f8dbbdb4e5f092acb7b8acf7b0
+generated: "2026-03-23T14:28:51.493707962Z"
