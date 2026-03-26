@@ -11,6 +11,13 @@ members = [
     "diagrid",
     "diagrid-cli",
     "diagrid-core",
+    "diagrid-example-adk",
+    "diagrid-example-crewai",
+    "diagrid-example-deepagents",
+    "diagrid-example-langgraph",
+    "diagrid-example-openai-agents",
+    "diagrid-example-pydantic-ai",
+    "diagrid-example-strands",
 ]
 
 [[package]]
@@ -1139,14 +1146,14 @@ requires-dist = [
     { name = "dapr-ext-strands", marker = "extra == 'agent-core'", specifier = ">=1.17.2" },
     { name = "dapr-ext-workflow", specifier = ">=1.17.2" },
     { name = "deepagents", marker = "extra == 'deepagents'", specifier = ">=0.1.0" },
-    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'adk'" },
-    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'crewai'" },
-    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'langgraph'" },
-    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'openai-agents'" },
-    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'pydantic-ai'" },
-    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'strands'" },
-    { name = "diagrid", extras = ["langgraph"], marker = "extra == 'deepagents'" },
-    { name = "diagrid", extras = ["langgraph", "crewai", "adk", "strands", "openai-agents", "pydantic-ai", "deepagents"], marker = "extra == 'all'" },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'adk'", editable = "." },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'crewai'", editable = "." },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'langgraph'", editable = "." },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'openai-agents'", editable = "." },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'pydantic-ai'", editable = "." },
+    { name = "diagrid", extras = ["agent-core"], marker = "extra == 'strands'", editable = "." },
+    { name = "diagrid", extras = ["langgraph"], marker = "extra == 'deepagents'", editable = "." },
+    { name = "diagrid", extras = ["langgraph", "crewai", "adk", "strands", "openai-agents", "pydantic-ai", "deepagents"], marker = "extra == 'all'", editable = "." },
     { name = "diagrid-cli", editable = "diagrid/cli" },
     { name = "fastapi", marker = "extra == 'agent-core'", specifier = ">=0.129.0" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.0.0" },
@@ -1212,6 +1219,87 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.8.0" },
 ]
+
+[[package]]
+name = "diagrid-example-adk"
+version = "0.2.4"
+source = { virtual = "diagrid/agent/adk/examples" }
+dependencies = [
+    { name = "diagrid", extra = ["adk"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "diagrid", extras = ["adk"], editable = "." }]
+
+[[package]]
+name = "diagrid-example-crewai"
+version = "0.2.4"
+source = { virtual = "diagrid/agent/crewai/examples" }
+dependencies = [
+    { name = "diagrid", extra = ["crewai"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "diagrid", extras = ["crewai"], editable = "." }]
+
+[[package]]
+name = "diagrid-example-deepagents"
+version = "0.2.4"
+source = { virtual = "diagrid/agent/deepagents/examples" }
+dependencies = [
+    { name = "diagrid", extra = ["deepagents"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "diagrid", extras = ["deepagents"], editable = "." }]
+
+[[package]]
+name = "diagrid-example-langgraph"
+version = "0.2.4"
+source = { virtual = "diagrid/agent/langgraph/examples" }
+dependencies = [
+    { name = "diagrid", extra = ["langgraph"] },
+    { name = "langchain-openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "diagrid", extras = ["langgraph"], editable = "." },
+    { name = "langchain-openai", specifier = ">=0.3.0" },
+]
+
+[[package]]
+name = "diagrid-example-openai-agents"
+version = "0.2.4"
+source = { virtual = "diagrid/agent/openai_agents/examples" }
+dependencies = [
+    { name = "diagrid", extra = ["openai-agents"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "diagrid", extras = ["openai-agents"], editable = "." }]
+
+[[package]]
+name = "diagrid-example-pydantic-ai"
+version = "0.2.4"
+source = { virtual = "diagrid/agent/pydantic_ai/examples" }
+dependencies = [
+    { name = "diagrid", extra = ["pydantic-ai"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "diagrid", extras = ["pydantic-ai"], editable = "." }]
+
+[[package]]
+name = "diagrid-example-strands"
+version = "0.2.4"
+source = { virtual = "diagrid/agent/strands/examples" }
+dependencies = [
+    { name = "diagrid", extra = ["strands"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "diagrid", extras = ["strands"], editable = "." }]
 
 [[package]]
 name = "diskcache"

@@ -14,7 +14,7 @@
 
 3. **Install dependencies** (from the repo root):
    ```bash
-   pip install -r requirements.txt
+   uv sync --all-packages --extra strands
    ```
 
 4. **OPENAI_API_KEY** environment variable set:

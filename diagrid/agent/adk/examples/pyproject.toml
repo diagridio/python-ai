@@ -1,0 +1,8 @@
+[project]
+name = "diagrid-example-adk"
+version = "0.2.4"
+description = "Diagrid ADK example scripts"
+requires-python = ">=3.11"
+dependencies = [
+    "diagrid[adk]",
+]

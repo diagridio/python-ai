@@ -1,0 +1,8 @@
+[project]
+name = "diagrid-example-openai-agents"
+version = "0.2.4"
+description = "Diagrid OpenAI Agents SDK example scripts"
+requires-python = ">=3.11"
+dependencies = [
+    "diagrid[openai_agents]",
+]

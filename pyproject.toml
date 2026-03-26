@@ -99,8 +99,16 @@ diagrid = ["py.typed"]
 members = [
     "diagrid/core",
     "diagrid/cli",
+    "diagrid/agent/langgraph/examples",
+    "diagrid/agent/crewai/examples",
+    "diagrid/agent/openai_agents/examples",
+    "diagrid/agent/pydantic_ai/examples",
+    "diagrid/agent/adk/examples",
+    "diagrid/agent/strands/examples",
+    "diagrid/agent/deepagents/examples",
 ]
 
 [tool.uv.sources]
+diagrid = { workspace = true }
 diagrid-core = { workspace = true }
 diagrid-cli = { workspace = true }

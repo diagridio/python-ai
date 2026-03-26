@@ -1,0 +1,9 @@
+[project]
+name = "diagrid-example-langgraph"
+version = "0.2.4"
+description = "Diagrid LangGraph example scripts"
+requires-python = ">=3.11"
+dependencies = [
+    "diagrid[langgraph]",
+    "langchain-openai>=0.3.0",
+]

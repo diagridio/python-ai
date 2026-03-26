@@ -12,9 +12,9 @@
    docker run -d --name redis -p 6379:6379 redis:latest
    ```
 
-3. **Install dependencies**:
+3. **Install dependencies** (from the repo root):
    ```bash
-   pip install -r requirements.txt
+   uv sync --all-packages --extra pydantic_ai
    ```
 
 4. **OPENAI_API_KEY** environment variable set:
