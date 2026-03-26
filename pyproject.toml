@@ -9,8 +9,8 @@ description = "Diagrid namespace package"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "dapr>=1.17.4",
-    "dapr-ext-workflow>=1.17.4",
+    "dapr>=1.17.3",
+    "dapr-ext-workflow>=1.17.3",
     "diagrid-cli>=0.1.0",
 ]
 
@@ -20,8 +20,8 @@ diagridpy = "diagrid.cli.main:cli"
 [project.optional-dependencies]
 agent-core = [
     "dapr-agents>=1.0.0",
-    "dapr-ext-langgraph>=1.17.4",
-    "dapr-ext-strands>=1.17.4",
+    "dapr-ext-langgraph>=1.17.3",
+    "dapr-ext-strands>=1.17.3",
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "pydantic>=2.12.5",
