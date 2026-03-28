@@ -34,7 +34,7 @@ langgraph = [
 ]
 crewai = [
     "crewai>=1.6.1",
-    "litellm>=1.0.0",
+    "litellm>=1.0.0,!=1.82.7,!=1.82.8",
     "diagrid[agent-core]",
 ]
 adk = [
