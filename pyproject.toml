@@ -9,8 +9,8 @@ description = "Diagrid namespace package"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "dapr>=1.17.2",
-    "dapr-ext-workflow>=1.17.2",
+    "dapr>=1.17.3",
+    "dapr-ext-workflow>=1.17.3",
     "diagrid-cli>=0.1.0",
 ]
 
@@ -19,9 +19,9 @@ diagridpy = "diagrid.cli.main:cli"
 
 [project.optional-dependencies]
 agent-core = [
-    "dapr-agents>=1.0.0rc2",
-    "dapr-ext-langgraph>=1.17.2",
-    "dapr-ext-strands>=1.17.2",
+    "dapr-agents>=1.0.0",
+    "dapr-ext-langgraph>=1.17.3",
+    "dapr-ext-strands>=1.17.3",
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "pydantic>=2.12.5",
@@ -34,7 +34,7 @@ langgraph = [
 ]
 crewai = [
     "crewai>=1.6.1",
-    "litellm>=1.0.0",
+    "litellm>=1.0.0,!=1.82.7,!=1.82.8",
     "diagrid[agent-core]",
 ]
 adk = [
@@ -99,8 +99,16 @@ diagrid = ["py.typed"]
 members = [
     "diagrid/core",
     "diagrid/cli",
+    "diagrid/agent/langgraph/examples",
+    "diagrid/agent/crewai/examples",
+    "diagrid/agent/openai_agents/examples",
+    "diagrid/agent/pydantic_ai/examples",
+    "diagrid/agent/adk/examples",
+    "diagrid/agent/strands/examples",
+    "diagrid/agent/deepagents/examples",
 ]
 
 [tool.uv.sources]
+diagrid = { workspace = true }
 diagrid-core = { workspace = true }
 diagrid-cli = { workspace = true }

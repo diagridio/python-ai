@@ -7,19 +7,12 @@
    docker run -d --name redis -p 6379:6379 redis:latest
    ```
 
-2. **Install dependencies**:
+2. **Install dependencies** (from the repo root):
    ```bash
-   cd diagrid/agent/langgraph/examples
-   pip install -r requirements.txt
+   uv sync --all-packages --extra langgraph
    ```
 
 ## Running the Examples
-
-Activate your virtual environment before running (so `dapr run` picks up the right Python):
-
-```bash
-source .venv/bin/activate
-```
 
 ### Simple Graph Example
 

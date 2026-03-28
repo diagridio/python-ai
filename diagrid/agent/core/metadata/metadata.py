@@ -200,29 +200,48 @@ class AgentRegistryAdapter:
         except PackageNotFoundError:
             schema_version = "edge"
 
-        from diagrid.agent.core.metadata.mapping import (
-            LangGraphMapper,
-            StrandsMapper,
-            CrewAIMapper,
-            ADKMapper,
-            OpenAIAgentsMapper,
-            PydanticAIMapper,
-        )
-
-        framework_mappers = {
-            SupportedFrameworks.LANGGRAPH: LangGraphMapper().map_agent_metadata,
-            SupportedFrameworks.STRANDS: StrandsMapper().map_agent_metadata,
-            SupportedFrameworks.CREWAI: CrewAIMapper().map_agent_metadata,
-            SupportedFrameworks.ADK: ADKMapper().map_agent_metadata,
-            SupportedFrameworks.OPENAI: OpenAIAgentsMapper().map_agent_metadata,
-            SupportedFrameworks.PYDANTIC_AI: PydanticAIMapper().map_agent_metadata,
+        # Lazy-import only the mapper for the active framework to avoid
+        # pulling in unrelated framework dependencies
+        _mapper_modules = {
+            SupportedFrameworks.LANGGRAPH: (
+                "diagrid.agent.core.metadata.mapping.langgraph",
+                "LangGraphMapper",
+            ),
+            SupportedFrameworks.STRANDS: (
+                "diagrid.agent.core.metadata.mapping.strands",
+                "StrandsMapper",
+            ),
+            SupportedFrameworks.CREWAI: (
+                "diagrid.agent.core.metadata.mapping.crewai",
+                "CrewAIMapper",
+            ),
+            SupportedFrameworks.ADK: (
+                "diagrid.agent.core.metadata.mapping.adk",
+                "ADKMapper",
+            ),
+            SupportedFrameworks.OPENAI: (
+                "diagrid.agent.core.metadata.mapping.openai",
+                "OpenAIAgentsMapper",
+            ),
+            SupportedFrameworks.PYDANTIC_AI: (
+                "diagrid.agent.core.metadata.mapping.pydantic_ai",
+                "PydanticAIMapper",
+            ),
         }
 
-        mapper = framework_mappers.get(self._framework)
-        if not mapper:
+        entry = _mapper_modules.get(self._framework)
+        if not entry:
             raise ValueError(f"Adapter cannot handle framework '{self._framework}'")
 
-        return mapper(agent=agent, schema_version=schema_version, name=self._agent_name)
+        import importlib
+
+        module_path, class_name = entry
+        mod = importlib.import_module(module_path)
+        mapper_cls = getattr(mod, class_name)
+
+        return mapper_cls().map_agent_metadata(
+            agent=agent, schema_version=schema_version, name=self._agent_name
+        )
 
     def _register(self, metadata: AgentMetadataSchema) -> None:
         """
