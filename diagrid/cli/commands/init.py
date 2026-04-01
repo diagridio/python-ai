@@ -70,6 +70,16 @@ SUPPORTED_FRAMEWORKS = list(QUICKSTART_SUBDIRS.keys())
     default=False,
     help="Select an existing Catalyst project instead of creating a new one",
 )
+@click.option(
+    "--catalyst-api-key",
+    default=None,
+    help="Catalyst operator API key (enables operator mode in Helm chart)",
+)
+@click.option(
+    "--catalyst-api-endpoint",
+    default=None,
+    help="Catalyst operator API endpoint",
+)
 @click.pass_context
 def init(
     ctx: click.Context,
@@ -81,6 +91,8 @@ def init(
     framework: str,
     existing_path: str | None,
     existing_project: bool,
+    catalyst_api_key: str | None,
+    catalyst_api_endpoint: str | None,
 ) -> None:
     """Initialize a local agent development environment."""
     if existing_path and framework != "dapr-agents":
@@ -192,7 +204,12 @@ def init(
 
         # Step 6: Deploy helm chart
         console.step(6, total_steps, "Installing catalyst-agents helm chart...")
-        install_dapr_agents(llm_key, google_api_key=google_key)
+        install_dapr_agents(
+            llm_key,
+            google_api_key=google_key,
+            catalyst_api_key=catalyst_api_key,
+            catalyst_api_endpoint=catalyst_api_endpoint,
+        )
         console.success("Helm chart installed")
 
         # Step 7: Create AppID(s)

@@ -25,10 +25,4 @@ spec:
               echo "Checking Grafana routing (HTTP 200)..."
               curl -sf -o /dev/null http://grafana.localhost:$PORT
 
-              echo "Checking Redis Insight routing (HTTP 200)..."
-              curl -sf -o /dev/null http://redis.localhost:$PORT
-
-              echo "Checking Diagrid Dashboard routing (HTTP 200)..."
-              curl -sf -o /dev/null http://diagrid.localhost:$PORT
-
               echo "All gateway routes OK"

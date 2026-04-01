@@ -17,34 +17,7 @@ spec:
               apiVersion: apps/v1
               kind: Deployment
               metadata:
-                name: dapr-redis
-                namespace: catalyst-agents
-              status:
-                (readyReplicas > `0`): true
-        - assert:
-            resource:
-              apiVersion: apps/v1
-              kind: Deployment
-              metadata:
                 name: gateway
-                namespace: catalyst-agents
-              status:
-                (readyReplicas > `0`): true
-        - assert:
-            resource:
-              apiVersion: apps/v1
-              kind: Deployment
-              metadata:
-                name: diagrid-dashboard
-                namespace: catalyst-agents
-              status:
-                (readyReplicas > `0`): true
-        - assert:
-            resource:
-              apiVersion: apps/v1
-              kind: Deployment
-              metadata:
-                name: redisinsight
                 namespace: catalyst-agents
               status:
                 (readyReplicas > `0`): true
@@ -58,51 +31,6 @@ spec:
               status:
                 (readyReplicas > `0`): true
 
-    - name: check-dapr-components
-      try:
-        - assert:
-            resource:
-              apiVersion: dapr.io/v1alpha1
-              kind: Component
-              metadata:
-                name: agent-pubsub
-                namespace: catalyst-agents
-        - assert:
-            resource:
-              apiVersion: dapr.io/v1alpha1
-              kind: Component
-              metadata:
-                name: agent-memory
-                namespace: catalyst-agents
-        - assert:
-            resource:
-              apiVersion: dapr.io/v1alpha1
-              kind: Component
-              metadata:
-                name: agent-registry
-                namespace: catalyst-agents
-        - assert:
-            resource:
-              apiVersion: dapr.io/v1alpha1
-              kind: Component
-              metadata:
-                name: agent-runtimestatestore
-                namespace: catalyst-agents
-        - assert:
-            resource:
-              apiVersion: dapr.io/v1alpha1
-              kind: Component
-              metadata:
-                name: agent-workflow
-                namespace: catalyst-agents
-        - assert:
-            resource:
-              apiVersion: dapr.io/v1alpha1
-              kind: Component
-              metadata:
-                name: llm-provider
-                namespace: catalyst-agents
-
     - name: check-secrets
       try:
         - assert:
@@ -112,23 +40,9 @@ spec:
               metadata:
                 name: llm-secret
                 namespace: catalyst-agents
-        - assert:
-            resource:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                name: dapr-redis
-                namespace: catalyst-agents
 
     - name: check-services
       try:
-        - assert:
-            resource:
-              apiVersion: v1
-              kind: Service
-              metadata:
-                name: dapr-redis-master
-                namespace: catalyst-agents
         - assert:
             resource:
               apiVersion: v1

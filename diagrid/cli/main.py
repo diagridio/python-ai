@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import click
 
+from diagrid.cli.commands.chaos import chaos
 from diagrid.cli.commands.deploy import deploy
 from diagrid.cli.commands.init import init
 from diagrid.cli.utils.process import set_verbose
@@ -40,6 +41,7 @@ def cli(ctx: click.Context, verbose: bool, env: str | None, api: str | None) -> 
 
 cli.add_command(init)
 cli.add_command(deploy)
+cli.add_command(chaos)
 
 
 if __name__ == "__main__":

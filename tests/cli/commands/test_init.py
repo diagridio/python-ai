@@ -51,7 +51,12 @@ def test_init_full_flow(
     mock_create_project.assert_called_once()
     mock_clone.assert_called_once_with("test-project", "dapr-agents")
     mock_provision.assert_called_once()
-    mock_install_helm.assert_called_once_with("sk-fake", google_api_key="")
+    mock_install_helm.assert_called_once_with(
+        "sk-fake",
+        google_api_key="",
+        catalyst_api_key=None,
+        catalyst_api_endpoint=None,
+    )
     mock_create_appid.assert_called_once()
 
 

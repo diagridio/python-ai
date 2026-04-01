@@ -21,30 +21,6 @@
         }
       }
 
-      server {
-        listen 80;
-        server_name redis.localhost;
-        location / {
-          proxy_pass http://redisinsight.{{ .Release.Namespace }}.svc.cluster.local:5540;
-          proxy_set_header Host $host;
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-        }
-      }
-
-      server {
-        listen 80;
-        server_name diagrid.localhost;
-        location / {
-          proxy_pass http://diagrid-dashboard.{{ .Release.Namespace }}.svc.cluster.local:8080;
-          proxy_set_header Host $host;
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-        }
-      }
-
       # Landing page for other requests
       server {
         listen 80 default_server;
@@ -52,8 +28,6 @@
           default_type text/html;
           return 200 '<html><body><h2>catalyst-agents gateway (Subdomains)</h2><ul>
             <li><a href="http://grafana.localhost:8080">Grafana</a></li>
-            <li><a href="http://redis.localhost:8080">Redis Insight</a></li>
-            <li><a href="http://diagrid.localhost:8080">Diagrid Dashboard</a></li>
           </ul><p>Note: Ensure these subdomains point to 127.0.0.1 in your hosts file if they do not resolve automatically.</p></body></html>';
         }
       }
