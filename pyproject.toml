@@ -95,6 +95,9 @@ exclude = [
 [tool.setuptools.package-data]
 diagrid = ["py.typed"]
 
+[tool.uv]
+exclude-newer = "7 days"
+
 [tool.uv.workspace]
 members = [
     "diagrid/core",
