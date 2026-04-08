@@ -274,11 +274,13 @@ def diagnose_incident(service_name: str) -> str:
     step_detail("Reading logs from sandbox environment...")
     time.sleep(1)
 
-    # Read real log files from the sandbox
-    app_logs = sandbox_backend.read(f"/var/log/{service_name}/app.log")
-    db_logs = sandbox_backend.read("/var/log/postgres/pg-prod-01.log")
+    # Read real log files from the sandbox (deepagents 0.5: read() returns ReadResult)
+    app_result = sandbox_backend.read(f"/var/log/{service_name}/app.log")
+    db_result = sandbox_backend.read("/var/log/postgres/pg-prod-01.log")
     sandbox_backend.read(f"/etc/{service_name}/config.yaml")
 
+    app_logs = app_result.file_data["content"] if app_result.file_data else ""
+    db_logs = db_result.file_data["content"] if db_result.file_data else ""
     app_lines = len([line for line in app_logs.splitlines() if line.strip()])
     db_lines = len([line for line in db_logs.splitlines() if line.strip()])
     step_detail(f"Scanned: /var/log/{service_name}/app.log ({app_lines} lines)")
