@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-08T08:44:15.678705Z"
+exclude-newer = "2026-04-08T12:48:57.122749699Z"
 exclude-newer-span = "P1D"
 
 [manifest]
@@ -1016,7 +1016,7 @@ wheels = [
 
 [[package]]
 name = "diagrid"
-version = "0.2.4"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "dapr" },
@@ -1194,7 +1194,7 @@ test = [
 
 [[package]]
 name = "diagrid-cli"
-version = "0.2.4"
+version = "0.3.0"
 source = { editable = "diagrid/cli" }
 dependencies = [
     { name = "click" },
@@ -1211,7 +1211,7 @@ requires-dist = [
 
 [[package]]
 name = "diagrid-core"
-version = "0.2.4"
+version = "0.3.0"
 source = { editable = "diagrid/core" }
 dependencies = [
     { name = "httpx" },
