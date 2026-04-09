@@ -431,6 +431,7 @@ def execute_node_activity(
                     CONFIG_KEY_READ,
                     CONFIG_KEY_SEND,
                 )
+
                 _config["configurable"][CONFIG_KEY_READ] = _activity_read
                 _config["configurable"][CONFIG_KEY_SEND] = pending_sends.extend
             except ImportError:

@@ -128,9 +128,7 @@ class AgentProtocolAdapter:
             }
             self.runs[run_id] = run_record
             input_data = body.get("input", {})
-            asyncio.create_task(
-                self._execute(thread_id, run_id, input_data)
-            )
+            asyncio.create_task(self._execute(thread_id, run_id, input_data))
             return run_record
 
         @app.get("/threads/{thread_id}/runs/{run_id}")
@@ -148,9 +146,7 @@ class AgentProtocolAdapter:
 
         return app
 
-    async def _execute(
-        self, thread_id: str, run_id: str, input_data: dict
-    ) -> None:
+    async def _execute(self, thread_id: str, run_id: str, input_data: dict) -> None:
         """Run the Dapr workflow and track status."""
         self.runs[run_id]["status"] = "running"
         try:
@@ -170,17 +166,13 @@ class AgentProtocolAdapter:
                             safe_messages.append(msg.model_dump())
                         else:
                             safe_messages.append({"content": str(msg)})
-                    self.threads[thread_id]["values"] = {
-                        "messages": safe_messages
-                    }
+                    self.threads[thread_id]["values"] = {"messages": safe_messages}
                     self.runs[run_id]["status"] = "success"
                     log(f"  [{thread_id[:8]}] Workflow completed")
                     break
                 elif etype == "workflow_failed":
                     self.runs[run_id]["status"] = "error"
-                    self.runs[run_id]["error"] = event.get(
-                        "error", "unknown"
-                    )
+                    self.runs[run_id]["error"] = event.get("error", "unknown")
                     log(f"  [{thread_id[:8]}] Workflow failed")
                     break
         except Exception as exc:
@@ -314,9 +306,7 @@ TOPIC = "Research and analyze: advances in durable AI agent orchestration"
 
 async def run_subagent(name: str, port: int, graph) -> None:
     """Run a sub-agent with DaprWorkflowDeepAgentRunner + Agent Protocol."""
-    runner = DaprWorkflowDeepAgentRunner(
-        agent=graph, name=name, max_steps=50
-    )
+    runner = DaprWorkflowDeepAgentRunner(agent=graph, name=name, max_steps=50)
     runner.start()
     log(f"  {name} — Dapr workflow runtime started")
     await asyncio.sleep(1)
@@ -325,9 +315,7 @@ async def run_subagent(name: str, port: int, graph) -> None:
     app = adapter.create_app()
 
     log(f"  {name} — Agent Protocol server listening on port {port}")
-    config = uvicorn.Config(
-        app, host="0.0.0.0", port=port, log_level="warning"
-    )
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
     server = uvicorn.Server(config)
     try:
         await server.serve()
@@ -341,9 +329,7 @@ async def run_subagent(name: str, port: int, graph) -> None:
 async def run_supervisor() -> None:
     """Run the supervisor with DaprWorkflowDeepAgentRunner."""
     graph = make_supervisor()
-    runner = DaprWorkflowDeepAgentRunner(
-        agent=graph, name="supervisor", max_steps=100
-    )
+    runner = DaprWorkflowDeepAgentRunner(agent=graph, name="supervisor", max_steps=100)
 
     try:
         runner.start()
@@ -373,9 +359,7 @@ async def run_supervisor() -> None:
                     )
                     if isinstance(content, list):
                         content = " ".join(
-                            b.get("text", "")
-                            if isinstance(b, dict)
-                            else str(b)
+                            b.get("text", "") if isinstance(b, dict) else str(b)
                             for b in content
                         )
                     log(f"\n{'=' * 64}")
@@ -397,27 +381,26 @@ async def run_supervisor() -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        log(
-            "Usage: python3 subagent_workflows.py "
-            "<researcher|analyst|supervisor>"
-        )
+        log("Usage: python3 subagent_workflows.py <researcher|analyst|supervisor>")
         log()
-        log("Start each agent in a separate terminal with its own Dapr "
-            "sidecar:")
+        log("Start each agent in a separate terminal with its own Dapr sidecar:")
         log()
         log("  # Terminal 1")
-        log("  dapr run --app-id researcher --app-port 8001 "
-            "--resources-path ./components -- \\")
+        log(
+            "  dapr run --app-id researcher --app-port 8001 "
+            "--resources-path ./components -- \\"
+        )
         log("      python3 subagent_workflows.py researcher")
         log()
         log("  # Terminal 2")
-        log("  dapr run --app-id analyst --app-port 8002 "
-            "--resources-path ./components -- \\")
+        log(
+            "  dapr run --app-id analyst --app-port 8002 "
+            "--resources-path ./components -- \\"
+        )
         log("      python3 subagent_workflows.py analyst")
         log()
         log("  # Terminal 3")
-        log("  dapr run --app-id supervisor "
-            "--resources-path ./components -- \\")
+        log("  dapr run --app-id supervisor --resources-path ./components -- \\")
         log("      python3 subagent_workflows.py supervisor")
         sys.exit(1)
 

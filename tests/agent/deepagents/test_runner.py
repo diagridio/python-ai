@@ -253,9 +253,7 @@ class TestWorkflowExecution(unittest.TestCase):
             nonlocal completed
             async for event in runner.run_async(
                 input={
-                    "messages": [
-                        {"role": "user", "content": "Say hello in one word."}
-                    ]
+                    "messages": [{"role": "user", "content": "Say hello in one word."}]
                 },
                 thread_id=f"test-simple-{int(time.time())}",
             ):
@@ -266,9 +264,7 @@ class TestWorkflowExecution(unittest.TestCase):
                     completed = True
                     break
                 elif event["type"] == "workflow_failed":
-                    raise AssertionError(
-                        f"Workflow failed: {event.get('error')}"
-                    )
+                    raise AssertionError(f"Workflow failed: {event.get('error')}")
 
         try:
             asyncio.run(_run())
@@ -315,9 +311,7 @@ class TestWorkflowExecution(unittest.TestCase):
                     completed = True
                     break
                 elif event["type"] == "workflow_failed":
-                    raise AssertionError(
-                        f"Workflow failed: {event.get('error')}"
-                    )
+                    raise AssertionError(f"Workflow failed: {event.get('error')}")
 
         try:
             asyncio.run(_run())
@@ -325,9 +319,7 @@ class TestWorkflowExecution(unittest.TestCase):
             runner.shutdown()
 
         self.assertTrue(completed, "Workflow did not complete")
-        self.assertIn(
-            "12", str(final_content), f"Expected 12 in: {final_content}"
-        )
+        self.assertIn("12", str(final_content), f"Expected 12 in: {final_content}")
 
 
 if __name__ == "__main__":
