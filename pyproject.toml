@@ -48,7 +48,7 @@ strands = [
 ]
 openai_agents = [
     "openai-agents>=0.1.0",
-    "openai>=1.0.0",
+    "openai>=2.21.0",
     "diagrid[agent-core]",
 ]
 pydantic_ai = [
@@ -96,7 +96,7 @@ exclude = [
 diagrid = ["py.typed"]
 
 [tool.uv]
-exclude-newer = "7 days"
+exclude-newer = "1 days"
 
 [tool.uv.workspace]
 members = [
