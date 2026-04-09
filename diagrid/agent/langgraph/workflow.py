@@ -372,9 +372,41 @@ def execute_node_activity(
 
     # Reconstruct state from channel values
     state = _reconstruct_state(node_input.channel_state)
+    channel_state = node_input.channel_state
 
     # Extract tracing config
     config = node_input.config or {}
+
+    # Collect side-channel writes from CONFIG_KEY_SEND (used by StateBackend
+    # to write to the "files" channel from sandbox tools).
+    pending_sends: list = []
+
+    def _activity_read(select: Any, fresh: bool = False) -> Any:
+        """Stand-in for CONFIG_KEY_READ inside a Dapr activity.
+
+        In normal LangGraph execution the Pregel engine injects a read
+        function bound to live BaseChannel objects.  Here the activity
+        only has a serialized ``channel_state``, so we read from that.
+        """
+        if fresh:
+            # Apply any pending sends to a snapshot before reading.
+            merged = dict(channel_state.values)
+            for ch, val in pending_sends:
+                reducer = get_channel_reducer(ch)
+                if reducer and ch in merged:
+                    try:
+                        merged[ch] = reducer(merged[ch], val)
+                    except Exception:
+                        merged[ch] = val
+                else:
+                    merged[ch] = val
+            source = merged
+        else:
+            source = channel_state.values
+
+        if isinstance(select, str):
+            return source.get(select)
+        return {k: source.get(k) for k in select if k in source}
 
     def _run_node() -> Any:
         # If the registered object is a LangChain Runnable (e.g. RunnableCallable),
@@ -390,6 +422,20 @@ def execute_node_activity(
                     _config["configurable"]["__pregel_runtime"] = Runtime()
                 except ImportError:
                     pass
+
+            # Inject CONFIG_KEY_READ / CONFIG_KEY_SEND so that deepagents
+            # StateBackend (sandbox tools) can read/write the "files"
+            # channel when running inside a Dapr workflow activity.
+            try:
+                from langgraph._internal._constants import (
+                    CONFIG_KEY_READ,
+                    CONFIG_KEY_SEND,
+                )
+                _config["configurable"][CONFIG_KEY_READ] = _activity_read
+                _config["configurable"][CONFIG_KEY_SEND] = pending_sends.extend
+            except ImportError:
+                pass
+
             r = node_func.invoke(state, config=_config)
         else:
             sig = inspect.signature(node_func)
@@ -445,6 +491,11 @@ def execute_node_activity(
 
     # Convert result to writes
     writes = _result_to_writes(result)
+
+    # Append any side-channel writes queued via CONFIG_KEY_SEND (e.g.
+    # StateBackend writing to the "files" channel from sandbox tools).
+    for ch, val in pending_sends:
+        writes.append(NodeWrite(channel=ch, value=_serialize_value(val)))
 
     return ExecuteNodeOutput(
         node_name=node_name,
