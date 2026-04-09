@@ -143,3 +143,37 @@ Return final output
 ```
 
 Each activity is checkpointed by Dapr, providing durability guarantees. If the process crashes, Dapr resumes from the last completed activity.
+
+### Sub-Agent Workflows (AsyncSubAgent)
+
+Demonstrates durable multi-agent orchestration where each sub-agent runs as its own Dapr workflow, and the supervisor is also durable. Uses the deepagents `AsyncSubAgent` middleware for inter-agent communication over the Agent Protocol (HTTP).
+
+**Architecture:**
+
+```
+Supervisor (DaprWorkflowDeepAgentRunner)
+  |
+  +-- start_async_task("researcher") --> HTTP --> Researcher (DaprWorkflowDeepAgentRunner)
+  |     check_async_task(task_id)    <-- HTTP <--              separate Dapr Workflow
+  |
+  +-- start_async_task("analyst")    --> HTTP --> Analyst (DaprWorkflowDeepAgentRunner)
+        check_async_task(task_id)    <-- HTTP <--              separate Dapr Workflow
+```
+
+Each agent runs in its own process with its own Dapr sidecar. Start them in three separate terminals:
+
+```bash
+# Terminal 1 -- Researcher sub-agent (port 8001)
+dapr run --app-id researcher --app-port 8001 --resources-path ./components -- \
+    python3 subagent_workflows.py researcher
+
+# Terminal 2 -- Analyst sub-agent (port 8002)
+dapr run --app-id analyst --app-port 8002 --resources-path ./components -- \
+    python3 subagent_workflows.py analyst
+
+# Terminal 3 -- Supervisor (delegates to sub-agents via HTTP)
+dapr run --app-id supervisor --resources-path ./components -- \
+    python3 subagent_workflows.py supervisor
+```
+
+The supervisor uses `create_deep_agent()` with `AsyncSubAgent` specs. Each sub-agent is wrapped in `DaprWorkflowDeepAgentRunner` and exposes Agent Protocol endpoints via a thin FastAPI adapter. Every LLM call and tool invocation across all three agents is a durable Dapr workflow activity.

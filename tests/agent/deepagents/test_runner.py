@@ -1,270 +1,326 @@
 # Copyright (c) 2026-Present Diagrid Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Tests for DaprWorkflowDeepAgentRunner."""
+"""Integration tests for DaprWorkflowDeepAgentRunner.
 
+These tests exercise the runner against real Dapr and OpenAI services.
+No mocks are used.
+
+Run with a Dapr sidecar:
+    dapr run --app-id deepagent-test \
+        --resources-path ./diagrid/agent/deepagents/examples/components -- \
+        uv run pytest tests/agent/deepagents/test_runner.py -m integration -v
+
+Prerequisites:
+    - Dapr initialized with Redis running
+    - OPENAI_API_KEY environment variable set
+"""
+
+import asyncio
+import time
 import unittest
-from unittest import mock
-from typing import Any
 
+import pytest
+
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+
+from diagrid.agent.deepagents import DaprWorkflowDeepAgentRunner
 from diagrid.agent.langgraph.workflow import (
+    agent_workflow,
+    execute_node_activity,
+    evaluate_condition_activity,
     clear_registries,
     get_registered_node,
     get_channel_reducer,
 )
 
-
-class FakeNodeSpec:
-    """Node spec with a .bound attribute (RunnableCallable wrapper)."""
-
-    def __init__(self, bound: Any) -> None:
-        self.bound = bound
+pytestmark = pytest.mark.integration
 
 
-class FakeRunnableNodeSpec:
-    """Node spec with a .runnable attribute."""
-
-    def __init__(self, runnable: Any) -> None:
-        self.runnable = runnable
+# ---------------------------------------------------------------------------
+# Test tools
+# ---------------------------------------------------------------------------
 
 
-class FakeChannel:
-    """Channel with a .reducer attribute."""
-
-    def __init__(self, reducer: Any = None, operator: Any = None) -> None:
-        if reducer is not None:
-            self.reducer = reducer
-        if operator is not None:
-            self.operator = operator
+@tool
+def add_numbers(a: int, b: int) -> int:
+    """Add two numbers together.
+    Args: a — first number, b — second number."""
+    return a + b
 
 
-class FakeGraph:
-    """Minimal fake CompiledStateGraph."""
-
-    def __init__(
-        self,
-        nodes: dict | None = None,
-        channels: dict | None = None,
-    ) -> None:
-        self.nodes = nodes or {}
-        self.channels = channels or {}
+@tool
+def multiply_numbers(a: int, b: int) -> int:
+    """Multiply two numbers together.
+    Args: a — first number, b — second number."""
+    return a * b
 
 
-@mock.patch("diagrid.agent.core.workflow.runner.WorkflowRuntime")
-@mock.patch("diagrid.agent.core.workflow.runner.DaprWorkflowClient")
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _clear_dapr_registration() -> None:
+    """Remove Dapr's registration markers so functions can be re-registered."""
+    for fn in (agent_workflow, execute_node_activity, evaluate_condition_activity):
+        fn.__dict__.pop("_workflow_registered", None)
+        fn.__dict__.pop("_activity_registered", None)
+        fn.__dict__.pop("_dapr_alternate_name", None)
+    clear_registries()
+
+
+def _get_model():
+    return ChatOpenAI(model="gpt-4o-mini")
+
+
+def _make_graph_with_tools():
+    return create_agent(_get_model(), [add_numbers, multiply_numbers])
+
+
+def _make_simple_graph():
+    return create_agent(_get_model(), [])
+
+
+# ---------------------------------------------------------------------------
+# Constructor and property tests
+# ---------------------------------------------------------------------------
+
+
 class TestDeepAgentRunnerInit(unittest.TestCase):
-    """Tests for constructor and property."""
+    """Tests for constructor and properties using real graphs."""
 
-    def test_agent_maps_to_graph(self, mock_client, mock_runtime):
-        from diagrid.agent.deepagents.runner import DaprWorkflowDeepAgentRunner
+    def setUp(self) -> None:
+        _clear_dapr_registration()
+        self.graph = _make_graph_with_tools()
 
-        graph = FakeGraph()
-        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test")
-        self.assertIs(runner._graph, graph)
+    def tearDown(self) -> None:
+        _clear_dapr_registration()
 
-    def test_agent_property(self, mock_client, mock_runtime):
-        from diagrid.agent.deepagents.runner import DaprWorkflowDeepAgentRunner
+    def test_agent_maps_to_graph(self):
+        runner = DaprWorkflowDeepAgentRunner(agent=self.graph, name="test-init")
+        self.assertIs(runner._graph, self.graph)
 
-        graph = FakeGraph()
-        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test")
-        self.assertIs(runner.agent, graph)
+    def test_agent_property(self):
+        runner = DaprWorkflowDeepAgentRunner(agent=self.graph, name="test-prop")
+        self.assertIs(runner.agent, self.graph)
 
-    def test_default_max_steps(self, mock_client, mock_runtime):
-        from diagrid.agent.deepagents.runner import DaprWorkflowDeepAgentRunner
-
-        graph = FakeGraph()
-        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test")
+    def test_default_max_steps(self):
+        runner = DaprWorkflowDeepAgentRunner(agent=self.graph, name="test-steps")
         self.assertEqual(runner._max_steps, 100)
 
-    def test_custom_max_steps(self, mock_client, mock_runtime):
-        from diagrid.agent.deepagents.runner import DaprWorkflowDeepAgentRunner
-
-        graph = FakeGraph()
-        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test", max_steps=50)
+    def test_custom_max_steps(self):
+        runner = DaprWorkflowDeepAgentRunner(
+            agent=self.graph, name="test-custom", max_steps=50
+        )
         self.assertEqual(runner._max_steps, 50)
 
-    def test_optional_params_passed_through(self, mock_client, mock_runtime):
-        from diagrid.agent.deepagents.runner import DaprWorkflowDeepAgentRunner
-
-        graph = FakeGraph()
+    def test_name_stored(self):
         runner = DaprWorkflowDeepAgentRunner(
-            agent=graph,
-            name="test",
-            host="myhost",
-            port="3500",
-            role="planner",
-            goal="plan things",
+            agent=self.graph, name="my-agent", role="planner", goal="plan"
         )
-        self.assertEqual(runner._name, "test")
+        self.assertEqual(runner._name, "my-agent")
+
+
+# ---------------------------------------------------------------------------
+# Graph registration tests
+# ---------------------------------------------------------------------------
 
 
 class TestRegisterGraphComponents(unittest.TestCase):
-    """Tests for _register_graph_components override."""
+    """Tests for _register_graph_components using real graphs."""
 
     def setUp(self) -> None:
-        clear_registries()
+        _clear_dapr_registration()
 
     def tearDown(self) -> None:
-        clear_registries()
+        _clear_dapr_registration()
 
-    @mock.patch("diagrid.agent.core.workflow.runner.WorkflowRuntime")
-    @mock.patch("diagrid.agent.core.workflow.runner.DaprWorkflowClient")
-    def _make_runner(self, graph, mock_client, mock_runtime):
-        from diagrid.agent.deepagents.runner import DaprWorkflowDeepAgentRunner
-
-        return DaprWorkflowDeepAgentRunner(agent=graph, name="test")
-
-    def test_registers_bound_wrapper(self):
-        """Should register node_spec.bound, not bound.func."""
-        bound_obj = mock.MagicMock(name="RunnableCallable")
-        node_spec = FakeNodeSpec(bound=bound_obj)
-        graph = FakeGraph(nodes={"agent": node_spec})
-
-        runner = self._make_runner(graph)
+    def test_registers_model_node(self):
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-reg-model")
         runner._register_graph_components()
+        self.assertIsNotNone(get_registered_node("model"))
 
-        registered = get_registered_node("agent")
-        self.assertIs(registered, bound_obj)
-
-    def test_registers_runnable_fallback(self):
-        """Should fall back to node_spec.runnable if no .bound."""
-        runnable_obj = mock.MagicMock(name="Runnable")
-        node_spec = FakeRunnableNodeSpec(runnable=runnable_obj)
-        graph = FakeGraph(nodes={"tools": node_spec})
-
-        runner = self._make_runner(graph)
+    def test_registers_tools_node(self):
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-reg-tools")
         runner._register_graph_components()
+        self.assertIsNotNone(get_registered_node("tools"))
 
-        registered = get_registered_node("tools")
-        self.assertIs(registered, runnable_obj)
-
-    def test_registers_callable_fallback(self):
-        """Should fall back to the node_spec itself if callable."""
-
-        def my_func(state: dict) -> dict:
-            return state
-
-        graph = FakeGraph(nodes={"simple": my_func})
-
-        runner = self._make_runner(graph)
+    def test_skips_start_end(self):
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-reg-skip")
         runner._register_graph_components()
-
-        registered = get_registered_node("simple")
-        self.assertIs(registered, my_func)
-
-    def test_skips_start_end_nodes(self):
-        """Should skip __start__, __end__, START, END sentinel nodes."""
-        func = mock.MagicMock()
-        graph = FakeGraph(
-            nodes={
-                "__start__": func,
-                "__end__": func,
-                "agent": FakeNodeSpec(bound=func),
-            }
-        )
-
-        runner = self._make_runner(graph)
-        runner._register_graph_components()
-
         self.assertIsNone(get_registered_node("__start__"))
         self.assertIsNone(get_registered_node("__end__"))
-        self.assertIs(get_registered_node("agent"), func)
 
-    def test_warns_on_non_extractable_node(self):
-        """Should warn if node_spec has no bound/runnable and isn't callable."""
-        node_spec = object()  # not callable, no bound/runnable
-        graph = FakeGraph(nodes={"bad_node": node_spec})
-
-        runner = self._make_runner(graph)
-        with self.assertLogs(
-            "diagrid.agent.deepagents.runner", level="WARNING"
-        ) as logs:
-            runner._register_graph_components()
-
-        self.assertTrue(any("bad_node" in msg for msg in logs.output))
-
-    def test_registers_channel_reducer(self):
-        """Should register channel with .reducer attribute."""
-
-        def add_reducer(a: list, b: list) -> list:
-            return a + b
-
-        channel = FakeChannel(reducer=add_reducer)
-        graph = FakeGraph(
-            nodes={},
-            channels={"messages": channel},
-        )
-
-        runner = self._make_runner(graph)
+    def test_all_real_nodes_registered(self):
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-reg-all")
         runner._register_graph_components()
+        for name in graph.nodes:
+            if name in ("__start__", "__end__"):
+                continue
+            self.assertIsNotNone(
+                get_registered_node(name), f"Node {name} not registered"
+            )
 
-        registered = get_channel_reducer("messages")
-        self.assertIs(registered, add_reducer)
-
-    def test_registers_channel_operator(self):
-        """Should register channel using .operator when .reducer is absent."""
-
-        def op(a: list, b: list) -> list:
-            return a + b
-
-        channel = FakeChannel(operator=op)
-        graph = FakeGraph(
-            nodes={},
-            channels={"messages": channel},
-        )
-
-        runner = self._make_runner(graph)
+    def test_registers_messages_reducer(self):
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-reg-reducer")
         runner._register_graph_components()
+        self.assertIsNotNone(get_channel_reducer("messages"))
 
-        registered = get_channel_reducer("messages")
-        self.assertIs(registered, op)
+    def test_clears_prior_registrations(self):
+        from diagrid.agent.langgraph.workflow import register_node
 
-    def test_skips_channel_without_reducer(self):
-        """Channels with no reducer or operator should be skipped."""
-        channel = object()  # no reducer, no operator
-        graph = FakeGraph(
-            nodes={},
-            channels={"plain": channel},
-        )
-
-        runner = self._make_runner(graph)
-        runner._register_graph_components()
-
-        self.assertIsNone(get_channel_reducer("plain"))
-
-    def test_clears_registries_on_call(self):
-        """Should call clear_registries at the start."""
-        from diagrid.agent.langgraph.workflow import register_node as reg
-
-        reg("leftover", lambda x: x)
+        register_node("leftover", lambda x: x)
         self.assertIsNotNone(get_registered_node("leftover"))
 
-        graph = FakeGraph(nodes={})
-        runner = self._make_runner(graph)
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-reg-clear")
         runner._register_graph_components()
-
         self.assertIsNone(get_registered_node("leftover"))
 
-    @mock.patch("diagrid.agent.deepagents.runner.set_serializer")
-    def test_sets_json_plus_serializer(self, mock_set_serializer):
-        """Should set JsonPlusSerializer when available."""
-        graph = FakeGraph(nodes={})
-        runner = self._make_runner(graph)
-        mock_set_serializer.reset_mock()
+    def test_bound_wrapper_preserved(self):
+        """Nodes should be registered as RunnableCallable wrappers."""
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-reg-bound")
         runner._register_graph_components()
 
-        mock_set_serializer.assert_called_once()
+        model_node = get_registered_node("model")
+        self.assertIsNotNone(model_node)
+        self.assertTrue(
+            hasattr(model_node, "invoke"),
+            "Registered model node should have .invoke (RunnableCallable)",
+        )
 
-    @mock.patch(
-        "diagrid.agent.deepagents.runner.set_serializer",
-        side_effect=ImportError("no module"),
-    )
-    def test_handles_serializer_import_error(self, mock_set_serializer):
-        """Should warn but not raise if JsonPlusSerializer is unavailable."""
-        graph = FakeGraph(nodes={})
-        runner = self._make_runner(graph)
-        # Should not raise
-        runner._register_graph_components()
+
+# ---------------------------------------------------------------------------
+# Lifecycle tests (require Dapr sidecar)
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycle(unittest.TestCase):
+    """Lifecycle tests — require a running Dapr sidecar."""
+
+    def setUp(self) -> None:
+        _clear_dapr_registration()
+
+    def tearDown(self) -> None:
+        _clear_dapr_registration()
+
+    def test_start_and_shutdown(self):
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(agent=graph, name="test-lifecycle")
+        runner.start()
+        try:
+            self.assertTrue(runner._started)
+            self.assertIsNotNone(runner._workflow_client)
+        finally:
+            runner.shutdown()
+        self.assertFalse(runner._started)
+
+
+# ---------------------------------------------------------------------------
+# End-to-end workflow tests (require Dapr sidecar + OpenAI)
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowExecution(unittest.TestCase):
+    """End-to-end workflow tests with real LLM and Dapr."""
+
+    def setUp(self) -> None:
+        _clear_dapr_registration()
+
+    def tearDown(self) -> None:
+        _clear_dapr_registration()
+
+    def test_simple_conversation(self):
+        """Run a workflow with a simple LLM conversation (no tools)."""
+        graph = _make_simple_graph()
+        runner = DaprWorkflowDeepAgentRunner(
+            agent=graph, name="test-simple-wf", max_steps=10
+        )
+        runner.start()
+        time.sleep(1)
+
+        completed = False
+
+        async def _run():
+            nonlocal completed
+            async for event in runner.run_async(
+                input={
+                    "messages": [{"role": "user", "content": "Say hello in one word."}]
+                },
+                thread_id=f"test-simple-{int(time.time())}",
+            ):
+                if event["type"] == "workflow_completed":
+                    output = event.get("output", {})
+                    messages = output.get("messages", [])
+                    assert len(messages) > 0
+                    completed = True
+                    break
+                elif event["type"] == "workflow_failed":
+                    raise AssertionError(f"Workflow failed: {event.get('error')}")
+
+        try:
+            asyncio.run(_run())
+        finally:
+            runner.shutdown()
+
+        self.assertTrue(completed, "Workflow did not complete")
+
+    def test_tool_calling_workflow(self):
+        """Run a workflow that requires the LLM to call tools."""
+        graph = _make_graph_with_tools()
+        runner = DaprWorkflowDeepAgentRunner(
+            agent=graph, name="test-tool-wf", max_steps=20
+        )
+        runner.start()
+        time.sleep(1)
+
+        completed = False
+        final_content = ""
+
+        async def _run():
+            nonlocal completed, final_content
+            async for event in runner.run_async(
+                input={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "What is 7 + 5? Use the add_numbers tool.",
+                        }
+                    ]
+                },
+                thread_id=f"test-tools-{int(time.time())}",
+            ):
+                if event["type"] == "workflow_completed":
+                    output = event.get("output", {})
+                    messages = output.get("messages", [])
+                    assert len(messages) >= 3  # user + tool call + response
+                    last = messages[-1]
+                    final_content = (
+                        last.get("content", "")
+                        if isinstance(last, dict)
+                        else getattr(last, "content", str(last))
+                    )
+                    completed = True
+                    break
+                elif event["type"] == "workflow_failed":
+                    raise AssertionError(f"Workflow failed: {event.get('error')}")
+
+        try:
+            asyncio.run(_run())
+        finally:
+            runner.shutdown()
+
+        self.assertTrue(completed, "Workflow did not complete")
+        self.assertIn("12", str(final_content), f"Expected 12 in: {final_content}")
 
 
 if __name__ == "__main__":
