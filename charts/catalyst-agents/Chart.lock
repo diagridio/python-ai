@@ -1,7 +1,7 @@
 dependencies:
 - name: loki
   repository: https://grafana.github.io/helm-charts
-  version: 6.6.6
+  version: 6.55.0
 - name: tempo
   repository: https://grafana.github.io/helm-charts
   version: 1.10.3
@@ -14,5 +14,5 @@ dependencies:
 - name: chaos-mesh
   repository: https://charts.chaos-mesh.org
   version: 2.7.3
-digest: sha256:7dba86aa0d02868f908318277780945d236820a98d487989ba790d4155c77bda
-generated: "2026-03-20T11:46:40.74046+01:00"
+digest: sha256:3a795546a4e434f79387cff0dccc663facd98e3f79f5a444c8e124fa04bfc416
+generated: "2026-04-09T12:50:03.053498453Z"
