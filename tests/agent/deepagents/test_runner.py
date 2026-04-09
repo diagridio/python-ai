@@ -72,15 +72,16 @@ def _clear_dapr_registration() -> None:
     clear_registries()
 
 
-_model = ChatOpenAI(model="gpt-4o-mini")
+def _get_model():
+    return ChatOpenAI(model="gpt-4o-mini")
 
 
 def _make_graph_with_tools():
-    return create_agent(_model, [add_numbers, multiply_numbers])
+    return create_agent(_get_model(), [add_numbers, multiply_numbers])
 
 
 def _make_simple_graph():
-    return create_agent(_model, [])
+    return create_agent(_get_model(), [])
 
 
 # ---------------------------------------------------------------------------
