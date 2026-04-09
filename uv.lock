@@ -6,6 +6,10 @@ resolution-markers = [
     "python_full_version < '3.13'",
 ]
 
+[options]
+exclude-newer = "2026-03-25T16:37:24.487029Z"
+exclude-newer-span = "P7D"
+
 [manifest]
 members = [
     "diagrid",
