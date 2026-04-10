@@ -87,7 +87,7 @@ jobs:
             oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
 
       - name: Install ORAS
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Log in to GHCR (ORAS)
         run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
