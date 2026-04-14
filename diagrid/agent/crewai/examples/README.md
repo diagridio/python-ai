@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-1. **Redis** running on localhost:6379:
+1. **Dapr** [running locally](https://docs.dapr.io/getting-started/install-dapr-cli/):
    ```bash
-   docker run -d --name redis -p 6379:6379 redis:latest
+   dapr init
    ```
 
 2. **OpenAI API Key** set in environment:

@@ -2,22 +2,17 @@
 
 ## Prerequisites
 
-1. **Dapr** installed and initialized:
+1. **Dapr** [running locally](https://docs.dapr.io/getting-started/install-dapr-cli/):
    ```bash
    dapr init
    ```
 
-2. **Redis** running on localhost:6379:
-   ```bash
-   docker run -d --name redis -p 6379:6379 redis:latest
-   ```
-
-3. **Install dependencies** (from the repo root):
+2. **Install dependencies** (from the repo root):
    ```bash
    uv sync --all-packages --extra pydantic_ai
    ```
 
-4. **OPENAI_API_KEY** environment variable set:
+3. **OPENAI_API_KEY** environment variable set:
    ```bash
    export OPENAI_API_KEY=sk-...
    ```
