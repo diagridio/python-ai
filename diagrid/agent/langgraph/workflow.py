@@ -472,11 +472,17 @@ def execute_node_activity(
         import langsmith as ls
 
         # Clear any stale context from Dapr's thread pool.
-        # _PARENT_RUN_TREE is a private symbol; degrade gracefully if it moves.
+        # The parent run-tree ContextVar is a private symbol that langsmith
+        # has renamed across versions (_PARENT_RUN_TREE -> _PARENT_RUN_TREE_REF
+        # in 0.7.31); look it up dynamically and degrade gracefully if it moves.
         try:
-            from langsmith.run_helpers import _PARENT_RUN_TREE
+            from langsmith import run_helpers as _ls_run_helpers
 
-            _PARENT_RUN_TREE.set(None)
+            _parent_run_tree = getattr(
+                _ls_run_helpers, "_PARENT_RUN_TREE_REF", None
+            ) or getattr(_ls_run_helpers, "_PARENT_RUN_TREE", None)
+            if _parent_run_tree is not None:
+                _parent_run_tree.set(None)
         except (ImportError, AttributeError):
             pass
 
