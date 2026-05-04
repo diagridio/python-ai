@@ -251,8 +251,8 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
         # Get model name
         model = "gpt-4o-mini"  # Default
-        if hasattr(self._agent, "llm"):
-            llm = self._agent.llm
+        llm = getattr(self._agent, "llm", None)
+        if llm is not None:
             if isinstance(llm, str):
                 model = llm
             elif hasattr(llm, "model_name"):
