@@ -51,7 +51,7 @@ graph.add_edge("validate", END)
 compiled = graph.compile()
 
 # Run with Dapr Workflows
-runner = DaprWorkflowGraphRunner(graph=compiled)
+runner = DaprWorkflowGraphRunner(graph=compiled, name="my-graph")
 runner.start()
 
 try:
@@ -71,7 +71,7 @@ finally:
 import asyncio
 
 async def main():
-    runner = DaprWorkflowGraphRunner(graph=compiled)
+    runner = DaprWorkflowGraphRunner(graph=compiled, name="my-graph")
     runner.start()
 
     try:
@@ -118,9 +118,9 @@ Each node execution is a durable Dapr Workflow activity with:
 
 ## Requirements
 
-- Python >= 3.10
-- Dapr >= 1.16.0
-- LangGraph >= 1.0.0
+- Python >= 3.11
+- Dapr >= 1.17.3
+- LangGraph >= 1.1.10
 - Running Dapr sidecar
 
 ## Links

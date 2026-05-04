@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     )
 
 from strands.tools.executors._executor import ToolExecutor
-from strands.types._events import TypedEvent, ToolResultEvent, ToolStreamEvent
+from strands.types._events import TypedEvent, ToolResultEvent
 from strands.types.tools import ToolResult, ToolUse
 
 logger = logging.getLogger(__name__)

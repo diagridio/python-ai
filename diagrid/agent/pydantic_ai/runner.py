@@ -59,7 +59,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             tools=[get_weather],
         )
 
-        runner = DaprWorkflowAgentRunner(agent=agent)
+        runner = DaprWorkflowAgentRunner(agent=agent, name="weather-agent")
         runner.start()
 
         async for event in runner.run_async(

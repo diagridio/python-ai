@@ -115,7 +115,7 @@ def step_three_finalize(processed_data: str) -> str:
 # Create the agent
 agent = LlmAgent(
     name="sequential_processor",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     instruction="""You are a sequential task processor that MUST call tools in a specific order.
     You MUST call all three tools in sequence:
     1. First call 'step_one_initialize' with the input
@@ -146,6 +146,7 @@ async def main():
 
     runner = DaprWorkflowAgentRunner(
         agent=agent,
+        name="retry-test-agent",
         max_iterations=10,
     )
 

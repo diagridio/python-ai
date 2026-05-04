@@ -23,7 +23,7 @@ Example:
     )
 
     # Create runner and start the workflow runtime
-    runner = DaprWorkflowAgentRunner(agent=agent)
+    runner = DaprWorkflowAgentRunner(agent=agent, name="search-agent")
     runner.start()
 
     # Run the agent - each invocation is now durable

@@ -34,7 +34,7 @@ Example:
     )
 
     # Create runner and start the workflow runtime
-    runner = DaprWorkflowAgentRunner(agent=agent)
+    runner = DaprWorkflowAgentRunner(agent=agent, name="research-assistant")
     runner.start()
 
     # Run the agent - each tool call is now durable

@@ -139,6 +139,7 @@ async def main():
 
     runner = DaprWorkflowAgentRunner(
         agent=agent,
+        name="retry-test",
         max_iterations=10,
     )
 
