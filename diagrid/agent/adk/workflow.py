@@ -191,7 +191,12 @@ def agent_workflow(
 def call_llm_activity(
     ctx: WorkflowActivityContext, input_data: dict[str, Any]
 ) -> dict[str, Any]:
-    """Activity that calls the LLM model using Google's genai client.
+    """Activity that calls the LLM model.
+
+    Dispatches to the Gemini (google.genai) or LiteLLM path based on
+    agent_config.provider. LiteLLM lets ADK agents target OpenAI, Anthropic,
+    and other providers supported by litellm without leaving the durable
+    workflow.
 
     Args:
         ctx: The workflow activity context
@@ -202,6 +207,30 @@ def call_llm_activity(
     """
     llm_input = CallLlmInput.from_dict(input_data)
 
+    from diagrid.agent.core.telemetry import get_tracer
+
+    _tracer = get_tracer("adk.agent")
+    _span = _tracer.start_span("LLM.generate_content") if _tracer else None
+    if _span:
+        _span.set_attribute("llm.model", llm_input.agent_config.model)
+        _span.set_attribute("llm.provider", llm_input.agent_config.provider)
+
+    try:
+        if llm_input.agent_config.provider == "litellm":
+            return _call_llm_via_litellm(llm_input)
+        return _call_llm_via_gemini(llm_input)
+    except Exception:
+        if _span:
+            _span.set_attribute("error", True)
+        logger.exception("Error calling LLM")
+        raise
+    finally:
+        if _span:
+            _span.end()
+
+
+def _call_llm_via_gemini(llm_input: CallLlmInput) -> dict[str, Any]:
+    """Call the LLM via Google's genai client."""
     try:
         from google.genai import Client
         from google.genai import types
@@ -213,142 +242,248 @@ def call_llm_activity(
             error=f"Google genai not installed: {e}",
         ).to_dict()
 
-    try:
-        # Convert messages to genai Content format
-        contents = []
-        for msg in llm_input.messages:
-            parts = []
+    # Convert messages to genai Content format
+    contents = []
+    for msg in llm_input.messages:
+        parts = []
 
-            # Add text content
-            if msg.content:
-                parts.append(types.Part.from_text(text=msg.content))
+        # Add text content
+        if msg.content:
+            parts.append(types.Part.from_text(text=msg.content))
 
-            # Add tool calls (function calls from model)
-            for tc in msg.tool_calls:
-                parts.append(
-                    types.Part(
-                        function_call=types.FunctionCall(
-                            name=tc.name,
-                            args=tc.args,
-                            id=tc.id,
-                        )
+        # Add tool calls (function calls from model)
+        for tc in msg.tool_calls:
+            parts.append(
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name=tc.name,
+                        args=tc.args,
+                        id=tc.id,
                     )
                 )
-
-            # Add tool results (function responses to model)
-            for tr in msg.tool_results:
-                parts.append(
-                    types.Part(
-                        function_response=types.FunctionResponse(
-                            name=tr.tool_name,
-                            id=tr.tool_call_id,
-                            response={"result": tr.result}
-                            if tr.error is None
-                            else {"error": tr.error},
-                        )
-                    )
-                )
-
-            if parts:
-                role = "user" if msg.role == MessageRole.USER else "model"
-                contents.append(types.Content(role=role, parts=parts))
-
-        # Build tool declarations from registered tools
-        tools: list[types.Tool] = []
-        for tool_def in llm_input.agent_config.tool_definitions:
-            tool = get_registered_tool(tool_def.name)
-            if tool and hasattr(tool, "_get_declaration"):
-                try:
-                    declaration = tool._get_declaration()
-                    if declaration:
-                        # Find or create a Tool with function_declarations
-                        if not tools:
-                            tools.append(
-                                types.Tool(function_declarations=[declaration])
-                            )
-                        else:
-                            if tools[0].function_declarations is None:
-                                tools[0].function_declarations = []
-                            tools[0].function_declarations.append(declaration)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get declaration for tool {tool_def.name}: {e}"
-                    )
-
-        # Create generate config
-        config = types.GenerateContentConfig(
-            system_instruction=llm_input.agent_config.system_instruction,
-            tools=tools if tools else None,  # type: ignore[arg-type]
-        )
-
-        # Call the LLM
-        from diagrid.agent.core.telemetry import get_tracer
-
-        _tracer = get_tracer("adk.agent")
-        _span = _tracer.start_span("LLM.generate_content") if _tracer else None
-        if _span:
-            _span.set_attribute("llm.model", llm_input.agent_config.model)
-        try:
-            client = Client()
-            response = client.models.generate_content(
-                model=llm_input.agent_config.model,
-                contents=contents,  # type: ignore[arg-type]
-                config=config,
             )
-        except Exception:
-            if _span:
-                _span.set_attribute("error", True)
-            raise
-        finally:
-            if _span:
-                _span.end()
 
-        # Parse response
-        if not response.candidates:
-            return CallLlmOutput(
-                message=Message(role=MessageRole.MODEL),
-                is_final=True,
-                error="No candidates in LLM response",
-            ).to_dict()
-
-        candidate = response.candidates[0]
-        content = candidate.content
-
-        # Extract tool calls and text from response
-        tool_calls: list[ToolCall] = []
-        text_parts = []
-
-        if content and content.parts:
-            for part in content.parts:
-                if part.function_call:
-                    fc = part.function_call
-                    tool_calls.append(
-                        ToolCall(
-                            id=fc.id or f"call_{len(tool_calls)}",
-                            name=fc.name or "",
-                            args=dict(fc.args) if fc.args else {},
-                        )
+        # Add tool results (function responses to model)
+        for tr in msg.tool_results:
+            parts.append(
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        name=tr.tool_name,
+                        id=tr.tool_call_id,
+                        response={"result": tr.result}
+                        if tr.error is None
+                        else {"error": tr.error},
                     )
-                elif part.text:
-                    text_parts.append(part.text)
+                )
+            )
 
-        response_message = Message(
-            role=MessageRole.MODEL,
-            content="\n".join(text_parts) if text_parts else None,
-            tool_calls=tool_calls,
-        )
+        if parts:
+            role = "user" if msg.role == MessageRole.USER else "model"
+            contents.append(types.Content(role=role, parts=parts))
 
-        # Determine if this is a final response
-        is_final = len(tool_calls) == 0
+    # Build tool declarations from registered tools
+    tools: list[types.Tool] = []
+    for tool_def in llm_input.agent_config.tool_definitions:
+        tool = get_registered_tool(tool_def.name)
+        if tool and hasattr(tool, "_get_declaration"):
+            try:
+                declaration = tool._get_declaration()
+                if declaration:
+                    # Find or create a Tool with function_declarations
+                    if not tools:
+                        tools.append(types.Tool(function_declarations=[declaration]))
+                    else:
+                        if tools[0].function_declarations is None:
+                            tools[0].function_declarations = []
+                        tools[0].function_declarations.append(declaration)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to get declaration for tool {tool_def.name}: {e}"
+                )
 
+    # Create generate config
+    config = types.GenerateContentConfig(
+        system_instruction=llm_input.agent_config.system_instruction,
+        tools=tools if tools else None,  # type: ignore[arg-type]
+    )
+
+    client = Client()
+    response = client.models.generate_content(
+        model=llm_input.agent_config.model,
+        contents=contents,  # type: ignore[arg-type]
+        config=config,
+    )
+
+    # Parse response
+    if not response.candidates:
         return CallLlmOutput(
-            message=response_message,
-            is_final=is_final,
+            message=Message(role=MessageRole.MODEL),
+            is_final=True,
+            error="No candidates in LLM response",
         ).to_dict()
 
-    except Exception:
-        logger.exception("Error calling LLM")
-        raise
+    candidate = response.candidates[0]
+    content = candidate.content
+
+    # Extract tool calls and text from response
+    tool_calls: list[ToolCall] = []
+    text_parts = []
+
+    if content and content.parts:
+        for part in content.parts:
+            if part.function_call:
+                fc = part.function_call
+                tool_calls.append(
+                    ToolCall(
+                        id=fc.id or f"call_{len(tool_calls)}",
+                        name=fc.name or "",
+                        args=dict(fc.args) if fc.args else {},
+                    )
+                )
+            elif part.text:
+                text_parts.append(part.text)
+
+    response_message = Message(
+        role=MessageRole.MODEL,
+        content="\n".join(text_parts) if text_parts else None,
+        tool_calls=tool_calls,
+    )
+
+    # Determine if this is a final response
+    is_final = len(tool_calls) == 0
+
+    return CallLlmOutput(
+        message=response_message,
+        is_final=is_final,
+    ).to_dict()
+
+
+def _call_llm_via_litellm(llm_input: CallLlmInput) -> dict[str, Any]:
+    """Call the LLM via litellm.completion using OpenAI-shaped messages."""
+    try:
+        import litellm
+    except ImportError as e:
+        logger.error(f"Failed to import litellm: {e}")
+        return CallLlmOutput(
+            message=Message(role=MessageRole.MODEL),
+            is_final=True,
+            error=f"litellm not installed: {e}",
+        ).to_dict()
+
+    messages: list[dict[str, Any]] = []
+    if llm_input.agent_config.system_instruction:
+        messages.append(
+            {
+                "role": "system",
+                "content": llm_input.agent_config.system_instruction,
+            }
+        )
+
+    for msg in llm_input.messages:
+        # Tool results must be emitted as separate `role=tool` messages per
+        # OpenAI/litellm contract.
+        if msg.tool_results:
+            for tr in msg.tool_results:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tr.tool_call_id,
+                        "content": tr.error
+                        if tr.error is not None
+                        else _stringify(tr.result),
+                    }
+                )
+
+        if msg.role == MessageRole.USER:
+            if msg.content:
+                messages.append({"role": "user", "content": msg.content})
+        else:  # MODEL -> assistant
+            if msg.content or msg.tool_calls:
+                entry: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": msg.content,
+                }
+                if msg.tool_calls:
+                    entry["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": json.dumps(tc.args),
+                            },
+                        }
+                        for tc in msg.tool_calls
+                    ]
+                messages.append(entry)
+
+    tools = []
+    for tool_def in llm_input.agent_config.tool_definitions:
+        parameters = tool_def.parameters or {"type": "object", "properties": {}}
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool_def.name,
+                    "description": tool_def.description,
+                    "parameters": parameters,
+                },
+            }
+        )
+
+    response = litellm.completion(
+        model=llm_input.agent_config.model,
+        messages=messages,
+        tools=tools if tools else None,
+    )
+
+    choice = response.choices[0]
+    response_msg = choice.message
+    raw_content = getattr(response_msg, "content", None)
+    raw_tool_calls = getattr(response_msg, "tool_calls", None) or []
+
+    tool_calls: list[ToolCall] = []
+    for i, tc in enumerate(raw_tool_calls):
+        fn = getattr(tc, "function", None)
+        if isinstance(fn, dict):
+            name = fn.get("name", "")
+            raw_args = fn.get("arguments")
+        else:
+            name = getattr(fn, "name", "") if fn is not None else ""
+            raw_args = getattr(fn, "arguments", None) if fn is not None else None
+        try:
+            args = json.loads(raw_args) if raw_args else {}
+        except (TypeError, ValueError):
+            args = {}
+        tool_calls.append(
+            ToolCall(
+                id=getattr(tc, "id", None) or f"call_{i}",
+                name=name or "",
+                args=args,
+            )
+        )
+
+    response_message = Message(
+        role=MessageRole.MODEL,
+        content=raw_content if raw_content else None,
+        tool_calls=tool_calls,
+    )
+
+    is_final = len(tool_calls) == 0
+
+    return CallLlmOutput(
+        message=response_message,
+        is_final=is_final,
+    ).to_dict()
+
+
+def _stringify(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def execute_tool_activity(

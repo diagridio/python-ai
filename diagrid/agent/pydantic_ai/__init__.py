@@ -21,7 +21,7 @@ Example:
         tools=[search_web],
     )
 
-    runner = DaprWorkflowAgentRunner(agent=agent)
+    runner = DaprWorkflowAgentRunner(agent=agent, name="research-assistant")
     runner.start()
 
     async for event in runner.run_async(

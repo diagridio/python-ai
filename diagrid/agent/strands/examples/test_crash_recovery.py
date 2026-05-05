@@ -167,7 +167,7 @@ Call each tool exactly once in sequence."""
 async def main():
     """Run the crash recovery test."""
 
-    runner = DaprWorkflowAgentRunner(agent=agent)
+    runner = DaprWorkflowAgentRunner(agent=agent, name="crash-recovery-test")
 
     try:
         runner.start()

@@ -27,7 +27,7 @@ Example:
     compiled = graph.compile()
 
     # Run with Dapr Workflows
-    runner = DaprWorkflowGraphRunner(graph=compiled)
+    runner = DaprWorkflowGraphRunner(graph=compiled, name="my-graph")
     runner.start()
 
     result = runner.invoke(

@@ -22,7 +22,7 @@ from strands.hooks.events import (
 )
 
 if TYPE_CHECKING:
-    from strands.agent import Agent
+    pass
 
 logger = logging.getLogger(__name__)
 

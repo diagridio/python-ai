@@ -158,6 +158,7 @@ async def main():
 
     runner = DaprWorkflowAgentRunner(
         agent=agent,
+        name="crash-recovery-test",
         max_iterations=10,
     )
 

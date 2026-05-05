@@ -56,7 +56,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         )
 
         # Create runner and start the workflow runtime
-        runner = DaprWorkflowAgentRunner(agent=agent)
+        runner = DaprWorkflowAgentRunner(agent=agent, name="my-agent")
         runner.start()
 
         # Run the agent
@@ -196,15 +196,24 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             if isinstance(instr, str):
                 system_instruction = instr
 
-        model = getattr(self._agent, "model", "gemini-2.0-flash")
-        if not isinstance(model, str):
-            model = str(model)
+        raw_model = getattr(self._agent, "model", "gemini-2.5-flash")
+        provider = "gemini"
+        if isinstance(raw_model, str):
+            model = raw_model
+        elif type(raw_model).__name__ == "LiteLlm" and hasattr(raw_model, "model"):
+            # ADK's LiteLlm wrapper — route via litellm.completion. Its `.model`
+            # attribute holds the provider-prefixed id (e.g. "openai/gpt-4o").
+            model = str(raw_model.model)
+            provider = "litellm"
+        else:
+            model = str(raw_model)
 
         return AgentConfig(
             name=self._agent.name,
             model=model,
             system_instruction=system_instruction,
             tool_definitions=tool_definitions,
+            provider=provider,
         )
 
     @staticmethod

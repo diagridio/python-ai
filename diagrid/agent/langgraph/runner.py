@@ -70,7 +70,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         compiled = graph.compile()
 
         # Create runner and start
-        runner = DaprWorkflowGraphRunner(graph=compiled)
+        runner = DaprWorkflowGraphRunner(graph=compiled, name="my-graph")
         runner.start()
 
         # Run the graph

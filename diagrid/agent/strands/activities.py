@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from strands.types.tools import AgentTool, ToolUse, ToolResult
+from strands.types.tools import AgentTool, ToolUse
 
 logger = logging.getLogger(__name__)
 

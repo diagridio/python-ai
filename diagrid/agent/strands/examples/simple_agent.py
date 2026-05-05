@@ -82,7 +82,7 @@ async def main():
     )
 
     # Create the Dapr Workflow runner
-    runner = DaprWorkflowAgentRunner(agent=agent)
+    runner = DaprWorkflowAgentRunner(agent=agent, name="simple-agent")
 
     try:
         # Start the workflow runtime

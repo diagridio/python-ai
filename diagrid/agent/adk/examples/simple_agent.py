@@ -97,7 +97,7 @@ async def main():
     # Create the ADK agent with tools
     agent = LlmAgent(
         name="helpful_assistant",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         instruction="You are a helpful assistant that can check weather, time, and do calculations. Be concise in your responses.",
         tools=[
             FunctionTool(get_weather),
@@ -107,13 +107,14 @@ async def main():
     )
 
     print(f"\nAgent: {agent.name}", flush=True)
-    print("Model: gemini-2.0-flash", flush=True)
+    print("Model: gemini-2.5-flash", flush=True)
     print("Tools: get_weather, get_time, calculate", flush=True)
     print("-" * 60, flush=True)
 
     # Create the Dapr Workflow runner
     runner = DaprWorkflowAgentRunner(
         agent=agent,
+        name="simple-agent",
         max_iterations=10,
     )
 

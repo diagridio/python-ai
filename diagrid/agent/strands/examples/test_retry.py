@@ -148,7 +148,7 @@ async def main():
     log("Dapr retry policy: max 3 attempts, exponential backoff")
     log(f"{'=' * 60}\n")
 
-    runner = DaprWorkflowAgentRunner(agent=agent)
+    runner = DaprWorkflowAgentRunner(agent=agent, name="retry-test")
 
     try:
         runner.start()

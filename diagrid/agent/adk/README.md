@@ -36,15 +36,21 @@ agent = LlmAgent(
 # Create a Dapr workflow runner
 runner = DaprWorkflowAgentRunner(
     agent=agent,
-    state_store_name="agent-workflow",
+    name="my-agent",
 )
 
-# Run the agent - each tool execution is now a durable activity
-async for event in runner.run_async(
-    user_message="Hello, please help me with...",
-    session_id="my-session",
-):
-    print(event)
+# Start the workflow runtime
+runner.start()
+
+try:
+    # Run the agent - each tool execution is now a durable activity
+    async for event in runner.run_async(
+        user_message="Hello, please help me with...",
+        session_id="my-session",
+    ):
+        print(event)
+finally:
+    runner.shutdown()
 ```
 
 ## How It Works
@@ -70,7 +76,7 @@ DaprAgentWorkflow (orchestrates the agent loop)
 
 ## Requirements
 
-- Python >= 3.10
-- Dapr >= 1.16.0
-- Google ADK >= 1.0.0
+- Python >= 3.11
+- Dapr >= 1.17.3
+- Google ADK >= 1.32.0
 - A Dapr state store component configured

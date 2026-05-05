@@ -122,6 +122,9 @@ class AgentConfig:
     system_instruction: Optional[str] = None
     tool_definitions: list[ToolDefinition] = field(default_factory=list)
     component_name: Optional[str] = None
+    # Provider routing: "gemini" (default) hits google.genai; "litellm" hits
+    # litellm.completion with the OpenAI-shaped message format.
+    provider: str = "gemini"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -131,6 +134,7 @@ class AgentConfig:
             "system_instruction": self.system_instruction,
             "tool_definitions": [td.to_dict() for td in self.tool_definitions],
             "component_name": self.component_name,
+            "provider": self.provider,
         }
 
     @classmethod
@@ -144,6 +148,7 @@ class AgentConfig:
                 ToolDefinition.from_dict(td) for td in data.get("tool_definitions", [])
             ],
             component_name=data.get("component_name"),
+            provider=data.get("provider", "gemini"),
         )
 
 

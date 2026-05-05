@@ -23,7 +23,7 @@ Example:
     )
 
     # Create runner and start
-    runner = DaprWorkflowAgentRunner(agent=agent)
+    runner = DaprWorkflowAgentRunner(agent=agent, name="weather-agent")
     runner.start()
 
     # Run agent - each tool call is now durable

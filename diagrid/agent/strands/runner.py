@@ -4,14 +4,12 @@
 """Runner for executing Strands agents as Dapr Workflows."""
 
 import asyncio
-import json
 import logging
 import uuid
 from typing import Any, AsyncIterator, Generator, Optional, TYPE_CHECKING
 
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
-from diagrid.cli.commands.init import SUPPORTED_FRAMEWORKS
 
 from .workflow import WorkflowOutput
 
@@ -55,7 +53,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             tools=[search_web],
         )
 
-        runner = DaprWorkflowAgentRunner(agent=agent)
+        runner = DaprWorkflowAgentRunner(agent=agent, name="search-agent")
         runner.start()
 
         async for event in runner.run_async(
