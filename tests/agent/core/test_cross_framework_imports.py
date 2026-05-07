@@ -3,11 +3,12 @@
 
 """Detect dependency conflicts between agent-framework adapters at PR time.
 
-These tests are the **fast, preventive layer** for AI-552: a Dependabot
-upgrade that would break ``diagrid.agent.<framework>`` import (e.g. an
-OpenTelemetry version pin tightening, a CrewAI internal API rename,
-LangChain core breaking change) fails this suite in seconds, instead of
-waiting 15 minutes for ``e2e-ollama.yaml`` to flake on the same root cause.
+These tests are the **fast, preventive layer** for dependency drift: a
+Dependabot upgrade that would break ``diagrid.agent.<framework>`` import
+(e.g. an OpenTelemetry version pin tightening, a CrewAI internal API
+rename, LangChain core breaking change) fails this suite in seconds,
+instead of waiting 15 minutes for ``e2e-ollama.yaml`` to flake on the
+same root cause.
 
 The tests run each import in a **fresh Python subprocess**. Two reasons:
 
@@ -41,6 +42,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 # to a runner symbol the adapter is expected to expose. The symbol assertion
 # guards against a partially-broken import that would silently succeed
 # (e.g. ImportError swallowed inside the package's ``__init__``).
+#
+# This list must mirror the framework subdirectories under ``diagrid/agent/``
+# (``core`` is excluded — it's shared infra, not a framework adapter). The
+# ``test_adapter_list_matches_filesystem`` test below pins this invariant
+# so a new adapter directory cannot land without a matching entry here.
 _ADAPTERS: tuple[tuple[str, str], ...] = (
     ("diagrid.agent.langgraph", "DaprWorkflowGraphRunner"),
     ("diagrid.agent.crewai", "DaprWorkflowAgentRunner"),
@@ -50,6 +56,29 @@ _ADAPTERS: tuple[tuple[str, str], ...] = (
     ("diagrid.agent.pydantic_ai", "DaprWorkflowAgentRunner"),
     ("diagrid.agent.deepagents", "DaprWorkflowDeepAgentRunner"),
 )
+
+
+def test_adapter_list_matches_filesystem() -> None:
+    """``_ADAPTERS`` must enumerate every framework adapter on disk.
+
+    A new ``diagrid/agent/<framework>/`` directory without a matching
+    ``_ADAPTERS`` entry would silently skip dep-conflict coverage for
+    that adapter — exactly the gap this file is trying to close.
+    """
+    agent_root = _PROJECT_ROOT / "diagrid" / "agent"
+    on_disk = {
+        p.name
+        for p in agent_root.iterdir()
+        if p.is_dir()
+        and not p.name.startswith("_")  # __pycache__
+        and p.name != "core"  # shared infra, not an adapter
+    }
+    listed = {mod.rsplit(".", 1)[1] for mod, _ in _ADAPTERS}
+    missing = on_disk - listed
+    extra = listed - on_disk
+    assert not missing and not extra, (
+        f"_ADAPTERS drifted from diagrid/agent/: missing={missing!r} extra={extra!r}"
+    )
 
 
 def _run_python(code: str) -> subprocess.CompletedProcess[str]:

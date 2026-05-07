@@ -41,10 +41,6 @@ jobs:
 
       - name: Start Ollama and pull model
         run: |
-          # Defuse "address already in use" on retries by killing any stale
-          # ollama serve process from a previous step or job run.
-          pkill -f "ollama serve" || true
-          sleep 1
           ollama serve &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
@@ -70,14 +66,7 @@ jobs:
           wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O - | /bin/bash
 
       - name: Initialize Dapr
-        run: |
-          # Defuse "port already in use" / leftover-container failures from a
-          # reused runner or an earlier failed init by clearing any prior dapr
-          # state before re-initialising. Both commands are tolerant of a
-          # clean slate.
-          dapr uninstall --all 2>/dev/null || true
-          docker ps -aq --filter "name=dapr_" | xargs -r docker rm -f 2>/dev/null || true
-          dapr init
+        run: dapr init
 
       - name: Run E2E tests
         env:
@@ -101,3 +90,12 @@ jobs:
             /tmp/dapr-*.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Stop Ollama and tear down Dapr state so the runner is left clean
+          # for the next job (and so a retry of this job starts from zero).
+          pkill -f "ollama serve" || true
+          dapr uninstall --all 2>/dev/null || true
+          docker ps -aq --filter "name=dapr_" | xargs -r docker rm -f 2>/dev/null || true
