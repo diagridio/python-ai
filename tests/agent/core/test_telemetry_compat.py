@@ -38,21 +38,23 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _run_in_clean_subprocess(code: str) -> subprocess.CompletedProcess[str]:
-    """Run a snippet in a fresh interpreter that does NOT see tests/ shadow paths."""
+    """Run a snippet in a fresh interpreter that does NOT see tests/ shadow paths.
+
+    Inherits the parent environment and overrides only ``PYTHONPATH`` so
+    that ``diagrid`` resolves to the workspace package while
+    ``tests/agent/<pkg>`` shadow stubs stay invisible. Inheriting is
+    required on Windows where ``import asyncio`` fails (WinError 10106 —
+    Winsock cannot initialise) without ``SYSTEMROOT`` / ``WINDIR`` /
+    ``TEMP`` / ``APPDATA`` in the env.
+    """
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(_PROJECT_ROOT)
     return subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
         cwd=str(_PROJECT_ROOT),
-        env={
-            "PATH": "/usr/bin:/bin",
-            "PYTHONPATH": str(_PROJECT_ROOT),
-            **{
-                k: v
-                for k, v in os.environ.items()
-                if k in {"HOME", "USER", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"}
-            },
-        },
+        env=env,
         timeout=30,
     )
 

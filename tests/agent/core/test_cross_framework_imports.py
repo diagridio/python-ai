@@ -53,24 +53,24 @@ _ADAPTERS: tuple[tuple[str, str], ...] = (
 
 
 def _run_python(code: str) -> subprocess.CompletedProcess[str]:
-    """Run a Python snippet in a fresh interpreter rooted at the project."""
+    """Run a Python snippet in a fresh interpreter rooted at the project.
+
+    Inherits the parent environment and overrides only ``PYTHONPATH`` to
+    point at the project root. This keeps Windows-essential vars
+    (``SYSTEMROOT``, ``WINDIR``, ``TEMP``, ``APPDATA``) — without them
+    ``import asyncio`` fails with ``WinError 10106`` because Winsock
+    cannot initialise.
+    """
+    env = os.environ.copy()
+    # Only the project root: ensures ``diagrid`` resolves to the workspace
+    # package while ``tests/agent/<pkg>`` shadow stubs are not visible.
+    env["PYTHONPATH"] = str(_PROJECT_ROOT)
     return subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
         cwd=str(_PROJECT_ROOT),
-        # Override PYTHONPATH so tests/agent/<pkg> shadow paths cannot leak in.
-        env={
-            "PATH": "/usr/bin:/bin",
-            "PYTHONPATH": str(_PROJECT_ROOT),
-            # Subprocess inherits no caller env beyond what we set; copy a few
-            # things the interpreter actually needs.
-            **{
-                k: v
-                for k, v in os.environ.items()
-                if k in {"HOME", "USER", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"}
-            },
-        },
+        env=env,
         timeout=60,
     )
 
