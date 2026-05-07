@@ -34,13 +34,17 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.ollama
-          key: ollama-qwen3-0.6b-${{ runner.os }}
+          key: ollama-qwen3-0.6b-v2-${{ runner.os }}
 
       - name: Install Ollama
         run: curl -fsSL https://ollama.com/install.sh | sh
 
       - name: Start Ollama and pull model
         run: |
+          # Defuse "address already in use" on retries by killing any stale
+          # ollama serve process from a previous step or job run.
+          pkill -f "ollama serve" || true
+          sleep 1
           ollama serve &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
@@ -74,4 +78,19 @@ jobs:
           OLLAMA_MODEL: qwen3:0.6b
           OPENAI_API_KEY: ollama
           OPENAI_BASE_URL: http://localhost:11434/v1
-        run: uv run pytest tests/e2e/ -m integration -v
+        run: |
+          uv run pytest tests/e2e/ -m integration -v \
+            --tb=short \
+            -p no:cacheprovider \
+            --maxfail=3
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-ollama-failure-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/e2e_*
+            /tmp/dapr-*.log
+          if-no-files-found: ignore
+          retention-days: 7

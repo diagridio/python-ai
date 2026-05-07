@@ -253,12 +253,17 @@ def _github_latest_tag(repo: str) -> str:
 
 
 def _download_kind(install_dir: Path, arch: str) -> None:
-    """Download the kind binary from GitHub releases."""
+    """Download the kind binary from GitHub releases.
+
+    kind's GitHub release assets do NOT carry a `.exe` suffix on Windows
+    (asset name is e.g. `kind-windows-amd64`). The local destination,
+    however, needs `kind.exe` so Windows can execute it.
+    """
     version = _github_latest_tag("kubernetes-sigs/kind")
     os_name = "darwin" if _is_mac() else "windows" if _is_windows() else "linux"
     ext = ".exe" if _is_windows() else ""
-    filename = f"kind-{os_name}-{arch}{ext}"
-    url = f"https://github.com/kubernetes-sigs/kind/releases/download/{version}/{filename}"
+    asset_name = f"kind-{os_name}-{arch}"
+    url = f"https://github.com/kubernetes-sigs/kind/releases/download/{version}/{asset_name}"
     dest = install_dir / f"kind{ext}"
     urllib.request.urlretrieve(url, dest)  # noqa: S310
     _make_executable(dest)

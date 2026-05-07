@@ -40,6 +40,7 @@ def _write_helper_script(state_file: Path) -> str:
         import asyncio
         import json
         import os
+        import threading
         from pathlib import Path
         from typing import List, TypedDict
 
@@ -49,6 +50,10 @@ def _write_helper_script(state_file: Path) -> str:
 
         STATE_FILE = Path({str(state_file)!r})
         THREAD_ID = "crash-recovery-e2e"
+        # asyncio main thread and Dapr workflow worker thread both write to
+        # STATE_FILE; serialize with a lock and write atomically via rename so
+        # the file is never observed half-written.
+        _STATE_LOCK = threading.Lock()
 
 
         def load_state() -> dict:
@@ -65,7 +70,10 @@ def _write_helper_script(state_file: Path) -> str:
 
 
         def save_state(state: dict):
-            STATE_FILE.write_text(json.dumps(state, indent=2))
+            with _STATE_LOCK:
+                tmp = STATE_FILE.with_suffix(STATE_FILE.suffix + ".tmp")
+                tmp.write_text(json.dumps(state, indent=2))
+                tmp.replace(STATE_FILE)
 
 
         state = load_state()
@@ -330,6 +338,7 @@ def _write_deepagents_crash_helper(state_file: Path) -> str:
         import asyncio
         import json
         import os
+        import threading
         from pathlib import Path
         from typing import List, TypedDict
 
@@ -339,6 +348,9 @@ def _write_deepagents_crash_helper(state_file: Path) -> str:
 
         STATE_FILE = Path({str(state_file)!r})
         THREAD_ID = "crash-recovery-deepagents-e2e"
+        # asyncio main thread and Dapr workflow worker thread both write to
+        # STATE_FILE; serialize with a lock and write atomically via rename.
+        _STATE_LOCK = threading.Lock()
 
 
         def load_state() -> dict:
@@ -355,7 +367,10 @@ def _write_deepagents_crash_helper(state_file: Path) -> str:
 
 
         def save_state(state: dict):
-            STATE_FILE.write_text(json.dumps(state, indent=2))
+            with _STATE_LOCK:
+                tmp = STATE_FILE.with_suffix(STATE_FILE.suffix + ".tmp")
+                tmp.write_text(json.dumps(state, indent=2))
+                tmp.replace(STATE_FILE)
 
 
         state = load_state()
@@ -482,12 +497,16 @@ def _agent_crash_preamble(state_file: Path) -> str:
         import asyncio
         import json
         import os
+        import threading
         from pathlib import Path
 
         from dapr.ext.workflow import WorkflowStatus
 
         STATE_FILE = Path({str(state_file)!r})
         SESSION_ID = "crash-recovery-agent-e2e"
+        # asyncio main thread and Dapr workflow worker thread both write to
+        # STATE_FILE; serialize with a lock and write atomically via rename.
+        _STATE_LOCK = threading.Lock()
 
 
         def load_state() -> dict:
@@ -501,7 +520,10 @@ def _agent_crash_preamble(state_file: Path) -> str:
 
 
         def save_state(state: dict):
-            STATE_FILE.write_text(json.dumps(state, indent=2))
+            with _STATE_LOCK:
+                tmp = STATE_FILE.with_suffix(STATE_FILE.suffix + ".tmp")
+                tmp.write_text(json.dumps(state, indent=2))
+                tmp.replace(STATE_FILE)
 
 
         state = load_state()

@@ -1,0 +1,49 @@
+name: Dependency Conflict Check
+
+# Fast (no Docker / no Ollama / no Dapr) preventive layer for AI-552:
+# catches dependency-conflict regressions on every PR so a bad bump fails
+# in ~60s here instead of 15+ minutes downstream in e2e-ollama.yaml.
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/*
+      - release-*
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deps-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "latest"
+
+      - name: Verify uv.lock matches pyproject.toml
+        run: uv lock --check
+
+      - name: Install all extras (full resolve)
+        run: uv sync --all-packages --extra all --group test
+
+      - name: Cross-framework import check
+        run: uv run pytest tests/agent/core/test_cross_framework_imports.py -v
+
+      - name: Telemetry / OTEL compat check
+        run: uv run pytest tests/agent/core/test_telemetry_compat.py -v
