@@ -1,0 +1,53 @@
+name: Dependency Conflict Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/*
+      - release-*
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deps-check:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python_ver: "3.11" }
+          - { os: ubuntu-latest, python_ver: "3.12" }
+          - { os: ubuntu-latest, python_ver: "3.13" }
+          - { os: windows-latest, python_ver: "3.13" }
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python ${{ matrix.python_ver }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python_ver }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "latest"
+
+      - name: Verify uv.lock matches pyproject.toml
+        run: uv lock --check
+
+      - name: Install all extras (full resolve)
+        run: uv sync --all-packages --extra all --group test
+
+      - name: Cross-framework import check
+        run: uv run pytest tests/agent/core/test_cross_framework_imports.py -v
+
+      - name: Telemetry / OTEL compat check
+        run: uv run pytest tests/agent/core/test_telemetry_compat.py -v
