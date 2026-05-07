@@ -70,7 +70,14 @@ jobs:
           wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O - | /bin/bash
 
       - name: Initialize Dapr
-        run: dapr init
+        run: |
+          # Defuse "port already in use" / leftover-container failures from a
+          # reused runner or an earlier failed init by clearing any prior dapr
+          # state before re-initialising. Both commands are tolerant of a
+          # clean slate.
+          dapr uninstall --all 2>/dev/null || true
+          docker ps -aq --filter "name=dapr_" | xargs -r docker rm -f 2>/dev/null || true
+          dapr init
 
       - name: Run E2E tests
         env:
