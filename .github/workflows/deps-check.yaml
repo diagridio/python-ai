@@ -1,9 +1,5 @@
 name: Dependency Conflict Check
 
-# Fast (no Docker / no Ollama / no Dapr) preventive layer for AI-552:
-# catches dependency-conflict regressions on every PR so a bad bump fails
-# in ~60s here instead of 15+ minutes downstream in e2e-ollama.yaml.
-
 on:
   pull_request:
     branches:
