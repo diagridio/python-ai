@@ -81,7 +81,9 @@ async def _auto_approve_pumper(
 async def main_async() -> int:
     model = os.environ.get("MODEL")
     if not model:
-        print("ERROR: MODEL env var is required (e.g. anthropic/claude-sonnet-4-5-20250929)")
+        print(
+            "ERROR: MODEL env var is required (e.g. anthropic/claude-sonnet-4-5-20250929)"
+        )
         return 2
     if "anthropic" in model.lower() and not os.environ.get("ANTHROPIC_API_KEY"):
         print("ERROR: ANTHROPIC_API_KEY is required for an Anthropic model")

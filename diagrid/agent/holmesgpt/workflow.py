@@ -14,17 +14,32 @@ primitives:
   ``wait_for_external_event``; resuming is just
   ``raise_workflow_event``.
 
+Each activity runs the same housekeeping HolmesGPT's ``call_stream`` runs
+between iterations:
+
+* ``compact_if_necessary`` — compresses message history when it approaches
+  the model's context window.
+* ``spill_oversized_tool_result`` — writes huge tool outputs to disk and
+  leaves a pointer in the message.
+* ``prevent_overly_repeated_tool_call`` — short-circuits identical
+  duplicate tool calls.
+
 Per-instance event tape keys are allocated deterministically inside the
 workflow so that activity replays write idempotently and so that the
 SSE handler can poll a dense, totally-ordered stream.
+
+OpenTelemetry context is captured at scheduling time (in the runner) and
+forwarded as a serialised propagator carrier on each activity input;
+activities re-attach it so spans they emit inherit the caller's trace.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from datetime import timedelta
-from typing import Any, Dict, Generator, List
+from typing import Any, Dict, Generator, List, Optional
 
 from dapr.ext.workflow import (
     DaprWorkflowContext,
@@ -54,9 +69,64 @@ logger = logging.getLogger(__name__)
 # stays dense (no gaps that would stall a polling reader).
 # ---------------------------------------------------------------------------
 
-EVENTS_PER_LLM_CALL = 2  # iteration_started + iteration_completed
+# call_llm emits exactly three tape events (always, in order):
+#   seq_base   : iteration_started
+#   seq_base+1 : conversation_history_compaction_status  (compacted=true|false)
+#   seq_base+2 : iteration_completed
+EVENTS_PER_LLM_CALL = 3
 EVENTS_PER_TOOL_CALL = 2  # start_tool_calling + tool_calling_result
 EVENTS_PER_RECORD = 1  # approval_required, ai_answer_end, error, ...
+
+
+# ---------------------------------------------------------------------------
+# OpenTelemetry helpers — attach the calling process's context to spans
+# created inside the activity so traces span the workflow boundary.
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _attach_trace_context(carrier: Optional[Dict[str, str]]):
+    """Re-attach a propagator carrier as the current OTel context.
+
+    No-op when OpenTelemetry isn't installed or no carrier is provided.
+    The caller is responsible for creating spans within the ``with`` block;
+    they'll inherit the parent from the carrier.
+    """
+    if not carrier:
+        yield None
+        return
+    try:
+        from opentelemetry import context as otel_context
+        from opentelemetry import propagate
+    except ImportError:
+        yield None
+        return
+
+    token = None
+    try:
+        parent = propagate.extract(carrier)
+        token = otel_context.attach(parent)
+        yield parent
+    finally:
+        if token is not None:
+            try:
+                otel_context.detach(token)
+            except Exception:
+                logger.debug("Failed to detach OTel context", exc_info=True)
+
+
+def _current_trace_carrier() -> Optional[Dict[str, str]]:
+    """Inject the current OTel context into a carrier dict (or ``None``)."""
+    try:
+        from opentelemetry import propagate, trace
+    except ImportError:
+        return None
+    span = trace.get_current_span()
+    if span is None or not span.get_span_context().is_valid:
+        return None
+    carrier: Dict[str, str] = {}
+    propagate.inject(carrier)
+    return carrier or None
 
 
 # ---------------------------------------------------------------------------
@@ -65,100 +135,200 @@ EVENTS_PER_RECORD = 1  # approval_required, ai_answer_end, error, ...
 # ---------------------------------------------------------------------------
 
 
-def record_event_activity(ctx: WorkflowActivityContext, payload: Dict[str, Any]) -> Dict[str, Any]:
+def record_event_activity(
+    ctx: WorkflowActivityContext, payload: Dict[str, Any]
+) -> Dict[str, Any]:
     inp = RecordEventInput.model_validate(payload)
-    record_event_to_store(
-        instance_id=inp.instance_id,
-        seq=inp.seq,
-        event=inp.event,
-        data=inp.data,
-    )
+    with _attach_trace_context(inp.trace_context):
+        record_event_to_store(
+            instance_id=inp.instance_id,
+            seq=inp.seq,
+            event=inp.event,
+            data=inp.data,
+        )
     return {"seq": inp.seq, "event": inp.event}
 
 
 # ---------------------------------------------------------------------------
 # Activity: call_llm
-# Wraps a single ``LLM.completion`` invocation and surfaces the assistant
-# message + parsed tool calls back to the workflow.
+# Wraps a single ``LLM.completion`` invocation; runs HolmesGPT's compaction
+# pass first so long investigations don't blow the model's context window.
 # ---------------------------------------------------------------------------
 
 
-def call_llm_activity(ctx: WorkflowActivityContext, payload: Dict[str, Any]) -> Dict[str, Any]:
+def _run_compaction(
+    reg, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]]
+):
+    """Call ``compact_if_necessary``. Returns ``(messages, status_dict)``.
+
+    On success: returns possibly-compacted messages plus a status dict the
+    workflow emits as a tape event.
+
+    On compaction-insufficient: returns the original messages plus a status
+    dict flagging the issue. We don't raise here — Dapr would otherwise
+    retry the activity, which won't help (compaction is deterministic on
+    inputs).
+    """
+    try:
+        from holmes.core.truncation.input_context_window_limiter import (
+            CompactionInsufficientError,
+            compact_if_necessary,
+        )
+    except ImportError:
+        return messages, {"compacted": False, "reason": "compaction_unavailable"}
+
+    try:
+        result = compact_if_necessary(llm=reg.llm, messages=messages, tools=tools)
+    except CompactionInsufficientError as e:
+        return messages, {
+            "compacted": False,
+            "reason": "compaction_insufficient",
+            "message": str(e),
+        }
+
+    status: Dict[str, Any] = {
+        "compacted": bool(result.conversation_history_compacted),
+    }
+    if result.conversation_history_compacted:
+        try:
+            status["before_tokens"] = result.metadata.get("initial_tokens")
+            status["after_tokens"] = result.metadata.get("compacted_tokens")
+        except AttributeError:
+            pass
+    return list(result.messages), status
+
+
+def call_llm_activity(
+    ctx: WorkflowActivityContext, payload: Dict[str, Any]
+) -> Dict[str, Any]:
     inp = LLMCallInput.model_validate(payload)
     reg = get_registry()
 
-    record_event_to_store(
-        instance_id=inp.instance_id,
-        seq=inp.seq_base,
-        event="iteration_started",
-        data={"message_count": len(inp.messages)},
-    )
-
-    response = reg.llm.completion(
-        messages=inp.messages,
-        tools=inp.tools or [],
-        tool_choice=inp.tool_choice if inp.tools else None,
-        response_format=inp.response_format,
-        temperature=inp.temperature,
-        drop_params=True,
-        stream=False,
-    )
-
-    msg = response.choices[0].message
-    assistant_dict = msg.model_dump(exclude_none=True)
-
-    parsed_tool_calls: List[Dict[str, Any]] = []
-    raw_tool_calls = getattr(msg, "tool_calls", None) or []
-    for tc in raw_tool_calls:
-        try:
-            args = json.loads(tc.function.arguments or "{}")
-        except (ValueError, TypeError):
-            args = {"_raw": tc.function.arguments}
-        parsed_tool_calls.append(
-            {
-                "id": tc.id,
-                "name": tc.function.name,
-                "arguments": args,
-            }
+    with _attach_trace_context(inp.trace_context):
+        record_event_to_store(
+            instance_id=inp.instance_id,
+            seq=inp.seq_base,
+            event="iteration_started",
+            data={"message_count": len(inp.messages)},
         )
 
-    usage: Dict[str, Any] = {}
-    if hasattr(response, "usage") and response.usage is not None:
-        try:
-            usage = response.usage.model_dump()
-        except AttributeError:
-            usage = dict(response.usage)
+        compacted_messages, compaction_status = _run_compaction(
+            reg, list(inp.messages), inp.tools
+        )
 
-    out = LLMCallOutput(
-        assistant_message=assistant_dict,
-        tool_calls=parsed_tool_calls,
-        usage=usage,
-        finish_reason=getattr(response.choices[0], "finish_reason", None),
-        response_id=getattr(response, "id", None),
-    )
+        record_event_to_store(
+            instance_id=inp.instance_id,
+            seq=inp.seq_base + 1,
+            event="conversation_history_compaction_status",
+            data=compaction_status,
+        )
 
-    record_event_to_store(
-        instance_id=inp.instance_id,
-        seq=inp.seq_base + 1,
-        event="iteration_completed",
-        data={
-            "content": assistant_dict.get("content"),
-            "tool_call_count": len(parsed_tool_calls),
-            "usage": usage,
-            "finish_reason": out.finish_reason,
-        },
-    )
+        response = reg.llm.completion(
+            messages=compacted_messages,
+            tools=inp.tools or [],
+            tool_choice=inp.tool_choice if inp.tools else None,
+            response_format=inp.response_format,
+            temperature=inp.temperature,
+            drop_params=True,
+            stream=False,
+        )
+
+        msg = response.choices[0].message
+        assistant_dict = msg.model_dump(exclude_none=True)
+
+        parsed_tool_calls: List[Dict[str, Any]] = []
+        raw_tool_calls = getattr(msg, "tool_calls", None) or []
+        for tc in raw_tool_calls:
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except (ValueError, TypeError):
+                args = {"_raw": tc.function.arguments}
+            parsed_tool_calls.append(
+                {
+                    "id": tc.id,
+                    "name": tc.function.name,
+                    "arguments": args,
+                }
+            )
+
+        usage: Dict[str, Any] = {}
+        if hasattr(response, "usage") and response.usage is not None:
+            try:
+                usage = response.usage.model_dump()
+            except AttributeError:
+                usage = dict(response.usage)
+
+        out = LLMCallOutput(
+            assistant_message=assistant_dict,
+            tool_calls=parsed_tool_calls,
+            usage=usage,
+            finish_reason=getattr(response.choices[0], "finish_reason", None),
+            response_id=getattr(response, "id", None),
+            messages=compacted_messages,
+            compaction=compaction_status,
+        )
+
+        record_event_to_store(
+            instance_id=inp.instance_id,
+            seq=inp.seq_base + 2,
+            event="iteration_completed",
+            data={
+                "content": assistant_dict.get("content"),
+                "tool_call_count": len(parsed_tool_calls),
+                "usage": usage,
+                "finish_reason": out.finish_reason,
+            },
+        )
 
     return out.model_dump()
 
 
 # ---------------------------------------------------------------------------
 # Activity: invoke_tool
-# One HolmesGPT tool invocation through the registry's ToolExecutor.
+# Wraps a HolmesGPT tool invocation. Runs HolmesGPT's repeated-call
+# safeguard and oversized-result spill before/after the actual ``invoke``.
 # ---------------------------------------------------------------------------
 
 
-def invoke_tool_activity(ctx: WorkflowActivityContext, payload: Dict[str, Any]) -> Dict[str, Any]:
+def _spill_if_needed(reg, tool_call_id: str, tool_name: str, result: Any) -> Any:
+    """Run HolmesGPT's oversized-result spill. Returns the (possibly mutated)
+    ``StructuredToolResult``. No-op if spill is unavailable.
+
+    ``spill_oversized_tool_result`` mutates ``tool_call_result.result``
+    in-place when the message is too large, replacing the data with a
+    pointer to a saved file. We wrap our existing result in a
+    ``ToolCallResult`` so the helper can do its work.
+    """
+    try:
+        from holmes.core.models import ToolCallResult
+        from holmes.core.tools_utils.tool_context_window_limiter import (
+            spill_oversized_tool_result,
+        )
+    except ImportError:
+        return result
+
+    tcr = ToolCallResult(
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
+        description="",
+        result=result,
+        toolset_name=None,
+    )
+    try:
+        spill_oversized_tool_result(
+            tool_call_result=tcr,
+            llm=reg.llm,
+            tool_results_dir=None,
+        )
+    except Exception:
+        logger.exception("spill_oversized_tool_result failed; using original result")
+        return result
+    return tcr.result
+
+
+def invoke_tool_activity(
+    ctx: WorkflowActivityContext, payload: Dict[str, Any]
+) -> Dict[str, Any]:
     from holmes.core.tools import (
         StructuredToolResult,
         StructuredToolResultStatus,
@@ -168,74 +338,117 @@ def invoke_tool_activity(ctx: WorkflowActivityContext, payload: Dict[str, Any]) 
     inp = ToolCallInput.model_validate(payload)
     reg = get_registry()
 
-    record_event_to_store(
-        instance_id=inp.instance_id,
-        seq=inp.seq_base,
-        event="start_tool_calling",
-        data={
-            "tool_call_id": inp.tool_call_id,
-            "tool_name": inp.tool_name,
-            "params": inp.arguments,
-        },
-    )
-
-    tool = reg.tool_executor.get_tool_by_name(inp.tool_name, user_id=None)
-    if tool is None:
-        result = StructuredToolResult(
-            status=StructuredToolResultStatus.ERROR,
-            error=f"Unknown tool: {inp.tool_name}",
-            params=inp.arguments,
+    with _attach_trace_context(inp.trace_context):
+        record_event_to_store(
+            instance_id=inp.instance_id,
+            seq=inp.seq_base,
+            event="start_tool_calling",
+            data={
+                "tool_call_id": inp.tool_call_id,
+                "tool_name": inp.tool_name,
+                "params": inp.arguments,
+            },
         )
-    else:
-        invoke_ctx = ToolInvokeContext(
-            llm=reg.llm,
-            max_token_count=reg.llm.get_max_token_count_for_single_tool(),
+
+        result = _check_repeated_call_safeguard(
+            inp.tool_name, inp.arguments, inp.previous_tool_calls, inp.user_approved
+        )
+
+        if result is None:
+            tool = reg.tool_executor.get_tool_by_name(inp.tool_name, user_id=None)
+            if tool is None:
+                result = StructuredToolResult(
+                    status=StructuredToolResultStatus.ERROR,
+                    error=f"Unknown tool: {inp.tool_name}",
+                    params=inp.arguments,
+                )
+            else:
+                invoke_ctx = ToolInvokeContext(
+                    llm=reg.llm,
+                    max_token_count=reg.llm.get_max_token_count_for_single_tool(),
+                    tool_call_id=inp.tool_call_id,
+                    tool_name=inp.tool_name,
+                    user_approved=inp.user_approved,
+                    session_approved_prefixes=inp.session_approved_prefixes,
+                    request_context=inp.request_context,
+                )
+                try:
+                    result = tool.invoke(params=inp.arguments, context=invoke_ctx)
+                except Exception as e:  # noqa: BLE001 — propagate as tool error, not workflow failure
+                    logger.exception("Tool %s raised an exception", inp.tool_name)
+                    result = StructuredToolResult(
+                        status=StructuredToolResultStatus.ERROR,
+                        error=f"{type(e).__name__}: {e}",
+                        params=inp.arguments,
+                    )
+
+        # Spill oversized successful results to disk so they don't blow the
+        # message budget on the next LLM call.
+        result = _spill_if_needed(reg, inp.tool_call_id, inp.tool_name, result)
+
+        status_val = (
+            result.status.value
+            if hasattr(result.status, "value")
+            else str(result.status)
+        )
+
+        out = ToolCallOutput(
             tool_call_id=inp.tool_call_id,
             tool_name=inp.tool_name,
-            user_approved=inp.user_approved,
-            session_approved_prefixes=inp.session_approved_prefixes,
-            request_context=inp.request_context,
+            status=status_val,
+            invocation=result.invocation,
+            data_str=result.get_stringified_data() or None,
+            error=result.error,
+            elapsed_seconds=result.elapsed_seconds,
+            raw_result=result.model_dump(mode="json"),
         )
-        try:
-            result = tool.invoke(params=inp.arguments, context=invoke_ctx)
-        except Exception as e:  # noqa: BLE001 — propagate as tool error, not workflow failure
-            logger.exception("Tool %s raised an exception", inp.tool_name)
-            result = StructuredToolResult(
-                status=StructuredToolResultStatus.ERROR,
-                error=f"{type(e).__name__}: {e}",
-                params=inp.arguments,
-            )
 
-    status_val = (
-        result.status.value if hasattr(result.status, "value") else str(result.status)
-    )
-
-    out = ToolCallOutput(
-        tool_call_id=inp.tool_call_id,
-        tool_name=inp.tool_name,
-        status=status_val,
-        invocation=result.invocation,
-        data_str=result.get_stringified_data() or None,
-        error=result.error,
-        elapsed_seconds=result.elapsed_seconds,
-        raw_result=result.model_dump(mode="json"),
-    )
-
-    record_event_to_store(
-        instance_id=inp.instance_id,
-        seq=inp.seq_base + 1,
-        event="tool_calling_result",
-        data={
-            "tool_call_id": inp.tool_call_id,
-            "tool_name": inp.tool_name,
-            "status": status_val,
-            "elapsed_seconds": out.elapsed_seconds,
-            "error": out.error,
-            "data_preview": (out.data_str or "")[:512],
-        },
-    )
+        record_event_to_store(
+            instance_id=inp.instance_id,
+            seq=inp.seq_base + 1,
+            event="tool_calling_result",
+            data={
+                "tool_call_id": inp.tool_call_id,
+                "tool_name": inp.tool_name,
+                "status": status_val,
+                "elapsed_seconds": out.elapsed_seconds,
+                "error": out.error,
+                "data_preview": (out.data_str or "")[:512],
+            },
+        )
 
     return out.model_dump()
+
+
+def _check_repeated_call_safeguard(
+    tool_name: str,
+    tool_params: Dict[str, Any],
+    previous_tool_calls: List[Dict[str, Any]],
+    user_approved: bool,
+) -> Any:
+    """Run HolmesGPT's repeated-tool-call safeguard.
+
+    Returns a ``StructuredToolResult`` to short-circuit invocation, or
+    ``None`` to proceed with the normal invocation path.
+    """
+    if user_approved:
+        # User explicitly approved a re-run; let it through.
+        return None
+    try:
+        from holmes.core.safeguards import prevent_overly_repeated_tool_call
+    except ImportError:
+        return None
+    try:
+        return prevent_overly_repeated_tool_call(
+            tool_name=tool_name,
+            tool_params=tool_params,
+            tool_calls=previous_tool_calls,
+        )
+    except Exception:
+        logger.exception(
+            "prevent_overly_repeated_tool_call failed; allowing the invocation"
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -269,15 +482,26 @@ def _tool_result_message(out: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _previous_tool_call_entry(out: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert a ``ToolCallOutput`` dict into the shape
+    ``prevent_overly_repeated_tool_call`` expects in ``tool_calls``."""
+    return {
+        "tool_name": out.get("tool_name"),
+        "result": {"params": (out.get("raw_result") or {}).get("params")},
+    }
+
+
 def investigation_workflow(
     ctx: DaprWorkflowContext, payload: Dict[str, Any]
 ) -> Generator[Any, Any, Dict[str, Any]]:
     """Durable agent loop. See module docstring for the contract."""
     inp = InvestigationInput.model_validate(payload)
     instance_id = ctx.instance_id
+    trace_context = inp.trace_context  # captured by the runner at schedule time
 
     messages: List[Dict[str, Any]] = list(inp.messages)
     tools = inp.tools
+    previous_tool_calls: List[Dict[str, Any]] = []
     next_seq = 0
 
     def alloc(n: int) -> int:
@@ -298,6 +522,7 @@ def investigation_workflow(
             tool_choice="auto",
             response_format=inp.response_format,
             temperature=inp.temperature,
+            trace_context=trace_context,
         )
         llm_out_dict = yield ctx.call_activity(
             call_llm_activity,
@@ -305,6 +530,11 @@ def investigation_workflow(
             retry_policy=_LLM_RETRY,
         )
         llm_out = LLMCallOutput.model_validate(llm_out_dict)
+
+        # Adopt the compacted message tape (when compaction ran) so the next
+        # iteration doesn't re-compact the same prefix every turn.
+        if llm_out.messages is not None:
+            messages = list(llm_out.messages)
 
         messages.append(llm_out.assistant_message)
 
@@ -320,6 +550,7 @@ def investigation_workflow(
                         "content": llm_out.assistant_message.get("content"),
                         "iterations": iteration,
                     },
+                    trace_context=trace_context,
                 ).model_dump(),
             )
             return InvestigationOutput(
@@ -330,6 +561,9 @@ def investigation_workflow(
             ).model_dump()
 
         # Fan out tool invocations in parallel, each with a pre-allocated seq base.
+        # ``previous_tool_calls`` is snapshotted here so all parallel
+        # invocations see the same history (no race on the safeguard).
+        snapshot_prev = list(previous_tool_calls)
         tool_inputs: List[ToolCallInput] = []
         for tc in llm_out.tool_calls:
             tool_inputs.append(
@@ -342,6 +576,8 @@ def investigation_workflow(
                     user_approved=False,
                     session_approved_prefixes=[],
                     request_context=inp.request_context,
+                    previous_tool_calls=snapshot_prev,
+                    trace_context=trace_context,
                 )
             )
 
@@ -373,6 +609,7 @@ def investigation_workflow(
                         "status": status,
                         "reason": r.get("error"),
                     },
+                    trace_context=trace_context,
                 ).model_dump(),
             )
 
@@ -394,7 +631,8 @@ def investigation_workflow(
                 results[i] = {
                     **r,
                     "status": "error",
-                    "error": decision.get("reason") or "Tool execution rejected by user",
+                    "error": decision.get("reason")
+                    or "Tool execution rejected by user",
                 }
                 continue
 
@@ -414,9 +652,11 @@ def investigation_workflow(
             )
 
         # Append all tool result messages so the LLM sees a well-formed
-        # tool-result block on the next iteration.
+        # tool-result block on the next iteration. Also record each result
+        # in the cumulative history that drives the repeated-call safeguard.
         for r in results:
             messages.append(_tool_result_message(r))
+            previous_tool_calls.append(_previous_tool_call_entry(r))
 
     yield ctx.call_activity(
         record_event_activity,
@@ -425,6 +665,7 @@ def investigation_workflow(
             seq=alloc(EVENTS_PER_RECORD),
             event="ai_answer_end",
             data={"reason": "max_steps_reached", "iterations": iteration},
+            trace_context=trace_context,
         ).model_dump(),
     )
     return InvestigationOutput(
@@ -445,4 +686,6 @@ def register_workflow_components(workflow_runtime: Any, *, workflow_name: str) -
     workflow_runtime.register_workflow(investigation_workflow, name=workflow_name)
     workflow_runtime.register_activity(call_llm_activity, name="holmes_call_llm")
     workflow_runtime.register_activity(invoke_tool_activity, name="holmes_invoke_tool")
-    workflow_runtime.register_activity(record_event_activity, name="holmes_record_event")
+    workflow_runtime.register_activity(
+        record_event_activity, name="holmes_record_event"
+    )

@@ -25,6 +25,10 @@ class InvestigationInput(BaseModel):
     ``messages`` and ``tools`` are pre-rendered by the runner so that the
     workflow itself stays deterministic (no prompt building inside the
     workflow body).
+
+    ``trace_context`` carries an injected OpenTelemetry propagator carrier
+    (W3C ``traceparent``/``tracestate`` etc.) so that activities can attach
+    their spans to the calling process's trace.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -35,6 +39,7 @@ class InvestigationInput(BaseModel):
     response_format: Optional[Dict[str, Any]] = None
     temperature: Optional[float] = None
     request_context: Optional[Dict[str, Any]] = None
+    trace_context: Optional[Dict[str, str]] = None
 
 
 class InvestigationOutput(BaseModel):
@@ -65,10 +70,16 @@ class LLMCallInput(BaseModel):
     tool_choice: Optional[str] = "auto"
     response_format: Optional[Dict[str, Any]] = None
     temperature: Optional[float] = None
+    trace_context: Optional[Dict[str, str]] = None
 
 
 class LLMCallOutput(BaseModel):
-    """Output of the ``call_llm`` activity."""
+    """Output of the ``call_llm`` activity.
+
+    ``messages`` is the (possibly compacted) message tape the activity used
+    for the LLM call. When HolmesGPT's compaction pass replaces the message
+    history, the workflow adopts the new tape for the next iteration.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -77,10 +88,20 @@ class LLMCallOutput(BaseModel):
     usage: Dict[str, Any] = Field(default_factory=dict)
     finish_reason: Optional[str] = None
     response_id: Optional[str] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+    compaction: Optional[Dict[str, Any]] = None
 
 
 class ToolCallInput(BaseModel):
-    """Input to the ``invoke_tool`` activity."""
+    """Input to the ``invoke_tool`` activity.
+
+    ``previous_tool_calls`` enables HolmesGPT's repeated-tool-call safeguard:
+    if this tool with these exact params has already run earlier in the
+    investigation, ``prevent_overly_repeated_tool_call`` short-circuits the
+    invocation with an error. Each entry has shape
+    ``{"tool_name": str, "result": {"params": dict}}`` to match
+    ``holmes.core.safeguards``'s expectation.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -92,6 +113,8 @@ class ToolCallInput(BaseModel):
     user_approved: bool = False
     session_approved_prefixes: List[str] = Field(default_factory=list)
     request_context: Optional[Dict[str, Any]] = None
+    previous_tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
+    trace_context: Optional[Dict[str, str]] = None
 
 
 class ToolCallOutput(BaseModel):
@@ -123,3 +146,4 @@ class RecordEventInput(BaseModel):
     seq: int
     event: str
     data: Dict[str, Any] = Field(default_factory=dict)
+    trace_context: Optional[Dict[str, str]] = None

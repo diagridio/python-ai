@@ -73,6 +73,15 @@ deepagents = [
     "diagrid[langgraph]",
     "langchain-openai>=1.2.1",
 ]
+# NOTE: holmesgpt is intentionally NOT in the ``all`` meta-extra below.
+# HolmesGPT pins many of its transitive deps tightly (fastapi <0.122,
+# uvicorn <0.41, cachetools <6, mcp ==1.25, httpx[socks] <0.28, …) which
+# fight with the looser constraints used by the other agent frameworks.
+# Install via ``pip install diagrid[holmesgpt]`` in a dedicated environment.
+holmesgpt = [
+    "holmesgpt>=0.26.0",
+    "diagrid[agent-core]",
+]
 all = [
     "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents]",
 ]
@@ -110,6 +119,10 @@ diagrid = ["py.typed"]
 
 [tool.uv]
 exclude-newer = "1 days"
+# Allow pre-release packages when required by a dependency. HolmesGPT pulls
+# in ``azure-mgmt-sql>=4.0.0b21`` (the 4.x line is still in beta on PyPI);
+# without this setting uv refuses to resolve the workspace lock.
+prerelease = "if-necessary-or-explicit"
 # crewai pins `opentelemetry-api~=1.34.0`, but dapr-agents requires
 # `>=1.35.0`. OpenTelemetry 1.x is backwards compatible, so override
 # crewai's tight pin so both resolve against the same line.
@@ -117,6 +130,59 @@ override-dependencies = [
     "opentelemetry-api>=1.35.0,<2.0.0",
     "opentelemetry-sdk>=1.35.0,<2.0.0",
     "opentelemetry-exporter-otlp-proto-http>=1.36.0,<2.0.0",
+    # holmesgpt pins fastapi ``^0.121.1`` and uvicorn ``^0.40`` which collide
+    # with diagrid[agent-core]'s ``>=0.129.0`` and ``>=0.41.0`` floors. Both
+    # deltas are backwards-compatible for the surface holmesgpt uses (only
+    # its HTTP server, which we don't re-expose).
+    "fastapi>=0.129.0",
+    "uvicorn>=0.41.0",
+    # holmesgpt pins cachetools ``^5.5.0`` while diagrid's dev group floors
+    # at ``>=6.1.0``.
+    "cachetools>=6.1.0,<8.0.0",
+    # holmesgpt pins ``mcp==1.25.0`` while dapr-agents==1.0.1 requires
+    # ``mcp>=1.26.0``. mcp 1.26 adds APIs over 1.25 and is wire-compatible
+    # for the surfaces both libraries use.
+    "mcp==1.26.0",
+]
+
+# HolmesGPT ships strict pins on fastapi, uvicorn, cachetools, mcp, and
+# httpx[socks] that conflict with the constraints used by the other agent
+# framework extras. Declare them as conflicting so uv resolves the
+# holmesgpt extra into a separate fork of the lock — keeping the main
+# resolution unaffected.
+conflicts = [
+    [
+        { extra = "holmesgpt" },
+        { extra = "langgraph" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "crewai" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "adk" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "strands" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "openai_agents" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "pydantic_ai" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "deepagents" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "all" },
+    ],
 ]
 
 [tool.uv.workspace]
@@ -130,6 +196,9 @@ members = [
     "diagrid/agent/adk/examples",
     "diagrid/agent/strands/examples",
     "diagrid/agent/deepagents/examples",
+    # HolmesGPT examples deliberately NOT a workspace member — see the note
+    # next to the ``holmesgpt`` extra above. The example scripts still run
+    # standalone via ``dapr run -- python diagrid/agent/holmesgpt/examples/...``.
 ]
 
 [tool.uv.sources]

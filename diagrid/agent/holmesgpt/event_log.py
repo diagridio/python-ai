@@ -54,6 +54,13 @@ def record(
 
     Idempotent on (instance_id, seq): replays write the same key with the
     same value, which is a no-op as far as readers are concerned.
+
+    **Failure semantics**: this function deliberately does NOT swallow
+    state-store errors. If the underlying ``save_state`` raises (Dapr
+    unreachable, store down, transient network blip, …), the exception
+    propagates through the calling activity and Dapr's retry policy
+    re-runs the activity. Because seq allocation is deterministic in the
+    workflow, retries write the same key with the same value — idempotent.
     """
     from dapr.clients import DaprClient
 
@@ -101,15 +108,14 @@ def read_after(
     """
     from dapr.clients import DaprClient
 
-    keys = [
-        _key(key_prefix, instance_id, since_seq + i + 1) for i in range(limit)
-    ]
+    keys = [_key(key_prefix, instance_id, since_seq + i + 1) for i in range(limit)]
     with DaprClient() as client:
         items = client.get_bulk_state(store_name=store_name, keys=keys)
 
     out: List[Dict[str, Any]] = []
     # Items may come back in arbitrary order; index by key to walk in seq order.
-    by_key: Dict[str, bytes] = {}
+    # The Dapr SDK exposes ``data`` as ``bytes | str`` depending on the build.
+    by_key: Dict[str, "bytes | str"] = {}
     for it in items.items:
         if it.data:
             by_key[it.key] = it.data

@@ -30,9 +30,9 @@ def _import_holmes() -> Any:
     try:
         import holmes  # noqa: F401  (sanity-check import)
         from holmes.config import Config
-        from holmes.core.tools import ToolsetTag
         from holmes.core.tools import (
             PrerequisiteCacheMode,
+            ToolsetTag,
         )
     except ImportError as e:
         raise ImportError(_HOLMES_INSTALL_HINT) from e
@@ -42,12 +42,21 @@ def _import_holmes() -> Any:
 
 @dataclass
 class HolmesRegistry:
-    """Cached HolmesGPT primitives for use inside Dapr Workflow activities."""
+    """Cached HolmesGPT primitives for use inside Dapr Workflow activities.
+
+    Holds both the assembled ``ToolCallingLLM`` (needed by HolmesGPT's
+    ``build_chat_messages`` to render the system prompt + user content) and
+    its component ``llm`` / ``tool_executor`` for direct use inside
+    activities. The ``skills`` catalog is loaded once at build time so the
+    runner can pass it into prompt construction without re-walking config.
+    """
 
     config: Any
+    ai: Any  # holmes.core.tool_calling_llm.ToolCallingLLM
     llm: Any
     tool_executor: Any
     openai_tools: List[dict]
+    skills: Any = None  # Optional[holmes.plugins.skills.SkillCatalog]
 
     @classmethod
     def build(
@@ -88,17 +97,26 @@ class HolmesRegistry:
             user_id=None,
         )
 
+        skills = None
+        try:
+            skills = cfg.get_skill_catalog()
+        except Exception as e:
+            logger.debug("Skill catalog unavailable: %s", e)
+
         logger.info(
-            "HolmesRegistry built: model=%s tools=%d",
+            "HolmesRegistry built: model=%s tools=%d skills=%s",
             getattr(ai.llm, "model", "<unknown>"),
             len(openai_tools),
+            "yes" if skills else "no",
         )
 
         return cls(
             config=cfg,
+            ai=ai,
             llm=ai.llm,
             tool_executor=ai.tool_executor,
             openai_tools=openai_tools,
+            skills=skills,
         )
 
 

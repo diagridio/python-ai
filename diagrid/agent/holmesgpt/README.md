@@ -10,9 +10,14 @@ Durable execution of [HolmesGPT](https://github.com/HolmesGPT/holmesgpt) investi
 ## Prerequisites
 
 ```bash
-pip install holmesgpt   # required (not declared as a dep here)
+pip install diagrid[holmesgpt]                # pulls holmesgpt + agent-core
 brew install dapr/tap/dapr-cli && dapr init   # one-time
 ```
+
+> **Note**: this extra is intentionally **not** part of `diagrid[all]`. HolmesGPT
+> ships strict pins on fastapi, uvicorn, cachetools, mcp, httpx, and other
+> transitive deps that conflict with the looser constraints used by the other
+> agent integrations. Install it in a dedicated environment.
 
 `dapr init` is enough — the integration writes its event tape to the **same** Dapr state store that the workflow runtime already uses for actor state (the default `statestore` component created by `dapr init`). No second component is required.
 
@@ -31,13 +36,18 @@ runner = DaprWorkflowHolmesRunner(
 )
 runner.start()
 
-result = runner.invoke(
-    messages=[{"role": "user", "content": "Why is checkout-api crashlooping?"}],
-)
+# Same call shape as `holmes ask "<question>"`, but every LLM iteration
+# and tool call runs as a durable Dapr workflow activity. The HolmesGPT
+# system prompt, toolset instructions, skills, and global instructions
+# are all rendered exactly the way the `holmes` CLI / HTTP server render
+# them — `ask()` delegates to `build_chat_messages`.
+result = runner.ask("Why is checkout-api crashlooping?")
 print(result["final"]["content"])
 
 runner.shutdown()
 ```
+
+For lower-level control (pre-rendered messages, no system prompt injection), use `runner.invoke(messages=...)` instead — same semantics, just skips HolmesGPT's prompt builder.
 
 Run the example with a sidecar:
 

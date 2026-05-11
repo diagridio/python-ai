@@ -63,7 +63,9 @@ def main() -> int:
     # 2) Read what's already on the tape so the resume stream picks up cleanly.
     pre_events = runner.read_events_after(workflow_id, since_seq=0, limit=64)
     last_seq = pre_events[-1]["seq"] if pre_events else 0
-    print(f"PHASE_B: tape has {len(pre_events)} events; last_seq={last_seq}", flush=True)
+    print(
+        f"PHASE_B: tape has {len(pre_events)} events; last_seq={last_seq}", flush=True
+    )
 
     # 3) Approve the parked tool call. This is what makes durability real:
     #    the workflow has been parked across a process+sidecar restart and

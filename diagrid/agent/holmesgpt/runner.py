@@ -25,6 +25,7 @@ from . import event_log
 from .models import InvestigationInput, InvestigationOutput
 from .registry import HolmesRegistry, set_registry
 from .workflow import (
+    _current_trace_carrier,
     investigation_workflow,
     register_workflow_components,
 )
@@ -166,6 +167,135 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
     # Public execution API
     # ------------------------------------------------------------------
 
+    def ask(
+        self,
+        question: str,
+        *,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        additional_system_prompt: Optional[str] = None,
+        skills: Optional[Any] = None,
+        images: Optional[List[Any]] = None,
+        prompt_component_overrides: Optional[Dict[str, bool]] = None,
+        global_instructions: Optional[Any] = None,
+        max_steps: Optional[int] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+        response_format: Optional[Dict[str, Any]] = None,
+        temperature: Optional[float] = None,
+        workflow_id: Optional[str] = None,
+        poll_interval: float = 0.5,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Run an investigation the way ``holmes ask`` would, durably.
+
+        Renders HolmesGPT's full system prompt (toolset instructions, skills
+        catalog, global instructions, behaviour overrides, etc.) via
+        :func:`holmes.core.conversations.build_chat_messages`, then schedules
+        the resulting message list as a Dapr workflow. Returns the final
+        :class:`InvestigationOutput` dict.
+
+        Args mirror HolmesGPT's HTTP server's ``/api/chat`` request:
+
+        - ``conversation_history``: prior messages in OpenAI format; system
+          message will be added/refreshed by HolmesGPT.
+        - ``additional_system_prompt``: extra instructions appended to the
+          rendered system prompt.
+        - ``skills``: a :class:`SkillCatalog`. Defaults to whatever
+          ``cfg.get_skill_catalog()`` produced at runner build time.
+        - ``prompt_component_overrides``: HolmesGPT behaviour-control toggles
+          (the ``behavior_controls`` field from ``/api/chat``).
+
+        All other args are forwarded to :meth:`invoke`.
+        """
+        messages = self._build_messages(
+            question=question,
+            conversation_history=conversation_history,
+            additional_system_prompt=additional_system_prompt,
+            skills=skills,
+            images=images,
+            prompt_component_overrides=prompt_component_overrides,
+            global_instructions=global_instructions,
+        )
+        return self.invoke(
+            messages=messages,
+            max_steps=max_steps,
+            request_context=request_context,
+            response_format=response_format,
+            temperature=temperature,
+            workflow_id=workflow_id,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        )
+
+    async def ask_async(
+        self,
+        question: str,
+        *,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        additional_system_prompt: Optional[str] = None,
+        skills: Optional[Any] = None,
+        images: Optional[List[Any]] = None,
+        prompt_component_overrides: Optional[Dict[str, bool]] = None,
+        global_instructions: Optional[Any] = None,
+        max_steps: Optional[int] = None,
+        request_context: Optional[Dict[str, Any]] = None,
+        response_format: Optional[Dict[str, Any]] = None,
+        temperature: Optional[float] = None,
+        workflow_id: Optional[str] = None,
+        poll_interval: float = 0.3,
+        last_event_seq: int = 0,
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """Streaming counterpart to :meth:`ask`. Same prompt rendering, yields
+        events from the polling tape."""
+        messages = self._build_messages(
+            question=question,
+            conversation_history=conversation_history,
+            additional_system_prompt=additional_system_prompt,
+            skills=skills,
+            images=images,
+            prompt_component_overrides=prompt_component_overrides,
+            global_instructions=global_instructions,
+        )
+        async for ev in self.run_async(
+            messages=messages,
+            max_steps=max_steps,
+            request_context=request_context,
+            response_format=response_format,
+            temperature=temperature,
+            workflow_id=workflow_id,
+            poll_interval=poll_interval,
+            last_event_seq=last_event_seq,
+        ):
+            yield ev
+
+    def _build_messages(
+        self,
+        *,
+        question: str,
+        conversation_history: Optional[List[Dict[str, Any]]],
+        additional_system_prompt: Optional[str],
+        skills: Optional[Any],
+        images: Optional[List[Any]],
+        prompt_component_overrides: Optional[Dict[str, bool]],
+        global_instructions: Optional[Any],
+    ) -> List[Dict[str, Any]]:
+        """Delegate prompt construction to HolmesGPT's ``build_chat_messages``."""
+        if not self._started or self._registry is None:
+            raise RuntimeError("Runner not started. Call start() first.")
+
+        from holmes.core.conversations import build_chat_messages
+
+        return build_chat_messages(
+            ask=question,
+            conversation_history=conversation_history,
+            ai=self._registry.ai,
+            config=self._registry.config,
+            global_instructions=global_instructions,
+            additional_system_prompt=additional_system_prompt,
+            skills=skills if skills is not None else self._registry.skills,
+            images=images,
+            prompt_component_overrides=prompt_component_overrides,
+        )
+
     def invoke(
         self,
         messages: List[Dict[str, Any]],
@@ -195,6 +325,7 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
             response_format=response_format,
             temperature=temperature,
             request_context=request_context,
+            trace_context=_current_trace_carrier(),
         )
 
         self._workflow_client.schedule_new_workflow(
@@ -208,9 +339,7 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
         while True:
             time.sleep(poll_interval)
             if deadline and time.time() > deadline:
-                raise TimeoutError(
-                    f"Workflow {workflow_id} timed out after {timeout}s"
-                )
+                raise TimeoutError(f"Workflow {workflow_id} timed out after {timeout}s")
 
             state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
             if state is None:
@@ -225,7 +354,9 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
                 return {}
             if state.runtime_status == WorkflowStatus.FAILED:
                 raise RuntimeError(
-                    getattr(state.failure_details, "message", str(state.failure_details))
+                    getattr(
+                        state.failure_details, "message", str(state.failure_details)
+                    )
                 )
             if state.runtime_status == WorkflowStatus.TERMINATED:
                 raise RuntimeError(f"Workflow {workflow_id} was terminated")
@@ -256,6 +387,7 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
             response_format=response_format,
             temperature=temperature,
             request_context=request_context,
+            trace_context=_current_trace_carrier(),
         )
 
         self._workflow_client.schedule_new_workflow(
@@ -448,7 +580,18 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
                         status_code=400,
                         detail="Provide either 'messages' or 'question' in the request body.",
                     )
-                messages = [{"role": "user", "content": question}]
+                # Default path: render HolmesGPT's full system prompt via
+                # build_chat_messages so this endpoint behaves like a durable
+                # version of ``holmes ask``.
+                messages = runner._build_messages(
+                    question=question,
+                    conversation_history=req.get("conversation_history"),
+                    additional_system_prompt=req.get("additional_system_prompt"),
+                    skills=req.get("skills"),
+                    images=req.get("images"),
+                    prompt_component_overrides=req.get("behavior_controls"),
+                    global_instructions=req.get("global_instructions"),
+                )
 
             workflow_id = req.get("workflow_id") or f"holmes-{uuid.uuid4().hex[:12]}"
             wf_input = InvestigationInput(
@@ -458,6 +601,7 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
                 response_format=req.get("response_format"),
                 temperature=req.get("temperature"),
                 request_context=req.get("request_context"),
+                trace_context=_current_trace_carrier(),
             )
             assert runner._workflow_client is not None
             runner._workflow_client.schedule_new_workflow(
@@ -512,9 +656,7 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
         async def approve_endpoint(workflow_id: str, body: dict) -> dict:  # type: ignore[type-arg]
             tool_call_id = body.get("tool_call_id")
             if not tool_call_id:
-                raise HTTPException(
-                    status_code=400, detail="tool_call_id is required"
-                )
+                raise HTTPException(status_code=400, detail="tool_call_id is required")
             runner.approve(
                 workflow_id,
                 tool_call_id,
@@ -529,9 +671,7 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
             tool_call_id = body.get("tool_call_id")
             frontend_result = body.get("frontend_result", "")
             if not tool_call_id:
-                raise HTTPException(
-                    status_code=400, detail="tool_call_id is required"
-                )
+                raise HTTPException(status_code=400, detail="tool_call_id is required")
             runner.submit_frontend_result(workflow_id, tool_call_id, frontend_result)
             return {"workflow_id": workflow_id, "status": "resumed"}
 
@@ -567,7 +707,10 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
         session_id: str,  # type: ignore[type-arg]
     ) -> AsyncIterator[Dict[str, Any]]:  # pragma: no cover
         messages = request.get("messages") or [
-            {"role": "user", "content": request.get("question") or request.get("task") or ""}
+            {
+                "role": "user",
+                "content": request.get("question") or request.get("task") or "",
+            }
         ]
         async for ev in self.run_async(
             messages=messages,

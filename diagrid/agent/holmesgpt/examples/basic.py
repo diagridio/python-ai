@@ -22,13 +22,11 @@ def main() -> None:
     )
     runner.start()
     try:
-        result = runner.invoke(
-            messages=[
-                {
-                    "role": "user",
-                    "content": "List the pods that are not Running in the cluster and explain why.",
-                }
-            ],
+        # ``ask`` is the durable equivalent of ``holmes ask`` — HolmesGPT's
+        # full system prompt (toolset instructions, skills, runbooks, etc.)
+        # is rendered locally, then the agent loop runs as a Dapr workflow.
+        result = runner.ask(
+            "List the pods that are not Running in the cluster and explain why."
         )
         final = result.get("final") or {}
         print("=== Final answer ===")
