@@ -542,3 +542,156 @@ def test_start_or_wait_for_docker_raises_if_still_not_running() -> None:
     ):
         with pytest.raises(click.ClickException, match="Docker daemon is not running"):
             deps._start_or_wait_for_docker()
+
+
+# ---------------------------------------------------------------------------
+# Download URL construction (no network, mocks urlretrieve)
+# ---------------------------------------------------------------------------
+#
+# These tests pin the asset names returned by upstream release pages so that
+# a future change in this code immediately tells you which URL changed,
+# instead of waiting for `tests/cli/utils/test_deps_functional.py` to fail
+# nightly on a 404.
+
+
+_KIND_TAG = "v0.30.0"
+_HELM_TAG = "v3.20.0"
+_KUBECTL_VERSION = "v1.32.0"
+
+
+def _capture_download_url(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Patch urlretrieve and capture every URL it is called with."""
+    urls: list[str] = []
+
+    def fake_urlretrieve(url: str, dest: object) -> tuple[object, object]:
+        urls.append(url)
+        # Touch the destination so callers that chmod/inspect it don't crash.
+        Path(str(dest)).write_bytes(b"")
+        return dest, None
+
+    monkeypatch.setattr("urllib.request.urlretrieve", fake_urlretrieve)
+    return urls
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "arch", "expected_asset", "expected_dest_name"),
+    [
+        ("linux", "amd64", "kind-linux-amd64", "kind"),
+        ("linux", "arm64", "kind-linux-arm64", "kind"),
+        ("darwin", "amd64", "kind-darwin-amd64", "kind"),
+        ("darwin", "arm64", "kind-darwin-arm64", "kind"),
+        # Regression: kind's Windows asset has no `.exe` suffix on the
+        # download URL (was the cause of nightly integration.yaml 404s),
+        # but the local destination must still be `kind.exe` so Windows
+        # can execute it.
+        ("win32", "amd64", "kind-windows-amd64", "kind.exe"),
+    ],
+)
+def test_download_kind_url(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    platform_name: str,
+    arch: str,
+    expected_asset: str,
+    expected_dest_name: str,
+) -> None:
+    monkeypatch.setattr(sys, "platform", platform_name)
+    monkeypatch.setattr(
+        "diagrid.cli.utils.deps._github_latest_tag",
+        lambda repo: _KIND_TAG,
+    )
+    urls = _capture_download_url(monkeypatch)
+
+    deps._download_kind(tmp_path, arch)
+
+    assert urls == [
+        f"https://github.com/kubernetes-sigs/kind/releases/download/{_KIND_TAG}/{expected_asset}"
+    ]
+    assert (tmp_path / expected_dest_name).exists()
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "arch", "expected_segment", "expected_dest_name"),
+    [
+        ("linux", "amd64", "linux/amd64/kubectl", "kubectl"),
+        ("linux", "arm64", "linux/arm64/kubectl", "kubectl"),
+        ("darwin", "amd64", "darwin/amd64/kubectl", "kubectl"),
+        ("darwin", "arm64", "darwin/arm64/kubectl", "kubectl"),
+        ("win32", "amd64", "windows/amd64/kubectl.exe", "kubectl.exe"),
+    ],
+)
+def test_download_kubectl_url(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    platform_name: str,
+    arch: str,
+    expected_segment: str,
+    expected_dest_name: str,
+) -> None:
+    monkeypatch.setattr(sys, "platform", platform_name)
+
+    fake_resp = MagicMock()
+    fake_resp.read.return_value = _KUBECTL_VERSION.encode()
+    fake_resp.__enter__ = lambda s: s
+    fake_resp.__exit__ = lambda *a: False
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **kw: fake_resp)
+    urls = _capture_download_url(monkeypatch)
+
+    deps._download_kubectl(tmp_path, arch)
+
+    assert urls == [
+        f"https://dl.k8s.io/release/{_KUBECTL_VERSION}/bin/{expected_segment}"
+    ]
+    assert (tmp_path / expected_dest_name).exists()
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "arch", "expected_archive"),
+    [
+        ("linux", "amd64", f"helm-{_HELM_TAG}-linux-amd64.tar.gz"),
+        ("linux", "arm64", f"helm-{_HELM_TAG}-linux-arm64.tar.gz"),
+        ("darwin", "amd64", f"helm-{_HELM_TAG}-darwin-amd64.tar.gz"),
+        ("darwin", "arm64", f"helm-{_HELM_TAG}-darwin-arm64.tar.gz"),
+        ("win32", "amd64", f"helm-{_HELM_TAG}-windows-amd64.zip"),
+    ],
+)
+def test_download_helm_url(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    platform_name: str,
+    arch: str,
+    expected_archive: str,
+) -> None:
+    """Pin the Helm download URL pattern across OS/arch combinations.
+
+    Helm extracts an archive after download — we don't need to verify the
+    archive contents here, just that the URL is what we expect. We mock
+    the extraction so the test stays fast and offline.
+    """
+    monkeypatch.setattr(sys, "platform", platform_name)
+    monkeypatch.setattr(
+        "diagrid.cli.utils.deps._github_latest_tag",
+        lambda repo: _HELM_TAG,
+    )
+    urls = _capture_download_url(monkeypatch)
+    # Skip archive extraction — we only care about the URL here.
+    monkeypatch.setattr(
+        "zipfile.ZipFile",
+        lambda *a, **kw: MagicMock(
+            __enter__=lambda s: s, __exit__=lambda *a: False, namelist=lambda: []
+        ),
+    )
+    monkeypatch.setattr(
+        "tarfile.open",
+        lambda *a, **kw: MagicMock(
+            __enter__=lambda s: s, __exit__=lambda *a: False, getmembers=lambda: []
+        ),
+    )
+    # Helm copies an extracted binary to install_dir; tolerate it not finding one.
+    try:
+        deps._download_helm(tmp_path, arch)
+    except (FileNotFoundError, StopIteration, KeyError, IndexError):
+        # Extraction returns nothing in the mock; the URL was already captured.
+        pass
+
+    assert urls == [f"https://get.helm.sh/{expected_archive}"]

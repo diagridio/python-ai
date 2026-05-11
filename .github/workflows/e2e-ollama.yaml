@@ -24,7 +24,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.0.0
+        uses: astral-sh/setup-uv@v8.1.0
 
       - name: Install dependencies
         run: uv sync --all-packages --extra all --group test
@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.ollama
-          key: ollama-qwen3-0.6b-${{ runner.os }}
+          key: ollama-qwen3-0.6b-v2-${{ runner.os }}
 
       - name: Install Ollama
         run: curl -fsSL https://ollama.com/install.sh | sh
@@ -74,4 +74,28 @@ jobs:
           OLLAMA_MODEL: qwen3:0.6b
           OPENAI_API_KEY: ollama
           OPENAI_BASE_URL: http://localhost:11434/v1
-        run: uv run pytest tests/e2e/ -m integration -v
+        run: |
+          uv run pytest tests/e2e/ -m integration -v \
+            --tb=short \
+            -p no:cacheprovider \
+            --maxfail=3
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-ollama-failure-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/e2e_*
+            /tmp/dapr-*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Stop Ollama and tear down Dapr state so the runner is left clean
+          # for the next job (and so a retry of this job starts from zero).
+          pkill -f "ollama serve" || true
+          dapr uninstall --all 2>/dev/null || true
+          docker ps -aq --filter "name=dapr_" | xargs -r docker rm -f 2>/dev/null || true

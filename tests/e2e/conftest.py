@@ -1,5 +1,6 @@
 """E2E test configuration and fixtures."""
 
+import glob
 import logging
 import os
 import shutil
@@ -16,6 +17,38 @@ from dapr.conf import settings as _dapr_settings
 import pytest
 
 logger = logging.getLogger(__name__)
+
+
+# Glob patterns for transient files written by test_crash_recovery and friends.
+# A previous failed run can leave these in /tmp; loading a stale file from a
+# different uuid prefix is harmless but loading one from the SAME uuid (rare
+# but possible if the OS reuses entropy across short-lived processes) yields
+# corrupt JSON. Cleaning them at session start eliminates that whole class of
+# false positives.
+_E2E_TEMP_GLOBS = (
+    "/tmp/e2e_*.json",
+    "/tmp/e2e_*.json.tmp",
+    "/tmp/e2e_*_script.py",
+    "/tmp/e2e_*.py",
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clean_e2e_tmp_files() -> Generator[None, None, None]:
+    """Remove leftover /tmp/e2e_* files before and after the suite runs."""
+
+    def _purge() -> None:
+        for pattern in _E2E_TEMP_GLOBS:
+            for path in glob.glob(pattern):
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+    _purge()
+    yield
+    _purge()
+
 
 _DAPR_GRPC_PORT = 50001
 _DAPR_HTTP_PORT = 3500
