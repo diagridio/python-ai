@@ -71,3 +71,37 @@ jobs:
       run: uv run mypy --config-file mypy.ini
     - name: Run Tests
       run: uv run pytest tests -m "not integration"
+  # ----------------------------------------------------------------------
+  # HolmesGPT has its own dependency fork (see `[tool.uv].conflicts` in
+  # pyproject.toml) — its pins on fastapi/uvicorn/mcp/httpx etc. don't
+  # coexist with the `all` extra. The `build` job above silently skips
+  # `tests/agent/holmesgpt/` because `holmes` isn't installed; this job
+  # runs the same suite against the holmesgpt-extras resolution.
+  # ----------------------------------------------------------------------
+  holmesgpt:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python_ver: ["3.11", "3.13"]
+    steps:
+    - uses: actions/checkout@v6
+    - name: Set up Python ${{ matrix.python_ver }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python_ver }}
+    - name: Install uv
+      uses: astral-sh/setup-uv@v8.1.0
+      with:
+        version: "latest"
+    - name: Install dependencies (holmesgpt extra)
+      # NOTE: no ``--all-packages`` — the workspace example members declare
+      # ``diagrid[langgraph]`` / ``diagrid[adk]`` etc., which collide with
+      # ``diagrid[holmesgpt]`` under ``[tool.uv].conflicts``. Syncing just
+      # the root package with the holmesgpt extra avoids the collision.
+      run: uv sync --extra holmesgpt --group test
+    - name: Check Typing (holmesgpt only)
+      run: uv run mypy --config-file mypy.ini diagrid/agent/holmesgpt
+    - name: Run HolmesGPT Tests
+      run: uv run pytest tests/agent/holmesgpt -m "not integration"
