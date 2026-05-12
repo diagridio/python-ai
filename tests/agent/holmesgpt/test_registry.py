@@ -36,37 +36,37 @@ def test_get_registry_raises_when_not_initialized():
         registry_module._REGISTRY = original
 
 
-def _build_fake_holmes(
+def _fake_config(
     *,
-    cfg_attrs: dict,
+    model=None,
+    should_try_robusta_ai=True,
     tools_returned=None,
     skill_catalog=None,
     skill_catalog_raises=False,
 ):
-    """Construct fake holmes primitives and a stub for ``_import_holmes``.
+    """Build a fake holmes.config.Config drop-in.
 
-    Returns ``(FakeConfig, captured_state)`` where ``captured_state`` is a
-    dict the test can inspect after ``build()`` runs (e.g. to confirm flags
-    were flipped).
+    Tests patch ``registry.Config`` to a class whose ``load_from_env`` returns
+    this fake. The fake exposes the subset of ``Config`` the registry touches:
+    ``model``, ``should_try_robusta_ai``, ``get_skill_catalog``, and
+    ``create_toolcalling_llm``.
     """
 
-    captured = {"create_toolcalling_llm_kwargs": None, "instance": None}
+    captured = {"create_toolcalling_llm_kwargs": None}
 
     class FakeConfig:
-        model: str = cfg_attrs.get("model")  # type: ignore[assignment]
-        should_try_robusta_ai: bool = cfg_attrs.get("should_try_robusta_ai", True)
+        def __init__(self):
+            self.model = model
+            self.should_try_robusta_ai = should_try_robusta_ai
+            captured["instance"] = self
 
         @classmethod
         def load_from_env(cls):
-            inst = cls()
-            for k, v in cfg_attrs.items():
-                setattr(inst, k, v)
-            captured["instance"] = inst
-            return inst
+            return cls()
 
         @classmethod
         def load_from_file(cls, _path):
-            return cls.load_from_env()
+            return cls()
 
         def get_skill_catalog(self):
             if skill_catalog_raises:
@@ -82,25 +82,35 @@ def _build_fake_holmes(
                 ),
             )
 
-    class FakeTag(str):
-        def __new__(cls, v):
-            return str.__new__(cls, v)
+    return FakeConfig, captured
 
-    FakePrereqMode = SimpleNamespace(DISABLED="disabled")
-    return FakeConfig, FakeTag, FakePrereqMode, captured
+
+class _FakeTag(str):
+    """``str`` subclass standing in for ``holmes.core.tools.ToolsetTag``."""
+
+    def __new__(cls, v):
+        return str.__new__(cls, v)
+
+
+_FAKE_PREREQ_MODE = SimpleNamespace(DISABLED="disabled")
+
+
+def _patch_holmes(FakeConfig):
+    """Patch the registry module's holmes-imported names for one test."""
+    return mock.patch.multiple(
+        registry_module,
+        Config=FakeConfig,
+        ToolsetTag=_FakeTag,
+        PrerequisiteCacheMode=_FAKE_PREREQ_MODE,
+    )
 
 
 def test_build_disables_robusta_ai_when_model_is_explicit():
     """If the user passed a model, the integration must disable Robusta AI."""
-    FakeConfig, FakeTag, FakePrereq, captured = _build_fake_holmes(
-        cfg_attrs={"model": None, "should_try_robusta_ai": True},
-        tools_returned=[{"name": "bash"}],
+    FakeConfig, captured = _fake_config(
+        should_try_robusta_ai=True, tools_returned=[{"name": "bash"}]
     )
-    with mock.patch.object(
-        registry_module,
-        "_import_holmes",
-        return_value=(FakeConfig, FakeTag, FakePrereq),
-    ):
+    with _patch_holmes(FakeConfig):
         reg = HolmesRegistry.build(model="anthropic/foo")
 
     inst = captured["instance"]
@@ -111,45 +121,23 @@ def test_build_disables_robusta_ai_when_model_is_explicit():
 
 
 def test_build_loads_skill_catalog_when_available():
-    FakeConfig, FakeTag, FakePrereq, _ = _build_fake_holmes(
-        cfg_attrs={"model": "anthropic/foo", "should_try_robusta_ai": False},
+    FakeConfig, _ = _fake_config(
+        model="anthropic/foo",
+        should_try_robusta_ai=False,
         skill_catalog="my-skill-catalog",
     )
-    with mock.patch.object(
-        registry_module,
-        "_import_holmes",
-        return_value=(FakeConfig, FakeTag, FakePrereq),
-    ):
+    with _patch_holmes(FakeConfig):
         reg = HolmesRegistry.build(model="anthropic/foo")
     assert reg.skills == "my-skill-catalog"
 
 
 def test_build_swallows_skill_catalog_errors():
     """If skill catalog loading raises, the registry should still build."""
-    FakeConfig, FakeTag, FakePrereq, _ = _build_fake_holmes(
-        cfg_attrs={"model": "anthropic/foo", "should_try_robusta_ai": False},
+    FakeConfig, _ = _fake_config(
+        model="anthropic/foo",
+        should_try_robusta_ai=False,
         skill_catalog_raises=True,
     )
-    with mock.patch.object(
-        registry_module,
-        "_import_holmes",
-        return_value=(FakeConfig, FakeTag, FakePrereq),
-    ):
+    with _patch_holmes(FakeConfig):
         reg = HolmesRegistry.build(model="anthropic/foo")
     assert reg.skills is None
-
-
-def test_import_holmes_clean_error_when_missing():
-    """If ``holmes`` is not importable, surface an actionable error."""
-    import builtins
-
-    real_import = builtins.__import__
-
-    def _explode(name, *args, **kwargs):
-        if name == "holmes" or name.startswith("holmes."):
-            raise ImportError("No module named 'holmes'")
-        return real_import(name, *args, **kwargs)
-
-    with mock.patch.object(builtins, "__import__", side_effect=_explode):
-        with pytest.raises(ImportError, match="HolmesGPT is required"):
-            registry_module._import_holmes()

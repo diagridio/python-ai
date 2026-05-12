@@ -28,12 +28,12 @@ def _make_fake_client(saved: dict, bulk_get_handler=None):
     return fake
 
 
-def test_record_writes_to_state_store_with_ttl():
+def test_save_record_writes_to_state_store_with_ttl():
     saved: dict[str, tuple] = {}
     fake = _make_fake_client(saved)
 
-    with mock.patch("dapr.clients.DaprClient", return_value=fake):
-        event_log.record(
+    with mock.patch("diagrid.agent.holmesgpt.event_log.DaprClient", return_value=fake):
+        event_log.save_record(
             instance_id="wf-1",
             seq=3,
             event="iteration_started",
@@ -53,12 +53,12 @@ def test_record_writes_to_state_store_with_ttl():
     assert meta == {"ttlInSeconds": "120"}
 
 
-def test_record_omits_ttl_when_disabled():
+def test_save_record_omits_ttl_when_disabled():
     saved: dict[str, tuple] = {}
     fake = _make_fake_client(saved)
 
-    with mock.patch("dapr.clients.DaprClient", return_value=fake):
-        event_log.record(
+    with mock.patch("diagrid.agent.holmesgpt.event_log.DaprClient", return_value=fake):
+        event_log.save_record(
             instance_id="wf-1",
             seq=1,
             event="x",
@@ -92,7 +92,7 @@ def test_read_after_returns_dense_prefix_and_stops_at_first_gap():
         return SimpleNamespace(items=items)
 
     fake = _make_fake_client({}, bulk_get_handler=_bulk_get)
-    with mock.patch("dapr.clients.DaprClient", return_value=fake):
+    with mock.patch("diagrid.agent.holmesgpt.event_log.DaprClient", return_value=fake):
         events = event_log.read_after(
             instance_id=instance_id,
             since_seq=0,
@@ -113,7 +113,7 @@ def test_read_after_respects_since_seq():
         return SimpleNamespace(items=[SimpleNamespace(key=k, data=b"") for k in keys])
 
     fake = _make_fake_client({}, bulk_get_handler=_bulk_get)
-    with mock.patch("dapr.clients.DaprClient", return_value=fake):
+    with mock.patch("diagrid.agent.holmesgpt.event_log.DaprClient", return_value=fake):
         event_log.read_after(
             instance_id="wf-1",
             since_seq=5,
@@ -141,7 +141,7 @@ def test_read_after_skips_malformed_entries():
     fake = _make_fake_client(
         {}, bulk_get_handler=lambda **_: SimpleNamespace(items=items)
     )
-    with mock.patch("dapr.clients.DaprClient", return_value=fake):
+    with mock.patch("diagrid.agent.holmesgpt.event_log.DaprClient", return_value=fake):
         events = event_log.read_after(
             instance_id="wf-1",
             since_seq=0,

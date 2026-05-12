@@ -47,8 +47,24 @@ from dapr.ext.workflow import (
     WorkflowActivityContext,
     when_all,
 )
+from holmes.core.models import ToolCallResult
+from holmes.core.safeguards import prevent_overly_repeated_tool_call
+from holmes.core.tools import (
+    StructuredToolResult,
+    StructuredToolResultStatus,
+    ToolInvokeContext,
+)
+from holmes.core.tools_utils.tool_context_window_limiter import (
+    spill_oversized_tool_result,
+)
+from holmes.core.truncation.input_context_window_limiter import (
+    CompactionInsufficientError,
+    compact_if_necessary,
+)
+from opentelemetry import context as otel_context
+from opentelemetry import propagate, trace
 
-from .event_log import record as record_event_to_store
+from .event_log import save_record
 from .models import (
     InvestigationInput,
     InvestigationOutput,
@@ -58,7 +74,7 @@ from .models import (
     ToolCallInput,
     ToolCallOutput,
 )
-from .registry import get_registry
+from .registry import HolmesRegistry, get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -88,17 +104,11 @@ EVENTS_PER_RECORD = 1  # approval_required, ai_answer_end, error, ...
 def _attach_trace_context(carrier: Optional[Dict[str, str]]):
     """Re-attach a propagator carrier as the current OTel context.
 
-    No-op when OpenTelemetry isn't installed or no carrier is provided.
-    The caller is responsible for creating spans within the ``with`` block;
-    they'll inherit the parent from the carrier.
+    No-op when no carrier is provided. The caller is responsible for
+    creating spans within the ``with`` block; they'll inherit the parent
+    from the carrier.
     """
     if not carrier:
-        yield None
-        return
-    try:
-        from opentelemetry import context as otel_context
-        from opentelemetry import propagate
-    except ImportError:
         yield None
         return
 
@@ -117,10 +127,6 @@ def _attach_trace_context(carrier: Optional[Dict[str, str]]):
 
 def _current_trace_carrier() -> Optional[Dict[str, str]]:
     """Inject the current OTel context into a carrier dict (or ``None``)."""
-    try:
-        from opentelemetry import propagate, trace
-    except ImportError:
-        return None
     span = trace.get_current_span()
     if span is None or not span.get_span_context().is_valid:
         return None
@@ -140,7 +146,7 @@ def record_event_activity(
 ) -> Dict[str, Any]:
     inp = RecordEventInput.model_validate(payload)
     with _attach_trace_context(inp.trace_context):
-        record_event_to_store(
+        save_record(
             instance_id=inp.instance_id,
             seq=inp.seq,
             event=inp.event,
@@ -157,7 +163,9 @@ def record_event_activity(
 
 
 def _run_compaction(
-    reg, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]]
+    reg: HolmesRegistry,
+    messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]],
 ):
     """Call ``compact_if_necessary``. Returns ``(messages, status_dict)``.
 
@@ -169,14 +177,6 @@ def _run_compaction(
     retry the activity, which won't help (compaction is deterministic on
     inputs).
     """
-    try:
-        from holmes.core.truncation.input_context_window_limiter import (
-            CompactionInsufficientError,
-            compact_if_necessary,
-        )
-    except ImportError:
-        return messages, {"compacted": False, "reason": "compaction_unavailable"}
-
     try:
         result = compact_if_necessary(llm=reg.llm, messages=messages, tools=tools)
     except CompactionInsufficientError as e:
@@ -205,7 +205,7 @@ def call_llm_activity(
     reg = get_registry()
 
     with _attach_trace_context(inp.trace_context):
-        record_event_to_store(
+        save_record(
             instance_id=inp.instance_id,
             seq=inp.seq_base,
             event="iteration_started",
@@ -216,7 +216,7 @@ def call_llm_activity(
             reg, list(inp.messages), inp.tools
         )
 
-        record_event_to_store(
+        save_record(
             instance_id=inp.instance_id,
             seq=inp.seq_base + 1,
             event="conversation_history_compaction_status",
@@ -268,7 +268,7 @@ def call_llm_activity(
             compaction=compaction_status,
         )
 
-        record_event_to_store(
+        save_record(
             instance_id=inp.instance_id,
             seq=inp.seq_base + 2,
             event="iteration_completed",
@@ -290,23 +290,20 @@ def call_llm_activity(
 # ---------------------------------------------------------------------------
 
 
-def _spill_if_needed(reg, tool_call_id: str, tool_name: str, result: Any) -> Any:
+def _spill_if_needed(
+    reg: HolmesRegistry,
+    tool_call_id: str,
+    tool_name: str,
+    result: StructuredToolResult,
+) -> StructuredToolResult:
     """Run HolmesGPT's oversized-result spill. Returns the (possibly mutated)
-    ``StructuredToolResult``. No-op if spill is unavailable.
+    ``StructuredToolResult``.
 
     ``spill_oversized_tool_result`` mutates ``tool_call_result.result``
     in-place when the message is too large, replacing the data with a
     pointer to a saved file. We wrap our existing result in a
     ``ToolCallResult`` so the helper can do its work.
     """
-    try:
-        from holmes.core.models import ToolCallResult
-        from holmes.core.tools_utils.tool_context_window_limiter import (
-            spill_oversized_tool_result,
-        )
-    except ImportError:
-        return result
-
     tcr = ToolCallResult(
         tool_call_id=tool_call_id,
         tool_name=tool_name,
@@ -329,17 +326,11 @@ def _spill_if_needed(reg, tool_call_id: str, tool_name: str, result: Any) -> Any
 def invoke_tool_activity(
     ctx: WorkflowActivityContext, payload: Dict[str, Any]
 ) -> Dict[str, Any]:
-    from holmes.core.tools import (
-        StructuredToolResult,
-        StructuredToolResultStatus,
-        ToolInvokeContext,
-    )
-
     inp = ToolCallInput.model_validate(payload)
     reg = get_registry()
 
     with _attach_trace_context(inp.trace_context):
-        record_event_to_store(
+        save_record(
             instance_id=inp.instance_id,
             seq=inp.seq_base,
             event="start_tool_calling",
@@ -350,73 +341,89 @@ def invoke_tool_activity(
             },
         )
 
-        result = _check_repeated_call_safeguard(
+        # Repeated-call safeguard short-circuits before any tool dispatch.
+        safeguard_result = _check_repeated_call_safeguard(
             inp.tool_name, inp.arguments, inp.previous_tool_calls, inp.user_approved
         )
+        if safeguard_result is not None:
+            return _emit_tool_result(inp, safeguard_result)
 
-        if result is None:
-            tool = reg.tool_executor.get_tool_by_name(inp.tool_name, user_id=None)
-            if tool is None:
-                result = StructuredToolResult(
+        tool = reg.tool_executor.get_tool_by_name(inp.tool_name, user_id=None)
+        if tool is None:
+            return _emit_tool_result(
+                inp,
+                StructuredToolResult(
                     status=StructuredToolResultStatus.ERROR,
                     error=f"Unknown tool: {inp.tool_name}",
                     params=inp.arguments,
-                )
-            else:
-                invoke_ctx = ToolInvokeContext(
-                    llm=reg.llm,
-                    max_token_count=reg.llm.get_max_token_count_for_single_tool(),
-                    tool_call_id=inp.tool_call_id,
-                    tool_name=inp.tool_name,
-                    user_approved=inp.user_approved,
-                    session_approved_prefixes=inp.session_approved_prefixes,
-                    request_context=inp.request_context,
-                )
-                try:
-                    result = tool.invoke(params=inp.arguments, context=invoke_ctx)
-                except Exception as e:  # noqa: BLE001 — propagate as tool error, not workflow failure
-                    logger.exception("Tool %s raised an exception", inp.tool_name)
-                    result = StructuredToolResult(
-                        status=StructuredToolResultStatus.ERROR,
-                        error=f"{type(e).__name__}: {e}",
-                        params=inp.arguments,
-                    )
+                ),
+            )
 
-        # Spill oversized successful results to disk so they don't blow the
-        # message budget on the next LLM call.
-        result = _spill_if_needed(reg, inp.tool_call_id, inp.tool_name, result)
-
-        status_val = (
-            result.status.value
-            if hasattr(result.status, "value")
-            else str(result.status)
-        )
-
-        out = ToolCallOutput(
+        invoke_ctx = ToolInvokeContext(
+            llm=reg.llm,
+            max_token_count=reg.llm.get_max_token_count_for_single_tool(),
             tool_call_id=inp.tool_call_id,
             tool_name=inp.tool_name,
-            status=status_val,
-            invocation=result.invocation,
-            data_str=result.get_stringified_data() or None,
-            error=result.error,
-            elapsed_seconds=result.elapsed_seconds,
-            raw_result=result.model_dump(mode="json"),
+            user_approved=inp.user_approved,
+            session_approved_prefixes=inp.session_approved_prefixes,
+            request_context=inp.request_context,
         )
+        try:
+            result = tool.invoke(params=inp.arguments, context=invoke_ctx)
+        except Exception as e:  # noqa: BLE001 — tool.invoke is contracted to NOT raise; defend in depth
+            logger.exception("Tool %s raised an exception", inp.tool_name)
+            return _emit_tool_result(
+                inp,
+                StructuredToolResult(
+                    status=StructuredToolResultStatus.ERROR,
+                    error=f"{type(e).__name__}: {e}",
+                    params=inp.arguments,
+                ),
+            )
 
-        record_event_to_store(
-            instance_id=inp.instance_id,
-            seq=inp.seq_base + 1,
-            event="tool_calling_result",
-            data={
-                "tool_call_id": inp.tool_call_id,
-                "tool_name": inp.tool_name,
-                "status": status_val,
-                "elapsed_seconds": out.elapsed_seconds,
-                "error": out.error,
-                "data_preview": (out.data_str or "")[:512],
-            },
-        )
+        # Happy path: spill oversized successful results to disk so they
+        # don't blow the message budget on the next LLM call.
+        result = _spill_if_needed(reg, inp.tool_call_id, inp.tool_name, result)
+        return _emit_tool_result(inp, result)
 
+
+def _emit_tool_result(
+    inp: ToolCallInput, result: StructuredToolResult
+) -> Dict[str, Any]:
+    """Emit the ``tool_calling_result`` tape event and serialise the
+    activity's return value.
+
+    Shared between the happy path, the unknown-tool path, the
+    repeated-call-safeguard path, and the tool-exception path so the seq
+    budget (``seq_base+1`` for the result event) is honoured no matter how
+    we reach the end of the activity.
+    """
+    status_val = (
+        result.status.value if hasattr(result.status, "value") else str(result.status)
+    )
+    out = ToolCallOutput(
+        tool_call_id=inp.tool_call_id,
+        tool_name=inp.tool_name,
+        status=status_val,
+        invocation=result.invocation,
+        data_str=result.get_stringified_data() or None,
+        error=result.error,
+        elapsed_seconds=result.elapsed_seconds,
+        raw_result=result.model_dump(mode="json"),
+    )
+    save_record(
+        instance_id=inp.instance_id,
+        seq=inp.seq_base + 1,
+        event="tool_calling_result",
+        data={
+            "tool_call_id": inp.tool_call_id,
+            "tool_name": inp.tool_name,
+            "status": status_val,
+            "elapsed_seconds": out.elapsed_seconds,
+            "error": out.error,
+            "data_preview": (out.data_str or "")[:512],
+        },
+    )
     return out.model_dump()
 
 
@@ -425,7 +432,7 @@ def _check_repeated_call_safeguard(
     tool_params: Dict[str, Any],
     previous_tool_calls: List[Dict[str, Any]],
     user_approved: bool,
-) -> Any:
+) -> Optional[StructuredToolResult]:
     """Run HolmesGPT's repeated-tool-call safeguard.
 
     Returns a ``StructuredToolResult`` to short-circuit invocation, or
@@ -433,10 +440,6 @@ def _check_repeated_call_safeguard(
     """
     if user_approved:
         # User explicitly approved a re-run; let it through.
-        return None
-    try:
-        from holmes.core.safeguards import prevent_overly_repeated_tool_call
-    except ImportError:
         return None
     try:
         return prevent_overly_repeated_tool_call(

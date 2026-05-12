@@ -6,6 +6,10 @@
 Activities reuse the same ``HolmesRegistry`` instance for the lifetime of
 the worker process, so the slow paths (loading toolsets, validating LLM
 config, running prerequisite checks) only run once at startup.
+
+HolmesGPT is a hard dependency of the ``diagrid[holmesgpt]`` extra (see
+``pyproject.toml``); we import its public surfaces at module load time
+rather than lazily.
 """
 
 from __future__ import annotations
@@ -13,31 +17,16 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import List, Optional
+
+from holmes.config import Config
+from holmes.core.llm import LLM
+from holmes.core.tool_calling_llm import ToolCallingLLM
+from holmes.core.tools import PrerequisiteCacheMode, ToolsetTag
+from holmes.core.tools_utils.tool_executor import ToolExecutor
+from holmes.plugins.skills.skill_loader import SkillCatalog
 
 logger = logging.getLogger(__name__)
-
-
-_HOLMES_INSTALL_HINT = (
-    "HolmesGPT is required for the diagrid.agent.holmesgpt integration. "
-    "Install it from PyPI (`pip install holmesgpt`) or from source "
-    "(https://github.com/HolmesGPT/holmesgpt) before importing this module."
-)
-
-
-def _import_holmes() -> Any:
-    """Lazy-import HolmesGPT with a clean error message if missing."""
-    try:
-        import holmes  # noqa: F401  (sanity-check import)
-        from holmes.config import Config
-        from holmes.core.tools import (
-            PrerequisiteCacheMode,
-            ToolsetTag,
-        )
-    except ImportError as e:
-        raise ImportError(_HOLMES_INSTALL_HINT) from e
-
-    return Config, ToolsetTag, PrerequisiteCacheMode
 
 
 @dataclass
@@ -51,12 +40,12 @@ class HolmesRegistry:
     runner can pass it into prompt construction without re-walking config.
     """
 
-    config: Any
-    ai: Any  # holmes.core.tool_calling_llm.ToolCallingLLM
-    llm: Any
-    tool_executor: Any
+    config: Config
+    ai: ToolCallingLLM
+    llm: LLM
+    tool_executor: ToolExecutor
     openai_tools: List[dict]
-    skills: Any = None  # Optional[holmes.plugins.skills.SkillCatalog]
+    skills: Optional[SkillCatalog] = None
 
     @classmethod
     def build(
@@ -67,8 +56,6 @@ class HolmesRegistry:
         toolset_tags: Optional[List[str]] = None,
         enable_all_toolsets_possible: bool = False,
     ) -> "HolmesRegistry":
-        Config, ToolsetTag, PrerequisiteCacheMode = _import_holmes()
-
         if config_path is None:
             cfg = Config.load_from_env()
         else:
@@ -97,11 +84,11 @@ class HolmesRegistry:
             user_id=None,
         )
 
-        skills = None
+        skills: Optional[SkillCatalog] = None
         try:
             skills = cfg.get_skill_catalog()
-        except Exception as e:
-            logger.debug("Skill catalog unavailable: %s", e)
+        except Exception:
+            logger.exception("Skill catalog unavailable")
 
         logger.info(
             "HolmesRegistry built: model=%s tools=%d skills=%s",

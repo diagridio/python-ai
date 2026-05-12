@@ -316,8 +316,8 @@ else:
         """Capture event-log writes from inside activities without touching Dapr.
 
         Only the alias used inside ``workflow.py`` is patched so that
-        ``test_event_log.py`` can still exercise the real ``event_log.record``
-        function against its own DaprClient mock.
+        ``test_event_log.py`` can still exercise the real
+        ``event_log.save_record`` function against its own DaprClient mock.
         """
         captured: list[dict] = []
 
@@ -326,9 +326,7 @@ else:
                 {"instance_id": instance_id, "seq": seq, "event": event, "data": data}
             )
 
-        monkeypatch.setattr(
-            "diagrid.agent.holmesgpt.workflow.record_event_to_store", _record
-        )
+        monkeypatch.setattr("diagrid.agent.holmesgpt.workflow.save_record", _record)
         return captured
 
     @pytest.fixture(autouse=True)

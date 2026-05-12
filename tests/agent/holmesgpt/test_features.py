@@ -55,9 +55,8 @@ def _build_tool_result(status, *, data=None, error=None):
 # ---------------------------------------------------------------------------
 
 
-def test_event_log_record_propagates_dapr_failures(monkeypatch):
+def test_event_log_save_record_propagates_dapr_failures(monkeypatch):
     """A DaprClient save_state error must propagate up so Dapr retries the activity."""
-    # Bypass the autouse fixture by importing the real function.
     from diagrid.agent.holmesgpt import event_log as real_event_log
 
     class _ExplodingClient:
@@ -70,9 +69,12 @@ def test_event_log_record_propagates_dapr_failures(monkeypatch):
         def save_state(self, **_):
             raise RuntimeError("redis: connection refused")
 
-    monkeypatch.setattr("dapr.clients.DaprClient", lambda: _ExplodingClient())
+    monkeypatch.setattr(
+        "diagrid.agent.holmesgpt.event_log.DaprClient",
+        lambda: _ExplodingClient(),
+    )
     with pytest.raises(RuntimeError, match="redis: connection refused"):
-        real_event_log.record(
+        real_event_log.save_record(
             instance_id="wf-1",
             seq=1,
             event="x",
@@ -167,24 +169,22 @@ def test_call_llm_activity_attaches_trace_context(
 # ---------------------------------------------------------------------------
 
 
-def test_call_llm_emits_compaction_status_when_compaction_unavailable(
+def test_call_llm_emits_compaction_status_when_compaction_not_triggered(
     install_stub_registry, patch_event_log_record
 ):
+    """When the message tape is small (StubLLM reports 0 tokens), compaction
+    is not triggered. The activity must still emit a status event so the
+    tape stays dense."""
     install_stub_registry(
         completions=[make_llm_response(content="ok", finish_reason="stop")]
     )
-    # Simulate compaction module not importable.
-    with mock.patch.dict(
-        "sys.modules",
-        {"holmes.core.truncation.input_context_window_limiter": None},
-    ):
-        payload = LLMCallInput(
-            instance_id="wf-1",
-            seq_base=5,
-            messages=[{"role": "user", "content": "hi"}],
-            tools=[],
-        ).model_dump()
-        out = LLMCallOutput.model_validate(call_llm_activity(None, payload))
+    payload = LLMCallInput(
+        instance_id="wf-1",
+        seq_base=5,
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[],
+    ).model_dump()
+    out = LLMCallOutput.model_validate(call_llm_activity(None, payload))
 
     statuses = [
         e
@@ -192,13 +192,10 @@ def test_call_llm_emits_compaction_status_when_compaction_unavailable(
         if e["event"] == "conversation_history_compaction_status"
     ]
     assert len(statuses) == 1
-    assert statuses[0]["data"] == {
-        "compacted": False,
-        "reason": "compaction_unavailable",
-    }
-    # The activity still surfaces the messages it used (the original here).
+    assert statuses[0]["data"]["compacted"] is False
+    # The activity surfaces the messages it used (the original here).
     assert out.messages == [{"role": "user", "content": "hi"}]
-    assert out.compaction == {"compacted": False, "reason": "compaction_unavailable"}
+    assert out.compaction == {"compacted": False}
 
 
 def test_call_llm_adopts_compacted_messages(
@@ -220,7 +217,7 @@ def test_call_llm_adopts_compacted_messages(
     )
 
     with mock.patch(
-        "holmes.core.truncation.input_context_window_limiter.compact_if_necessary",
+        "diagrid.agent.holmesgpt.workflow.compact_if_necessary",
         return_value=fake_result,
     ):
         payload = LLMCallInput(
@@ -253,7 +250,7 @@ def test_spill_if_needed_mutates_result_via_holmes_helper(install_stub_registry)
         tool_call_result.result = mutated_marker
 
     with mock.patch(
-        "holmes.core.tools_utils.tool_context_window_limiter.spill_oversized_tool_result",
+        "diagrid.agent.holmesgpt.workflow.spill_oversized_tool_result",
         side_effect=_fake_spill,
     ):
         returned = _spill_if_needed(reg, "tc-1", "bash", original)
@@ -270,7 +267,7 @@ def test_spill_if_needed_returns_original_on_exception(install_stub_registry):
         raise RuntimeError("disk full")
 
     with mock.patch(
-        "holmes.core.tools_utils.tool_context_window_limiter.spill_oversized_tool_result",
+        "diagrid.agent.holmesgpt.workflow.spill_oversized_tool_result",
         side_effect=_explode,
     ):
         returned = _spill_if_needed(reg, "tc-1", "bash", original)
@@ -290,7 +287,7 @@ def test_invoke_tool_activity_runs_spill(install_stub_registry, patch_event_log_
         tool_call_result.result.data = "SPILLED"
 
     with mock.patch(
-        "holmes.core.tools_utils.tool_context_window_limiter.spill_oversized_tool_result",
+        "diagrid.agent.holmesgpt.workflow.spill_oversized_tool_result",
         side_effect=_shrink,
     ):
         payload = ToolCallInput(

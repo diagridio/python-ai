@@ -79,7 +79,7 @@ def test_build_messages_delegates_to_holmes_build_chat_messages():
         return fake_messages
 
     with mock.patch(
-        "holmes.core.conversations.build_chat_messages", side_effect=_fake_build
+        "diagrid.agent.holmesgpt.runner.build_chat_messages", side_effect=_fake_build
     ):
         result = r._build_messages(
             question="Q",
@@ -110,7 +110,7 @@ def test_build_messages_caller_supplied_skills_override_default():
 
     captured: dict = {}
     with mock.patch(
-        "holmes.core.conversations.build_chat_messages",
+        "diagrid.agent.holmesgpt.runner.build_chat_messages",
         side_effect=lambda **kw: captured.update(kw) or [],
     ):
         r._build_messages(

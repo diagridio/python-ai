@@ -23,6 +23,8 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
+from dapr.clients import DaprClient
+
 logger = logging.getLogger(__name__)
 
 # By default we collocate the polling tape on Dapr's actor state store
@@ -40,7 +42,7 @@ def _key(prefix: str, instance_id: str, seq: int) -> str:
     return f"{prefix}:{instance_id}:{seq:010d}"
 
 
-def record(
+def save_record(
     instance_id: str,
     seq: int,
     event: str,
@@ -50,7 +52,7 @@ def record(
     key_prefix: str = DEFAULT_KEY_PREFIX,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
 ) -> None:
-    """Append a single event to the per-instance tape.
+    """Append a single event record to the per-instance tape.
 
     Idempotent on (instance_id, seq): replays write the same key with the
     same value, which is a no-op as far as readers are concerned.
@@ -62,8 +64,6 @@ def record(
     re-runs the activity. Because seq allocation is deterministic in the
     workflow, retries write the same key with the same value — idempotent.
     """
-    from dapr.clients import DaprClient
-
     payload = json.dumps(
         {
             "seq": seq,
@@ -84,7 +84,7 @@ def record(
             state_metadata=options,
         )
     logger.debug(
-        "record_event store=%s instance=%s seq=%d event=%s",
+        "save_record store=%s instance=%s seq=%d event=%s",
         store_name,
         instance_id,
         seq,
@@ -106,8 +106,6 @@ def read_after(
     encountering a missing key safely indicates the end of currently-
     available events for this instance.
     """
-    from dapr.clients import DaprClient
-
     keys = [_key(key_prefix, instance_id, since_seq + i + 1) for i in range(limit)]
     with DaprClient() as client:
         items = client.get_bulk_state(store_name=store_name, keys=keys)

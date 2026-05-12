@@ -17,8 +17,13 @@ import time
 import uuid
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
+import uvicorn
 from dapr.ext.workflow import WorkflowStatus
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from holmes.core.conversations import build_chat_messages
 
+from diagrid.agent.core.telemetry import instrument_grpc, setup_telemetry
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 
 from . import event_log
@@ -148,8 +153,6 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
     # Required abstract overrides (BaseWorkflowRunner)
 
     def _setup_telemetry(self) -> None:
-        from diagrid.agent.core.telemetry import setup_telemetry, instrument_grpc
-
         setup_telemetry(self.__class__.__name__, config=self._observability_config)
         instrument_grpc(config=self._observability_config)
 
@@ -281,8 +284,6 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
         """Delegate prompt construction to HolmesGPT's ``build_chat_messages``."""
         if not self._started or self._registry is None:
             raise RuntimeError("Runner not started. Call start() first.")
-
-        from holmes.core.conversations import build_chat_messages
 
         return build_chat_messages(
             ask=question,
@@ -557,16 +558,8 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
     # FastAPI server with SSE streaming
     # ------------------------------------------------------------------
 
-    def build_fastapi_app(self) -> Any:
+    def build_fastapi_app(self) -> FastAPI:
         """Return a FastAPI app with /investigations and /investigations/{id}/stream."""
-        try:
-            from fastapi import FastAPI, HTTPException, Header, Request
-            from fastapi.responses import StreamingResponse
-        except ImportError as e:  # pragma: no cover
-            raise ImportError(
-                "fastapi is required for build_fastapi_app(); install diagrid[agent-core]."
-            ) from e
-
         app = FastAPI()
         runner = self
 
@@ -675,6 +668,27 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
             runner.submit_frontend_result(workflow_id, tool_call_id, frontend_result)
             return {"workflow_id": workflow_id, "status": "resumed"}
 
+        @app.post("/investigations/{workflow_id}/stop")
+        async def stop_endpoint(workflow_id: str) -> dict:  # type: ignore[type-arg]
+            """Terminate a running workflow.
+
+            Delegates to ``BaseWorkflowRunner.terminate_workflow`` which calls
+            Dapr's ``terminate_workflow`` API. The workflow's state remains in
+            the actor store; call ``/purge`` to delete it.
+            """
+            runner.terminate_workflow(workflow_id)
+            return {"workflow_id": workflow_id, "status": "terminated"}
+
+        @app.post("/investigations/{workflow_id}/purge")
+        async def purge_endpoint(workflow_id: str) -> dict:  # type: ignore[type-arg]
+            """Purge a completed / failed / terminated workflow.
+
+            Removes the workflow's actor state from Dapr's store. Only valid
+            for workflows in a terminal status.
+            """
+            runner.purge_workflow(workflow_id)
+            return {"workflow_id": workflow_id, "status": "purged"}
+
         return app
 
     def serve(  # type: ignore[override]
@@ -685,13 +699,6 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
         **_: Any,
     ) -> None:
         """Run a uvicorn server exposing investigation endpoints."""
-        try:
-            import uvicorn
-        except ImportError as e:  # pragma: no cover
-            raise ImportError(
-                "uvicorn is required for serve(); install diagrid[agent-core]."
-            ) from e
-
         self._setup_telemetry()
         self.start()
         app = self.build_fastapi_app()
