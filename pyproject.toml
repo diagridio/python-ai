@@ -29,7 +29,7 @@ agent-core = [
     "dapr-ext-strands>=1.17.3",
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
-    "pydantic>=2.12.5,<2.13",
+    "pydantic>=2.12.5,<2.14",
     "langgraph>=1.1.10",
 ]
 langgraph = [
