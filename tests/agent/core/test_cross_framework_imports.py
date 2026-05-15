@@ -55,7 +55,30 @@ _ADAPTERS: tuple[tuple[str, str], ...] = (
     ("diagrid.agent.openai_agents", "DaprWorkflowAgentRunner"),
     ("diagrid.agent.pydantic_ai", "DaprWorkflowAgentRunner"),
     ("diagrid.agent.deepagents", "DaprWorkflowDeepAgentRunner"),
+    ("diagrid.agent.holmesgpt", "DaprWorkflowHolmesRunner"),
 )
+
+
+# Some adapters live in a separate uv conflict-fork (see
+# ``[tool.uv].conflicts`` in pyproject.toml) and aren't installed when CI
+# syncs ``--extra all``. We skip them when their canary import isn't
+# available in the current venv — they're covered by a dedicated CI job.
+_ADAPTER_CANARY_IMPORTS: dict[str, str] = {
+    "diagrid.agent.holmesgpt": "holmes",
+}
+
+
+def _canary_available(module: str) -> bool:
+    """Return True iff the adapter's canary dep is importable in this venv."""
+    import importlib.util
+
+    canary = _ADAPTER_CANARY_IMPORTS.get(module)
+    return canary is None or importlib.util.find_spec(canary) is not None
+
+
+def _runnable_adapters() -> list[tuple[str, str]]:
+    """Subset of ``_ADAPTERS`` whose deps are installed in the current venv."""
+    return [(mod, sym) for mod, sym in _ADAPTERS if _canary_available(mod)]
 
 
 def test_adapter_list_matches_filesystem() -> None:
@@ -111,6 +134,12 @@ def test_adapter_imports_in_isolation(module: str, symbol: str) -> None:
     Catches: a Dependabot bump that breaks one adapter's transitive deps,
     even when the other adapters still resolve.
     """
+    if not _canary_available(module):
+        pytest.skip(
+            f"{module} is in a separate uv conflict-fork (canary "
+            f"{_ADAPTER_CANARY_IMPORTS[module]!r} not installed); "
+            "covered by a dedicated CI job."
+        )
     code = (
         "import importlib\n"
         f"mod = importlib.import_module({module!r})\n"
@@ -131,7 +160,8 @@ def test_all_adapters_import_in_one_process() -> None:
     skew between two adapters; LangChain singleton state).
     """
     imports = "\n".join(
-        f"import {mod}; assert hasattr({mod}, {sym!r})" for mod, sym in _ADAPTERS
+        f"import {mod}; assert hasattr({mod}, {sym!r})"
+        for mod, sym in _runnable_adapters()
     )
     code = (
         f"{imports}\n"
@@ -151,7 +181,7 @@ def test_otel_setup_after_all_adapters_imported() -> None:
     (the original symptom that drove the explicit ``override-dependencies``
     block in ``pyproject.toml``).
     """
-    imports = "\n".join(f"import {mod}" for mod, _ in _ADAPTERS)
+    imports = "\n".join(f"import {mod}" for mod, _ in _runnable_adapters())
     code = (
         "import os\n"
         # No OTEL endpoint => setup_telemetry returns None and no exporter
