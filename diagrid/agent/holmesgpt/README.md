@@ -1,4 +1,4 @@
-# diagrid.agent.holmesgpt
+# Diagrid HolmesGPT Integration
 
 Durable execution of [HolmesGPT](https://github.com/HolmesGPT/holmesgpt) investigations on Dapr Workflows. Each LLM iteration and each tool call becomes a Dapr Workflow activity, providing:
 
