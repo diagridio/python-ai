@@ -227,6 +227,10 @@ class AgentRegistryAdapter:
                 "diagrid.agent.core.metadata.mapping.pydantic_ai",
                 "PydanticAIMapper",
             ),
+            SupportedFrameworks.CLAUDE_AGENTS: (
+                "diagrid.agent.core.metadata.mapping.claude_agents",
+                "ClaudeAgentsMapper",
+            ),
         }
 
         entry = _mapper_modules.get(self._framework)
