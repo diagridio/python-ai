@@ -8,6 +8,7 @@ import logging
 import uuid
 from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 
+from diagrid.agent.core.telemetry import instrument_grpc, setup_telemetry
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 
@@ -122,14 +123,12 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         resolved_model = (
             model or self._resolve_option_model(options) or ("claude-sonnet-4-6")
         )
-        resolved_prompt = (
+        self._model = resolved_model
+        self._system_prompt = (
             system_prompt
             if system_prompt is not None
             else self._resolve_option_system_prompt(options)
         )
-
-        self._model = resolved_model
-        self._system_prompt = resolved_prompt or ""
         self._max_tokens = max_tokens
 
         super().__init__(
@@ -168,13 +167,13 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
     @staticmethod
     def _resolve_option_system_prompt(
         options: Optional["ClaudeAgentOptions"],
-    ) -> Optional[str]:
+    ) -> str:
         if options is None:
-            return None
+            return ""
         sp = getattr(options, "system_prompt", None)
         # ClaudeAgentOptions accepts str or a preset dict; only str applies to
         # the direct Anthropic Messages API call we use here.
-        return sp if isinstance(sp, str) else None
+        return sp if isinstance(sp, str) else ""
 
     # ------------------------------------------------------------------
     # Workflow component registration
@@ -336,8 +335,10 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                 "type": "workflow_completed",
                 "workflow_id": wf_id,
                 "final_response": output.final_response,
+                "messages": [m.to_dict() for m in output.messages],
                 "iterations": output.iterations,
                 "status": output.status,
+                "error": output.error,
             }
 
         async for event in self._poll_workflow(
@@ -356,7 +357,12 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         workflow_id: Optional[str] = None,
         timeout: float = 300.0,
     ) -> AgentWorkflowOutput:
-        """Run the agent synchronously and wait for completion."""
+        """Run the agent synchronously and wait for completion.
+
+        Returns the full :class:`AgentWorkflowOutput` — including the
+        recorded message history — so callers can introspect the
+        conversation, not just the final response.
+        """
 
         async def _run() -> Optional[AgentWorkflowOutput]:
             result: Optional[AgentWorkflowOutput] = None
@@ -368,9 +374,12 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
                 if event["type"] == "workflow_completed":
                     result = AgentWorkflowOutput(
                         final_response=event.get("final_response"),
-                        messages=[],
+                        messages=[
+                            Message.from_dict(m) for m in event.get("messages", [])
+                        ],
                         iterations=event.get("iterations", 0),
                         status=event.get("status", "completed"),
+                        error=event.get("error"),
                     )
                 elif event["type"] == "workflow_failed":
                     error = event.get("error", {})
@@ -391,8 +400,6 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
     # ------------------------------------------------------------------
 
     def _setup_telemetry(self) -> None:
-        from diagrid.agent.core.telemetry import instrument_grpc, setup_telemetry
-
         setup_telemetry(self.__class__.__name__, config=self._observability_config)
         instrument_grpc(config=self._observability_config)
 

@@ -15,9 +15,9 @@ class DaprMemoryStore:
     """Memory store that persists Claude agent conversation context to Dapr.
 
     Persists agent conversation context between invocations using
-    Dapr state store.
-
-    Key format: ``claude-{session_id}-memory``
+    Dapr state store. Session IDs are used directly as keys — callers
+    that need to share a state store with other agent frameworks should
+    pick session IDs that are already globally unique.
 
     Example:
         ```python
@@ -40,24 +40,18 @@ class DaprMemoryStore:
             store_name=store_name, consistency=consistency
         )
 
-    def _memory_key(self, session_id: str) -> str:
-        return f"claude-{session_id}-memory"
-
     def save_memory(self, session_id: str, data: dict[str, Any]) -> None:
         """Save conversation memory for a session."""
-        key = self._memory_key(session_id)
-        self._store.save(key, data)
+        self._store.save(session_id, data)
         logger.debug("Saved memory session=%s", session_id)
 
     def load_memory(self, session_id: str) -> Optional[dict[str, Any]]:
         """Load conversation memory for a session."""
-        key = self._memory_key(session_id)
-        return self._store.get(key)
+        return self._store.get(session_id)
 
     def delete_memory(self, session_id: str) -> None:
         """Delete conversation memory for a session."""
-        key = self._memory_key(session_id)
-        self._store.delete(key)
+        self._store.delete(session_id)
         logger.debug("Deleted memory session=%s", session_id)
 
     def close(self) -> None:

@@ -13,12 +13,12 @@ class TestDaprMemoryStore(TestCase):
         state_store = mock.MagicMock()
         return DaprMemoryStore(state_store=state_store), state_store
 
-    def test_save_memory(self):
+    def test_save_memory_uses_session_id_as_key(self):
         store, mock_ss = self._make_store()
         store.save_memory("sess-1", {"messages": ["hi"], "context_id": "c1"})
 
         mock_ss.save.assert_called_once_with(
-            "claude-sess-1-memory",
+            "sess-1",
             {"messages": ["hi"], "context_id": "c1"},
         )
 
@@ -28,7 +28,7 @@ class TestDaprMemoryStore(TestCase):
 
         result = store.load_memory("sess-1")
 
-        mock_ss.get.assert_called_once_with("claude-sess-1-memory")
+        mock_ss.get.assert_called_once_with("sess-1")
         self.assertEqual(result, {"messages": ["hi"]})
 
     def test_load_memory_not_found(self):
@@ -42,18 +42,9 @@ class TestDaprMemoryStore(TestCase):
         store, mock_ss = self._make_store()
         store.delete_memory("sess-1")
 
-        mock_ss.delete.assert_called_once_with("claude-sess-1-memory")
+        mock_ss.delete.assert_called_once_with("sess-1")
 
     def test_close(self):
         store, mock_ss = self._make_store()
         store.close()
         mock_ss.close.assert_called_once()
-
-    def test_key_namespace_is_isolated_from_other_frameworks(self):
-        """Claude store keys must be prefixed ``claude-`` so they cannot
-        collide with the ``openai-`` / ``strands-`` keys produced by the
-        sibling memory stores sharing a state store."""
-        store, mock_ss = self._make_store()
-        store.save_memory("sess-1", {})
-        saved_key = mock_ss.save.call_args[0][0]
-        self.assertTrue(saved_key.startswith("claude-"))
