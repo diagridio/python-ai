@@ -17,7 +17,7 @@ dependencies:
     condition: monitoring.enabled
 
   - name: kube-prometheus-stack
-    version: 85.0.1
+    version: 85.3.3
     repository: https://prometheus-community.github.io/helm-charts
     condition: monitoring.enabled
 
