@@ -1334,7 +1334,7 @@ wheels = [
 
 [[package]]
 name = "diagrid"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "dapr" },
@@ -1540,7 +1540,7 @@ test = [
 
 [[package]]
 name = "diagrid-cli"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "diagrid/cli" }
 dependencies = [
     { name = "click" },
@@ -1558,7 +1558,7 @@ requires-dist = [
 
 [[package]]
 name = "diagrid-core"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "diagrid/core" }
 dependencies = [
     { name = "httpx" },
