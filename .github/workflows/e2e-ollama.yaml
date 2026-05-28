@@ -59,7 +59,7 @@ jobs:
           echo "Ollama ready with qwen3:0.6b"
 
       - name: Set up Docker
-        uses: docker/setup-docker-action@v5
+        uses: docker/setup-docker-action@v5.1.0
 
       - name: Install Dapr CLI
         run: |
