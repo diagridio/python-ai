@@ -59,6 +59,11 @@ openai_agents = [
     "openai>=2.33.0",
     "diagrid[agent-core]",
 ]
+claude_agents = [
+    "claude-agent-sdk>=0.1.45",
+    "anthropic>=0.40.0",
+    "diagrid[agent-core]",
+]
 pydantic_ai = [
     # Use pydantic-ai-slim with selected extras instead of the `pydantic-ai`
     # meta-package, which pulls in `pydantic-ai-slim[mistral,logfire,...]`
@@ -83,7 +88,7 @@ holmesgpt = [
     "diagrid[agent-core]",
 ]
 all = [
-    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents]",
+    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents]",
 ]
 
 [dependency-groups]
@@ -181,6 +186,10 @@ conflicts = [
     ],
     [
         { extra = "holmesgpt" },
+        { extra = "claude_agents" },
+    ],
+    [
+        { extra = "holmesgpt" },
         { extra = "all" },
     ],
 ]
@@ -196,6 +205,7 @@ members = [
     "diagrid/agent/adk/examples",
     "diagrid/agent/strands/examples",
     "diagrid/agent/deepagents/examples",
+    "diagrid/agent/claude_agents/examples",
     # HolmesGPT examples deliberately NOT a workspace member — see the note
     # next to the ``holmesgpt`` extra above. The example scripts still run
     # standalone via ``dapr run -- python diagrid/agent/holmesgpt/examples/...``.

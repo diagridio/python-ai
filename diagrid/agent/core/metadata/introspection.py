@@ -20,6 +20,7 @@ def find_agent_in_stack() -> Optional[Any]:
     - CrewAI: Agent or DaprWorkflowAgentRunner
     - ADK: LlmAgent or DaprWorkflowAgentRunner
     - OpenAI: Agent or DaprWorkflowAgentRunner
+    - Claude Agent SDK: DaprWorkflowAgentRunner (runner is the agent)
 
     Returns:
         The agent/graph object if found, None otherwise.
@@ -75,6 +76,11 @@ def find_agent_in_stack() -> Optional[Any]:
             if obj_type == "DaprWorkflowAgentRunner" and "openai_agents" in obj_module:
                 return getattr(obj, "_agent", None)
 
+            # Claude Agent SDK support — runner is the agent (no separate
+            # Agent object), so return it directly.
+            if obj_type == "DaprWorkflowAgentRunner" and "claude_agents" in obj_module:
+                return obj
+
             # If we found a checkpointer, use gc to find the graph that references it
             if obj_type == "DaprCheckpointer":
                 # Use garbage collector to find objects referencing this checkpointer
@@ -125,5 +131,9 @@ def detect_framework(agent: Any) -> Optional[str]:
     # OpenAI Agents
     if agent_type == "Agent" and "agents" in agent_module:
         return "openai"
+
+    # Claude Agent SDK — runner doubles as the agent.
+    if agent_type == "DaprWorkflowAgentRunner" and "claude_agents" in agent_module:
+        return "claudeagents"
 
     return None

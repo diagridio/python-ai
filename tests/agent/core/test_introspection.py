@@ -56,6 +56,30 @@ class DetectFrameworkTest(unittest.TestCase):
         result = detect_framework(agent)
         self.assertEqual(result, "strands")
 
+    def test_detect_claude_agents_by_runner(self):
+        """Test detection of Claude Agents by DaprWorkflowAgentRunner from claude_agents module."""
+
+        class MockRunner:
+            pass
+
+        MockRunner.__module__ = "diagrid.agent.claude_agents.runner"
+        MockRunner.__name__ = "DaprWorkflowAgentRunner"
+        agent = MockRunner()
+        result = detect_framework(agent)
+        self.assertEqual(result, "claudeagents")
+
+    def test_detect_claude_agents_not_matched_by_other_runners(self):
+        """Other framework's DaprWorkflowAgentRunner should not match claude_agents."""
+
+        class MockRunner:
+            pass
+
+        MockRunner.__module__ = "diagrid.agent.openai_agents.runner"
+        MockRunner.__name__ = "DaprWorkflowAgentRunner"
+        agent = MockRunner()
+        result = detect_framework(agent)
+        self.assertNotEqual(result, "claudeagents")
+
     def test_detect_unknown_framework(self):
         """Test detection returns None for unknown frameworks."""
 
