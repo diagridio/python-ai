@@ -64,7 +64,7 @@ opentelemetry-collector:
   mode: deployment
   image:
     repository: otel/opentelemetry-collector-contrib
-    tag: "0.142.0"
+    tag: "0.153.0"
   service:
     type: NodePort
   config:
