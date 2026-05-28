@@ -10,9 +10,9 @@ dependencies:
   version: 85.3.3
 - name: opentelemetry-collector
   repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-  version: 0.153.0
+  version: 0.157.0
 - name: chaos-mesh
   repository: https://charts.chaos-mesh.org
   version: 2.8.2
-digest: sha256:8c3ed834021fe7c56aab9fa4ef2fe3434b29a73a2ba878c9669d8a2eb2967b67
-generated: "2026-05-25T20:20:19.216305897Z"
+digest: sha256:533c81f6194e3171a77dd3d2360dc8f5d6225eb38d6c0e5763acdfe9a35fc425
+generated: "2026-05-28T10:04:49.586480797Z"
