@@ -1,4 +1,4 @@
-# Diagrid Agent Claude Agent SDK Extension Examples
+# Claude Managed Agent SDK Extension Examples
 
 ## Prerequisites
 
