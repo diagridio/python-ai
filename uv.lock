@@ -2728,7 +2728,7 @@ wheels = [
 
 [[package]]
 name = "holmesgpt"
-version = "0.28.0"
+version = "0.30.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -2775,6 +2775,7 @@ dependencies = [
     { name = "pymysql" },
     { name = "pyodbc" },
     { name = "python-benedict" },
+    { name = "python-socks", marker = "extra == 'extra-7-diagrid-holmesgpt'" },
     { name = "requests" },
     { name = "requests-aws4auth" },
     { name = "rich", version = "13.9.4", source = { registry = "https://pypi.org/simple" } },
@@ -2790,9 +2791,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "uvicorn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/fe/7e5690832c84caee2df115a76e9ba2d3dd1cc92202bcfbde48335fe92af4/holmesgpt-0.28.0.tar.gz", hash = "sha256:5b330ba8fd338157ed5f9ffc520ff366028fb71b456ba19ba7589b9d2e3c936e", size = 552706, upload-time = "2026-05-07T11:46:52.403Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/51/71550af06fee81e2b9447f17f916b12855a11fd440f0d72ed9324cd3d0c8/holmesgpt-0.30.1.tar.gz", hash = "sha256:ca0723aba3dc6f2ee860692f37416fdaafeb3c4b951b5b8bb08df3dc42ccaa93", size = 567490, upload-time = "2026-05-20T12:18:19.526Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/db/15dc6775d8b384cb3d1868c10afd3452e49b731f3988c8819f8e69e0a0c4/holmesgpt-0.28.0-py3-none-any.whl", hash = "sha256:1b983c8a088f0d66ff7cb3b4a5bc0d264f32a41961593f28459d7a397fae35b3", size = 670095, upload-time = "2026-05-07T11:46:50.437Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/2b/241623803de98aa1c507a3521587ff6056dcc15f1bf823324045e15f9a2e/holmesgpt-0.30.1-py3-none-any.whl", hash = "sha256:8f8102d063d30d59dc4d35166ab062e3c906c8f8cc80a2c5227f00323f235685", size = 684560, upload-time = "2026-05-20T12:18:17.813Z" },
 ]
 
 [[package]]
@@ -5792,6 +5793,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/87/c7/5e1547c44e31da50a460df93af11a535ace568ef89d7a811069ead340c4a/python-slugify-8.0.4.tar.gz", hash = "sha256:59202371d1d05b54a9e7720c5e038f928f45daaffe41dd10822f3907b937c856", size = 10921, upload-time = "2024-02-08T18:32:45.488Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a4/62/02da182e544a51a5c3ccf4b03ab79df279f9c60c5e82d5e8bec7ca26ac11/python_slugify-8.0.4-py2.py3-none-any.whl", hash = "sha256:276540b79961052b66b7d116620b36518847f52d5fd9e3a70164fc8c50faa6b8", size = 10051, upload-time = "2024-02-08T18:32:43.911Z" },
+]
+
+[[package]]
+name = "python-socks"
+version = "2.8.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/0b/cd77011c1bc01b76404f7aba07fca18aca02a19c7626e329b40201217624/python_socks-2.8.1.tar.gz", hash = "sha256:698daa9616d46dddaffe65b87db222f2902177a2d2b2c0b9a9361df607ab3687", size = 38909, upload-time = "2026-02-16T05:24:00.745Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/fe/9a58cb6eec633ff6afae150ca53c16f8cc8b65862ccb3d088051efdfceb7/python_socks-2.8.1-py3-none-any.whl", hash = "sha256:28232739c4988064e725cdbcd15be194743dd23f1c910f784163365b9d7be035", size = 55087, upload-time = "2026-02-16T05:23:59.147Z" },
 ]
 
 [[package]]
