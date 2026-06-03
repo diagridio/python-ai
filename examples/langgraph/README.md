@@ -19,8 +19,8 @@
 A basic example demonstrating a linear graph with two nodes:
 
 ```bash
-cd examples
-dapr run --app-id langgraph-simple --resources-path ./components -- python3 simple_graph.py
+cd examples/langgraph
+dapr run --app-id langgraph-simple --resources-path ./resources -- python3 simple_graph.py
 ```
 
 ### Conditional Routing Example
@@ -28,8 +28,8 @@ dapr run --app-id langgraph-simple --resources-path ./components -- python3 simp
 Demonstrates conditional edges based on state:
 
 ```bash
-cd examples
-dapr run --app-id langgraph-conditional --resources-path ./components -- python3 conditional_graph.py
+cd examples/langgraph
+dapr run --app-id langgraph-conditional --resources-path ./resources -- python3 conditional_graph.py
 ```
 
 ### ReAct Agent Example
@@ -37,8 +37,8 @@ dapr run --app-id langgraph-conditional --resources-path ./components -- python3
 A more complex example showing a ReAct-style agent with tool execution:
 
 ```bash
-cd examples
-dapr run --app-id langgraph-react --resources-path ./components -- python3 react_agent.py
+cd examples/langgraph
+dapr run --app-id langgraph-react --resources-path ./resources -- python3 react_agent.py
 ```
 
 ### Crash Recovery Test
@@ -50,11 +50,11 @@ Demonstrates Dapr Workflow fault tolerance by simulating a process crash mid-exe
 rm -f /tmp/langgraph_crash_test_state.json
 
 # First run (will crash during node 2):
-cd examples
-dapr run --app-id langgraph-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+cd examples/langgraph
+dapr run --app-id langgraph-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 
 # Second run (Dapr auto-resumes and completes):
-dapr run --app-id langgraph-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+dapr run --app-id langgraph-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 ```
 
 On the second run you should see `TEST PASSED: Crash recovery worked!` confirming that the workflow resumed from where it left off.

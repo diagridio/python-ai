@@ -7,7 +7,7 @@ Run with the Dapr sidecar attached (no extra components beyond a stock
 ``dapr init`` are required — the integration uses the default ``statestore``
 component for both workflow state and the polling event tape):
 
-    dapr run --app-id holmes-cli -- python diagrid/agent/holmesgpt/examples/basic.py
+    dapr run --app-id holmes-cli -- python examples/holmesgpt/basic.py
 """
 
 from diagrid.agent.holmesgpt import DaprWorkflowHolmesRunner

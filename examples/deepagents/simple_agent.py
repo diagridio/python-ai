@@ -20,7 +20,7 @@ Prerequisites:
     4. OPENAI_API_KEY environment variable set
 
 Run with Dapr:
-    dapr run --app-id deep-agent --resources-path ./components -- python3 simple_agent.py
+    dapr run --app-id deep-agent --resources-path ./resources -- python3 simple_agent.py
 """
 
 import asyncio

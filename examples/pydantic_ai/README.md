@@ -25,7 +25,7 @@ A basic example demonstrating a Pydantic AI agent with tools running as durable 
 
 ```bash
 cd examples
-dapr run --app-id pydantic-ai-agent --resources-path ./components -- python3 simple_agent.py
+dapr run --app-id pydantic-ai-agent --resources-path ./resources -- python3 simple_agent.py
 ```
 
 The agent has three tools (`get_weather`, `search_web`, `get_datetime`) and responds to a weather/news query. Each tool call becomes a separate durable activity.
@@ -40,10 +40,10 @@ rm -f /tmp/pydantic_ai_crash_test_state.json
 
 # First run (will crash during tool 2):
 cd examples
-dapr run --app-id pydantic-ai-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+dapr run --app-id pydantic-ai-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 
 # Second run (Dapr auto-resumes and completes):
-dapr run --app-id pydantic-ai-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+dapr run --app-id pydantic-ai-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 ```
 
 On the second run you should see `TEST PASSED: Crash recovery worked!` confirming the workflow resumed from where it left off.
@@ -55,7 +55,7 @@ Demonstrates Dapr's automatic activity retry policy. Tool 2 raises a `Connection
 ```bash
 rm -f /tmp/pydantic_ai_retry_test_state.json
 cd examples
-dapr run --app-id pydantic-ai-retry-test --resources-path ./components -- python3 test_retry.py
+dapr run --app-id pydantic-ai-retry-test --resources-path ./resources -- python3 test_retry.py
 ```
 
 You should see `TEST PASSED: Retry worked!` with tool 1 executed once, tool 2 executed three times, and tool 3 executed once.

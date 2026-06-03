@@ -12,8 +12,8 @@ Prerequisites:
     - Install dependencies: pip install diagrid langgraph
 
 Run with:
-    cd diagrid/agent/langgraph/examples
-    dapr run --app-id langgraph-conditional --resources-path ./components -- python3 conditional_graph.py
+    cd examples/langgraph
+    dapr run --app-id langgraph-conditional --resources-path ./resources -- python3 conditional_graph.py
 """
 
 from __future__ import annotations

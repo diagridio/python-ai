@@ -14,10 +14,10 @@ Usage:
     rm -f /tmp/openai_agents_crash_test_state.json
 
     # First run (will crash during tool 2):
-    dapr run --app-id openai-agents-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+    dapr run --app-id openai-agents-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 
     # Second run (Dapr auto-resumes and completes):
-    dapr run --app-id openai-agents-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+    dapr run --app-id openai-agents-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 """
 
 import asyncio

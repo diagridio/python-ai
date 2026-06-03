@@ -1,6 +1,6 @@
 """E2E tests for Dapr workflow crash recovery via subprocess orchestration.
 
-Adapted from ``diagrid/agent/langgraph/examples/test_crash_recovery.py``.
+Adapted from ``examples/langgraph/test_crash_recovery.py``.
 
 Each test uses a subprocess approach:
 1. Writes a helper script that builds a workflow where a node/tool crashes

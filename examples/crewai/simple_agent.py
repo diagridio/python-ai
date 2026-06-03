@@ -15,7 +15,7 @@ Prerequisites:
     2. Required packages: pip install diagrid crewai
 
 Run with Dapr:
-    dapr run --app-id crewai-agent --resources-path ./components -- python3 simple_agent.py
+    dapr run --app-id crewai-agent --resources-path ./resources -- python3 simple_agent.py
 """
 
 import asyncio

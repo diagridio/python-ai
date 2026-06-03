@@ -16,7 +16,7 @@ Prerequisites:
     3. OPENAI_API_KEY environment variable set
 
 Run with Dapr:
-    dapr run --app-id pydantic-ai-agent --resources-path ./components -- python3 simple_agent.py
+    dapr run --app-id pydantic-ai-agent --resources-path ./resources -- python3 simple_agent.py
 """
 
 import asyncio

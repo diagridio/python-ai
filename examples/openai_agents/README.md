@@ -24,8 +24,8 @@
 A basic example demonstrating an OpenAI Agents SDK agent with tools running as durable Dapr Workflow activities:
 
 ```bash
-cd examples
-dapr run --app-id openai-agents-demo --resources-path ./components -- python3 simple_agent.py
+cd examples/openai_agents
+dapr run --app-id openai-agents-demo --resources-path ./resources -- python3 simple_agent.py
 ```
 
 The agent has three tools (`get_weather`, `search_web`, `get_datetime`) and responds to a weather/news query. Each tool call becomes a separate durable activity.
@@ -39,11 +39,11 @@ Demonstrates Dapr Workflow fault tolerance by simulating a process crash mid-exe
 rm -f /tmp/openai_agents_crash_test_state.json
 
 # First run (will crash during tool 2):
-cd examples
-dapr run --app-id openai-agents-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+cd examples/openai_agents
+dapr run --app-id openai-agents-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 
 # Second run (Dapr auto-resumes and completes):
-dapr run --app-id openai-agents-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+dapr run --app-id openai-agents-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 ```
 
 On the second run you should see `TEST PASSED: Crash recovery worked!` confirming that the workflow resumed from where it left off.

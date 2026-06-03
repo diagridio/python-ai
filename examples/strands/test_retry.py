@@ -12,7 +12,7 @@ This test:
 
 Usage:
     rm -f /tmp/strands_retry_test_state.json
-    dapr run --app-id strands-retry-test --resources-path ./components -- python3 test_retry.py
+    dapr run --app-id strands-retry-test --resources-path ./resources -- python3 test_retry.py
 """
 
 import asyncio

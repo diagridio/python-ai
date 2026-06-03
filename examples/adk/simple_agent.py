@@ -13,8 +13,8 @@ Prerequisites:
     - Install the extension: pip install diagrid google-adk
 
 Run with:
-    cd diagrid/agent/adk/examples
-    dapr run --app-id adk-agent --resources-path ./components -- python3 simple_agent.py
+    cd examples/adk
+    dapr run --app-id adk-agent --resources-path ./resources -- python3 simple_agent.py
 """
 
 import asyncio

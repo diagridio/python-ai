@@ -24,8 +24,8 @@
 A basic example demonstrating an ADK agent with tools running as durable Dapr Workflow activities:
 
 ```bash
-cd examples
-dapr run --app-id adk-agent --resources-path ./components -- python3 simple_agent.py
+cd examples/adk
+dapr run --app-id adk-agent --resources-path ./resources -- python3 simple_agent.py
 ```
 
 The agent has three tools (`get_weather`, `get_time`, `calculate`) and responds to a weather/time query about Tokyo. Each tool call becomes a separate durable activity.
@@ -39,11 +39,11 @@ Demonstrates Dapr Workflow fault tolerance by simulating a process crash mid-exe
 rm -f /tmp/adk_crash_test_state.json
 
 # First run (will crash during tool 2):
-cd examples
-dapr run --app-id adk-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+cd examples/adk
+dapr run --app-id adk-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 
 # Second run (Dapr auto-resumes and completes):
-dapr run --app-id adk-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+dapr run --app-id adk-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 ```
 
 On the second run you should see `TEST PASSED: Crash recovery worked!` confirming that the workflow resumed from where it left off.

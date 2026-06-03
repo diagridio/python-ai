@@ -29,8 +29,8 @@
 A simple example demonstrating a Strands agent with tools running as a durable Dapr Workflow:
 
 ```bash
-cd examples
-dapr run --app-id strands-agent --resources-path ./components -- python3 simple_agent.py
+cd examples/strands
+dapr run --app-id strands-agent --resources-path ./resources -- python3 simple_agent.py
 ```
 
 The agent has three tools (`search_web`, `calculate`, `get_weather`) and responds to a weather/calculation query. The entire agent invocation becomes a durable workflow activity.
@@ -44,10 +44,10 @@ Demonstrates Dapr workflow durability by crashing the process mid-execution and 
 rm -f /tmp/strands_crash_test_state.json
 
 # First run (will crash during tool 2):
-dapr run --app-id strands-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+dapr run --app-id strands-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 
 # Second run (Dapr auto-resumes and completes):
-dapr run --app-id strands-crash-test --resources-path ./components -- python3 test_crash_recovery.py
+dapr run --app-id strands-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 ```
 
 The test creates an agent with 3 sequential tools. On the first run, it crashes during tool 2. On the second run, Dapr automatically resumes the workflow from where it left off and completes all 3 tools.

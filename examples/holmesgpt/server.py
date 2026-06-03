@@ -7,7 +7,7 @@ Run with the Dapr sidecar attached:
 
     dapr run --app-id holmes-server \
              --app-port 5001 \
-             -- python diagrid/agent/holmesgpt/examples/server.py
+             -- python examples/holmesgpt/server.py
 
 Then:
 

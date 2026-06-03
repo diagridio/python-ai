@@ -11,7 +11,7 @@ This test:
 4. The workflow completes successfully without re-executing node 1
 
 Usage:
-    dapr run --app-id langgraph-retry-test --resources-path ./components -- python3 test_retry.py
+    dapr run --app-id langgraph-retry-test --resources-path ./resources -- python3 test_retry.py
 """
 
 from __future__ import annotations

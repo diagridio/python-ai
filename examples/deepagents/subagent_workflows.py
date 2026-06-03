@@ -31,15 +31,15 @@ Usage:
     # Start each agent in a separate terminal with its own Dapr sidecar:
 
     # Terminal 1 — Researcher sub-agent (port 8001)
-    dapr run --app-id researcher --app-port 8001 --resources-path ./components -- \\
+    dapr run --app-id researcher --app-port 8001 --resources-path ./resources -- \\
         python3 subagent_workflows.py researcher
 
     # Terminal 2 — Analyst sub-agent (port 8002)
-    dapr run --app-id analyst --app-port 8002 --resources-path ./components -- \\
+    dapr run --app-id analyst --app-port 8002 --resources-path ./resources -- \\
         python3 subagent_workflows.py analyst
 
     # Terminal 3 — Supervisor (delegates to sub-agents via HTTP)
-    dapr run --app-id supervisor --resources-path ./components -- \\
+    dapr run --app-id supervisor --resources-path ./resources -- \\
         python3 subagent_workflows.py supervisor
 
 Prerequisites:
@@ -388,19 +388,19 @@ def main() -> None:
         log("  # Terminal 1")
         log(
             "  dapr run --app-id researcher --app-port 8001 "
-            "--resources-path ./components -- \\"
+            "--resources-path ./resources -- \\"
         )
         log("      python3 subagent_workflows.py researcher")
         log()
         log("  # Terminal 2")
         log(
             "  dapr run --app-id analyst --app-port 8002 "
-            "--resources-path ./components -- \\"
+            "--resources-path ./resources -- \\"
         )
         log("      python3 subagent_workflows.py analyst")
         log()
         log("  # Terminal 3")
-        log("  dapr run --app-id supervisor --resources-path ./components -- \\")
+        log("  dapr run --app-id supervisor --resources-path ./resources -- \\")
         log("      python3 subagent_workflows.py supervisor")
         sys.exit(1)
 

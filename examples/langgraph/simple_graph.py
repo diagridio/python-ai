@@ -12,8 +12,8 @@ Prerequisites:
     - Install dependencies: pip install -r requirements.txt
 
 Run with:
-    cd diagrid/agent/langgraph/examples
-    dapr run --app-id langgraph-simple --resources-path ./components -- python3 simple_graph.py
+    cd examples/langgraph
+    dapr run --app-id langgraph-simple --resources-path ./resources -- python3 simple_graph.py
 """
 
 from __future__ import annotations

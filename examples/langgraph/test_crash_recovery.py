@@ -14,10 +14,10 @@ Usage:
     rm -f /tmp/langgraph_crash_test_state.json
 
     # First run (will crash during node 2):
-    dapr run --app-id langgraph-crash-test --resources-path ./components -- python test_crash_recovery.py
+    dapr run --app-id langgraph-crash-test --resources-path ./resources -- python test_crash_recovery.py
 
     # Second run (Dapr auto-resumes and completes):
-    dapr run --app-id langgraph-crash-test --resources-path ./components -- python test_crash_recovery.py
+    dapr run --app-id langgraph-crash-test --resources-path ./resources -- python test_crash_recovery.py
 """
 
 from __future__ import annotations

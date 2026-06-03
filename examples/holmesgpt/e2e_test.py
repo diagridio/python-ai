@@ -14,7 +14,7 @@ This is intentionally NOT mocked. It:
 Run with the Dapr sidecar attached (uses the default ``statestore``
 component from ``dapr init`` — no extra components needed):
 
-    dapr run --app-id holmes-e2e -- python diagrid/agent/holmesgpt/examples/e2e_test.py
+    dapr run --app-id holmes-e2e -- python examples/holmesgpt/e2e_test.py
 
 Required env vars:
 

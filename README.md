@@ -48,6 +48,13 @@ pip install "diagrid[deepagents]"
 
 - **Python:** 3.11 or higher
 
+## Examples & Quickstarts
+
+Two paths to your first running agent:
+
+- **Managed quickstart templates** — `diagridpy init my-project --framework langgraph` bootstraps a Catalyst project, local kind cluster, Helm chart, and framework template in one command. Templates are cloned from [`diagridio/catalyst-quickstarts`](https://github.com/diagridio/catalyst-quickstarts).
+- **In-repo code samples** — clone this repo and run any framework's example directly. See [`examples/`](examples/) for the index, or jump straight to a framework: [`langgraph`](examples/langgraph/), [`crewai`](examples/crewai/), [`adk`](examples/adk/), [`strands`](examples/strands/), [`openai_agents`](examples/openai_agents/), [`pydantic_ai`](examples/pydantic_ai/), [`deepagents`](examples/deepagents/), [`holmesgpt`](examples/holmesgpt/).
+
 ## Getting Started with Diagrid Catalyst
 
 Diagrid Catalyst is a fully managed workflow engine for AI agents, built on the open-source CNCF Dapr Workflow project. It's the easiest way to test the different agentic integrations for free.

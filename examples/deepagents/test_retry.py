@@ -12,7 +12,7 @@ This test:
 
 Usage:
     rm -f /tmp/deepagents_retry_test_state.json
-    dapr run --app-id deep-agent-retry-test --resources-path ./components -- python3 test_retry.py
+    dapr run --app-id deep-agent-retry-test --resources-path ./resources -- python3 test_retry.py
 """
 
 import asyncio

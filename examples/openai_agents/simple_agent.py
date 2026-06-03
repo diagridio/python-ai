@@ -15,7 +15,7 @@ Prerequisites:
     2. Required packages: pip install diagrid openai-agents openai
 
 Run with Dapr:
-    dapr run --app-id openai-agents-demo --resources-path ./components -- python3 simple_agent.py
+    dapr run --app-id openai-agents-demo --resources-path ./resources -- python3 simple_agent.py
 """
 
 import asyncio

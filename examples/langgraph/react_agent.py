@@ -13,8 +13,8 @@ Prerequisites:
     - Install dependencies: pip install diagrid langgraph
 
 Run with:
-    cd diagrid/agent/langgraph/examples
-    dapr run --app-id langgraph-react --resources-path ./components -- python3 react_agent.py
+    cd examples/langgraph
+    dapr run --app-id langgraph-react --resources-path ./resources -- python3 react_agent.py
 """
 
 from __future__ import annotations

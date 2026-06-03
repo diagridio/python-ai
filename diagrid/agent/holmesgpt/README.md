@@ -52,7 +52,7 @@ For lower-level control (pre-rendered messages, no system prompt injection), use
 Run the example with a sidecar:
 
 ```bash
-dapr run --app-id holmes-cli -- python diagrid/agent/holmesgpt/examples/basic.py
+dapr run --app-id holmes-cli -- python examples/holmesgpt/basic.py
 ```
 
 ## HTTP server with SSE

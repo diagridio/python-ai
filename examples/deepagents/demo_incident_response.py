@@ -21,10 +21,10 @@ Usage:
     rm -f /tmp/incident_response_demo_state.json
 
     # First run (will crash during mitigation):
-    dapr run --app-id incident-agent --resources-path ./components -- python3 demo_incident_response.py
+    dapr run --app-id incident-agent --resources-path ./resources -- python3 demo_incident_response.py
 
     # Second run (Dapr resumes and completes):
-    dapr run --app-id incident-agent --resources-path ./components -- python3 demo_incident_response.py
+    dapr run --app-id incident-agent --resources-path ./resources -- python3 demo_incident_response.py
 
 Prerequisites:
     - Dapr initialized: dapr init
