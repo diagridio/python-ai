@@ -93,6 +93,7 @@ QUICKSTART_SUBDIRS = {
     "crewai": "agents/crewai",
     "adk": "agents/adk",
     "pydantic-ai": "agents/pydantic-ai",
+    "deepagents": "agents/deepagents",
     "orchestrator": "agents",
 }
 

@@ -17,14 +17,17 @@ Bootstrap a complete project (Catalyst project, AppID, local kind cluster, Helm 
 diagridpy init my-project --framework <framework>
 ```
 
-| Framework        | Command                                                       |
-|------------------|---------------------------------------------------------------|
-| `dapr-agents`    | `diagridpy init my-project --framework dapr-agents` (default) |
-| `langgraph`      | `diagridpy init my-project --framework langgraph`             |
-| `crewai`         | `diagridpy init my-project --framework crewai`                |
-| `adk`            | `diagridpy init my-project --framework adk`                   |
-| `strands`        | `diagridpy init my-project --framework strands`               |
-| `openai-agents`  | `diagridpy init my-project --framework openai-agents`         |
+| Framework        | Command                                                                                |
+|------------------|----------------------------------------------------------------------------------------|
+| `dapr-agents`    | `diagridpy init my-project --framework dapr-agents` (default)                          |
+| `langgraph`      | `diagridpy init my-project --framework langgraph`                                      |
+| `crewai`         | `diagridpy init my-project --framework crewai`                                         |
+| `adk`            | `diagridpy init my-project --framework adk`                                            |
+| `strands`        | `diagridpy init my-project --framework strands`                                        |
+| `openai-agents`  | `diagridpy init my-project --framework openai-agents`                                  |
+| `pydantic-ai`    | `diagridpy init my-project --framework pydantic-ai`                                    |
+| `deepagents`     | `diagridpy init my-project --framework deepagents`                                     |
+| `orchestrator`   | `diagridpy init my-project --framework orchestrator` — multi-agent template (crewai + openai-agents + adk working together) |
 
 See the [`diagridpy init` docs](../README.md#diagridpy-init) for what each step does (auth, project creation, cluster provisioning, Helm install).
 
