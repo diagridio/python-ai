@@ -148,6 +148,11 @@ override-dependencies = [
     # ``mcp>=1.26.0``. mcp 1.26 adds APIs over 1.25 and is wire-compatible
     # for the surfaces both libraries use.
     "mcp==1.26.0",
+    # Cap numpy below the 2.5.x line — 2.5.0rc1's stubs use PEP 695
+    # ``type X = ...`` syntax (Python 3.12+), which trips mypy's
+    # ``python_version = 3.11`` target with ``Type statement is only
+    # supported in Python 3.12 and greater``. Stay on the 2.4.x stable line.
+    "numpy<2.5",
 ]
 
 # HolmesGPT ships strict pins on fastapi, uvicorn, cachetools, mcp, and

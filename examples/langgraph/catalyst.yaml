@@ -5,7 +5,7 @@ common:
   logLevel: info
   appLogDestination: fileAndConsole
   daprdLogDestination: fileAndConsole
-  scheudlerHostAddress: 127.0.0.1:50006
+  schedulerHostAddress: 127.0.0.1:50006
 
 apps:
 - appID: langgraph-agent

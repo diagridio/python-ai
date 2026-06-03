@@ -29,7 +29,7 @@ diagridpy init my-project --framework <framework>
 | `deepagents`     | `diagridpy init my-project --framework deepagents`                                     |
 | `orchestrator`   | `diagridpy init my-project --framework orchestrator` — multi-agent template (crewai + openai-agents + adk working together) |
 
-See the [`diagridpy init` docs](../README.md#diagridpy-init) for what each step does (auth, project creation, cluster provisioning, Helm install).
+Run `diagridpy init --help` for the full list of options (auth, project creation, cluster provisioning, Helm install).
 
 ---
 

@@ -49,9 +49,10 @@ runner.shutdown()
 
 For lower-level control (pre-rendered messages, no system prompt injection), use `runner.invoke(messages=...)` instead — same semantics, just skips HolmesGPT's prompt builder.
 
-Run the example with a sidecar:
+Run the example with a sidecar. The script lives in this repo's [`examples/holmesgpt/`](https://github.com/diagridio/python-ai/tree/main/examples/holmesgpt) directory — clone the repo (or copy the script) before running, since it is not bundled with the installed package:
 
 ```bash
+# From a clone of github.com/diagridio/python-ai
 dapr run --app-id holmes-cli -- python examples/holmesgpt/basic.py
 ```
 
