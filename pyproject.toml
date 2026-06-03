@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid"
-version = "0.4.0"
+version = "0.4.1"
 description = "Diagrid namespace package"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -59,6 +59,11 @@ openai_agents = [
     "openai>=2.33.0",
     "diagrid[agent-core]",
 ]
+claude_agents = [
+    "claude-agent-sdk>=0.1.45",
+    "anthropic>=0.40.0",
+    "diagrid[agent-core]",
+]
 pydantic_ai = [
     # Use pydantic-ai-slim with selected extras instead of the `pydantic-ai`
     # meta-package, which pulls in `pydantic-ai-slim[mistral,logfire,...]`
@@ -83,12 +88,12 @@ holmesgpt = [
     "diagrid[agent-core]",
 ]
 all = [
-    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents]",
+    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents]",
 ]
 
 [dependency-groups]
 dev = [
-    "mypy>=1.15.0,<2.0.0",
+    "mypy>=1.15.0,<3.0.0",
     "pip-tools>=7.4.1,<8.0.0",
     "cachetools>=6.1.0,<8.0.0",
     "flake8>=7.3.0",
@@ -181,6 +186,10 @@ conflicts = [
     ],
     [
         { extra = "holmesgpt" },
+        { extra = "claude_agents" },
+    ],
+    [
+        { extra = "holmesgpt" },
         { extra = "all" },
     ],
 ]
@@ -196,6 +205,7 @@ members = [
     "examples/adk",
     "examples/strands",
     "examples/deepagents",
+    "examples/claude_agents",
     # HolmesGPT examples deliberately NOT a workspace member — see the note
     # next to the ``holmesgpt`` extra above. The example scripts still run
     # standalone via ``dapr run -- python examples/holmesgpt/...``.

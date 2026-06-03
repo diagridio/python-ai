@@ -1,0 +1,8 @@
+[project]
+name = "diagrid-example-claude-agents"
+version = "0.1.0"
+description = "Diagrid Claude Agent SDK example scripts"
+requires-python = ">=3.11"
+dependencies = [
+    "diagrid[claude_agents]",
+]

@@ -12,3 +12,4 @@ class SupportedFrameworks(StrEnum):
     ADK = "ADK"
     OPENAI = "OpenAI"
     PYDANTIC_AI = "PydanticAI"
+    CLAUDE_AGENTS = "ClaudeAgents"

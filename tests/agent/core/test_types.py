@@ -34,12 +34,17 @@ class SupportedFrameworksTest(unittest.TestCase):
         """Test STRANDS enum value."""
         self.assertEqual(SupportedFrameworks.STRANDS.value, "Strands")
 
+    def test_claude_agents_value(self):
+        """Test CLAUDE_AGENTS enum value."""
+        self.assertEqual(SupportedFrameworks.CLAUDE_AGENTS.value, "ClaudeAgents")
+
     def test_all_frameworks_present(self):
         """Test all expected frameworks are present."""
         framework_values = [f.value for f in SupportedFrameworks]
         self.assertIn("Dapr Agents", framework_values)
         self.assertIn("LangGraph", framework_values)
         self.assertIn("Strands", framework_values)
+        self.assertIn("ClaudeAgents", framework_values)
 
 
 class AgentMetadataTest(unittest.TestCase):
