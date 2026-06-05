@@ -7,12 +7,12 @@ dependencies:
   version: 1.10.3
 - name: kube-prometheus-stack
   repository: https://prometheus-community.github.io/helm-charts
-  version: 86.0.1
+  version: 86.1.1
 - name: opentelemetry-collector
   repository: https://open-telemetry.github.io/opentelemetry-helm-charts
   version: 0.158.1
 - name: chaos-mesh
   repository: https://charts.chaos-mesh.org
   version: 2.8.2
-digest: sha256:a998f4ff5c30b11224ec6703d2d74b74d3b24be3bb9e17ae40a531f585e2f3b3
-generated: "2026-06-05T14:04:31.663286371Z"
+digest: sha256:0ad6de76ba711dc212142a5d1c94f8cf3597c5edd8cb2579a3102cf20eca51f8
+generated: "2026-06-05T14:21:23.432040299Z"
