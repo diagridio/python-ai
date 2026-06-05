@@ -46,7 +46,7 @@ crewai = [
     "diagrid[agent-core]",
 ]
 adk = [
-    "google-adk>=1.32.0,<2",
+    "google-adk>=1.32.0,<3",
     "diagrid[agent-core]",
 ]
 strands = [
