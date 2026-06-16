@@ -53,7 +53,8 @@ Run the example with a sidecar. The script lives in this repo's [`examples/holme
 
 ```bash
 # From a clone of github.com/diagridio/python-ai
-dapr run --app-id holmes-cli -- python examples/holmesgpt/basic.py
+cd examples/holmesgpt
+dapr run --app-id holmes-cli -- python basic.py
 ```
 
 ## HTTP server with SSE

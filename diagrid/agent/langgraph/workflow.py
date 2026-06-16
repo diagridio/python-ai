@@ -17,6 +17,17 @@ from dapr.ext.workflow import (
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+try:
+    from langgraph.runtime import ExecutionInfo
+except ImportError:  # pragma: no cover - older langgraph without ExecutionInfo
+    ExecutionInfo = None  # type: ignore[assignment,misc]
+
+try:
+    from langgraph._internal._constants import CONFIG_KEY_RUNTIME, CONF
+except ImportError:  # pragma: no cover - constant moved/renamed across versions
+    CONFIG_KEY_RUNTIME = "__pregel_runtime"
+    CONF = "configurable"
+
 from .models import (
     ChannelState,
     ExecuteNodeInput,
@@ -190,12 +201,14 @@ def agent_workflow(
             channel_state=channel_state,
             step=0,
             max_steps=_default_max_steps,
+            thread_id=str(ctx.instance_id),
         )
 
     graph_config = workflow_input.graph_config
     channel_state = workflow_input.channel_state
     max_steps = workflow_input.max_steps
     config = workflow_input.config
+    thread_id = workflow_input.thread_id
 
     # Retry policy for activities
     retry_policy = RetryPolicy(
@@ -247,6 +260,7 @@ def agent_workflow(
                 node_name=node_name,
                 channel_state=channel_state,
                 config=config,
+                thread_id=thread_id,
             )
             task = ctx.call_activity(
                 execute_node_activity,
@@ -295,6 +309,8 @@ def agent_workflow(
                             source_node=node_name,
                             condition_name=edge.condition,
                             channel_state=channel_state,
+                            config=config,
+                            thread_id=thread_id,
                         )
                         cond_result = yield ctx.call_activity(
                             evaluate_condition_activity,
@@ -336,6 +352,42 @@ def agent_workflow(
         status="max_steps_reached",
         error=f"Max steps ({max_steps}) reached",
     ).to_dict()
+
+
+def _build_node_runtime(
+    thread_id: Optional[str],
+    ctx: WorkflowActivityContext,
+    node_name: str,
+) -> Runtime:
+    """Build a LangGraph ``Runtime`` carrying execution info for the node.
+
+    Sandbox / state backends read ``runtime.execution_info.thread_id`` to
+    resolve which workflow owns a given tool call. Constructing a bare
+    ``Runtime()`` drops that linkage, so we populate ``execution_info``
+    explicitly. Falls back to a bare ``Runtime()`` when ``ExecutionInfo`` is
+    unavailable or its constructor signature differs across langgraph versions
+    (a broad ``except`` keeps a version bump from hard-failing the node).
+
+    Args:
+        thread_id: The execution thread identifier to expose to consumers.
+        ctx: The workflow activity context (provides workflow/task ids).
+        node_name: The node being executed (used as the checkpoint namespace).
+
+    Returns:
+        A ``Runtime`` with ``execution_info`` populated, or a bare ``Runtime``.
+    """
+    if ExecutionInfo is None:
+        return Runtime()
+    try:
+        execution_info = ExecutionInfo(
+            checkpoint_id=str(getattr(ctx, "workflow_id", "") or ""),
+            checkpoint_ns=node_name,
+            task_id=str(getattr(ctx, "task_id", "") or ""),
+            thread_id=thread_id,
+        )
+        return Runtime(execution_info=execution_info)
+    except Exception:  # pragma: no cover - signature drift / partial ctx
+        return Runtime()
 
 
 def execute_node_activity(
@@ -414,14 +466,26 @@ def execute_node_activity(
         if hasattr(node_func, "invoke") and callable(getattr(node_func, "invoke")):
             # Ensure the config has a Runtime object for deep agent middleware
             # nodes that require it (runtime injection via RunnableCallable).
+            # Copy before mutating so we never write back into the shared
+            # config dict handed to this activity (immutability).
             _config = dict(config) if config else {}
-            if "configurable" not in _config:
-                _config["configurable"] = {}
-            if "__pregel_runtime" not in _config["configurable"]:
-                try:
-                    _config["configurable"]["__pregel_runtime"] = Runtime()
-                except ImportError:
-                    pass
+            _config[CONF] = dict(_config.get(CONF) or {})
+
+            thread_id = (
+                node_input.thread_id
+                or _config.get("thread_id")
+                or getattr(ctx, "workflow_id", None)
+            )
+            # Expose thread_id in the conventional LangGraph location too,
+            # so middleware reading config["configurable"]["thread_id"] works.
+            _config[CONF].setdefault("thread_id", thread_id)
+
+            # Populate the Runtime so sandbox/state backends can resolve which
+            # workflow owns a tool call via runtime.execution_info.thread_id.
+            if CONFIG_KEY_RUNTIME not in _config[CONF]:
+                _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
+                    thread_id, ctx, node_name
+                )
 
             # Inject CONFIG_KEY_READ / CONFIG_KEY_SEND so that deepagents
             # StateBackend (sandbox tools) can read/write the "files"
@@ -432,8 +496,8 @@ def execute_node_activity(
                     CONFIG_KEY_SEND,
                 )
 
-                _config["configurable"][CONFIG_KEY_READ] = _activity_read
-                _config["configurable"][CONFIG_KEY_SEND] = pending_sends.extend
+                _config[CONF][CONFIG_KEY_READ] = _activity_read
+                _config[CONF][CONFIG_KEY_SEND] = pending_sends.extend
             except ImportError:
                 pass
 
@@ -536,9 +600,23 @@ def evaluate_condition_activity(
 
     # Evaluate the condition.
     # If the condition is a LangChain Runnable (e.g. RunnableCallable from
-    # Deep Agents branches), call .invoke() instead of direct call.
+    # Deep Agents branches), call .invoke() so runtime injection works.
     if hasattr(cond_func, "invoke") and callable(getattr(cond_func, "invoke")):
-        result = cond_func.invoke(state)
+        # Copy before mutating; populate the Runtime so a Runnable condition
+        # can resolve workflow ownership the same way node activities do.
+        _config = dict(cond_input.config or {})
+        _config[CONF] = dict(_config.get(CONF) or {})
+        thread_id = (
+            cond_input.thread_id
+            or _config.get("thread_id")
+            or getattr(ctx, "workflow_id", None)
+        )
+        _config[CONF].setdefault("thread_id", thread_id)
+        if CONFIG_KEY_RUNTIME not in _config[CONF]:
+            _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
+                thread_id, ctx, cond_input.condition_name
+            )
+        result = cond_func.invoke(state, config=_config)
     else:
         result = cond_func(state)
 

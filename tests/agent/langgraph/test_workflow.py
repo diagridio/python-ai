@@ -31,6 +31,38 @@ from diagrid.agent.langgraph.workflow import (
 )
 
 
+class _FakeActivityCtx:
+    """Minimal stand-in for WorkflowActivityContext with real attribute values.
+
+    ``mock.Mock`` works for the legacy tests but produces repr strings; these
+    runtime-injection tests need concrete ``workflow_id`` / ``task_id`` values
+    to assert on.
+    """
+
+    def __init__(self, workflow_id: str = "wf-123", task_id: int = 7):
+        self.workflow_id = workflow_id
+        self.task_id = task_id
+
+
+class _RuntimeCapturingNode:
+    """A RunnableCallable-like node that records the injected runtime/config.
+
+    ``execute_node_activity`` calls ``.invoke(state, config=...)`` on objects
+    that expose ``invoke``; this fake captures what it was handed.
+    """
+
+    def __init__(self, result=None):
+        self.captured_runtime = None
+        self.captured_config = None
+        self._result = result if result is not None else {"result": "ok"}
+
+    def invoke(self, state, config=None):
+        self.captured_config = config or {}
+        configurable = self.captured_config.get("configurable", {})
+        self.captured_runtime = configurable.get("__pregel_runtime")
+        return self._result
+
+
 class TestRegistries(unittest.TestCase):
     """Tests for registry functions."""
 
@@ -353,6 +385,141 @@ class TestEvaluateConditionActivity(unittest.TestCase):
         result = evaluate_condition_activity(ctx, input_data)
         output = EvaluateConditionOutput.from_dict(result)
         self.assertEqual(output.next_nodes, ["high_path"])
+
+    def test_condition_runnable_receives_runtime(self):
+        """A Runnable condition gets a populated Runtime injected via config."""
+
+        class _RuntimeCapturingCondition:
+            def __init__(self):
+                self.captured_runtime = None
+
+            def invoke(self, state, config=None):
+                configurable = (config or {}).get("configurable", {})
+                self.captured_runtime = configurable.get("__pregel_runtime")
+                return "next_node"
+
+        cond = _RuntimeCapturingCondition()
+        register_condition("runnable_cond", cond)
+
+        ctx = _FakeActivityCtx(workflow_id="wf-c")
+        input_data = EvaluateConditionInput(
+            source_node="node_a",
+            condition_name="runnable_cond",
+            channel_state=ChannelState(),
+            config={"thread_id": "thread-c"},
+        ).to_dict()
+
+        result = evaluate_condition_activity(ctx, input_data)
+        output = EvaluateConditionOutput.from_dict(result)
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
+        self.assertIsNotNone(cond.captured_runtime)
+        self.assertIsNotNone(cond.captured_runtime.execution_info)
+        self.assertEqual(cond.captured_runtime.execution_info.thread_id, "thread-c")
+
+
+class TestExecuteNodeRuntimeInjection(unittest.TestCase):
+    """execute_node_activity must inject a Runtime carrying the thread_id."""
+
+    def setUp(self):
+        clear_registries()
+
+    def tearDown(self):
+        clear_registries()
+
+    def _run(self, *, config=None, thread_id=None, ctx=None, node_name="rnode"):
+        node = _RuntimeCapturingNode()
+        register_node(node_name, node)
+        ctx = ctx or _FakeActivityCtx()
+        input_data = ExecuteNodeInput(
+            node_name=node_name,
+            channel_state=ChannelState(values={"input": 1}),
+            config=config,
+            thread_id=thread_id,
+        ).to_dict()
+        execute_node_activity(ctx, input_data)
+        return node
+
+    def test_runtime_injected_with_execution_info(self):
+        node = self._run(
+            config={"thread_id": "thread-abc"},
+            ctx=_FakeActivityCtx(workflow_id="wf-123", task_id=7),
+        )
+        rt = node.captured_runtime
+        self.assertIsNotNone(rt)
+        self.assertIsNotNone(rt.execution_info)
+        self.assertEqual(rt.execution_info.thread_id, "thread-abc")
+        self.assertEqual(rt.execution_info.checkpoint_ns, "rnode")
+        self.assertEqual(rt.execution_info.checkpoint_id, "wf-123")
+        self.assertEqual(rt.execution_info.task_id, "7")
+
+    def test_first_class_thread_id_wins(self):
+        node = self._run(config={"thread_id": "t-cfg"}, thread_id="t-field")
+        self.assertEqual(node.captured_runtime.execution_info.thread_id, "t-field")
+
+    def test_configurable_thread_id_set(self):
+        node = self._run(config={"thread_id": "thread-abc"})
+        self.assertEqual(
+            node.captured_config["configurable"]["thread_id"], "thread-abc"
+        )
+
+    def test_thread_id_falls_back_to_workflow_id(self):
+        node = self._run(ctx=_FakeActivityCtx(workflow_id="wf-xyz"))
+        self.assertEqual(node.captured_runtime.execution_info.thread_id, "wf-xyz")
+
+    def test_existing_pregel_runtime_not_overwritten(self):
+        sentinel = object()
+        node = self._run(config={"configurable": {"__pregel_runtime": sentinel}})
+        self.assertIs(node.captured_runtime, sentinel)
+
+    def test_config_not_mutated(self):
+        original = {"configurable": {"existing": "v"}}
+        node = _RuntimeCapturingNode()
+        register_node("rnode", node)
+        input_data = ExecuteNodeInput(
+            node_name="rnode",
+            channel_state=ChannelState(),
+            config=original,
+        ).to_dict()
+        execute_node_activity(_FakeActivityCtx(), input_data)
+        self.assertNotIn("__pregel_runtime", original["configurable"])
+        self.assertNotIn("thread_id", original["configurable"])
+
+    def test_fallback_when_execution_info_unavailable(self):
+        node = _RuntimeCapturingNode()
+        register_node("rnode", node)
+        input_data = ExecuteNodeInput(
+            node_name="rnode",
+            channel_state=ChannelState(),
+            config={"thread_id": "t"},
+        ).to_dict()
+        with mock.patch("diagrid.agent.langgraph.workflow.ExecutionInfo", None):
+            execute_node_activity(_FakeActivityCtx(), input_data)
+        rt = node.captured_runtime
+        self.assertIsNotNone(rt)
+        self.assertIsNone(rt.execution_info)
+
+
+class TestBuildNodeRuntime(unittest.TestCase):
+    """Unit tests for the _build_node_runtime helper."""
+
+    def test_build_node_runtime_populates_fields(self):
+        from diagrid.agent.langgraph.workflow import _build_node_runtime
+
+        rt = _build_node_runtime("t1", _FakeActivityCtx("wf-1", 9), "model")
+        self.assertIsNotNone(rt.execution_info)
+        self.assertEqual(rt.execution_info.thread_id, "t1")
+        self.assertEqual(rt.execution_info.checkpoint_id, "wf-1")
+        self.assertEqual(rt.execution_info.task_id, "9")
+        self.assertEqual(rt.execution_info.checkpoint_ns, "model")
+
+    def test_build_node_runtime_none_thread_id(self):
+        from diagrid.agent.langgraph.workflow import _build_node_runtime
+
+        rt = _build_node_runtime(None, _FakeActivityCtx(), "model")
+        self.assertIsNotNone(rt.execution_info)
+        self.assertIsNone(rt.execution_info.thread_id)
 
 
 if __name__ == "__main__":

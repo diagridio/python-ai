@@ -192,17 +192,22 @@ class ExecuteNodeInput:
         node_name: Name of the node to execute
         channel_state: Current channel state
         config: Optional LangGraph config dict
+        thread_id: Thread identifier for the execution. Propagated into the
+            LangGraph ``Runtime`` so sandbox/state backends can resolve which
+            workflow owns a given tool call.
     """
 
     node_name: str
     channel_state: ChannelState
     config: Optional[Dict[str, Any]] = None
+    thread_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "node_name": self.node_name,
             "channel_state": self.channel_state.to_dict(),
             "config": self.config,
+            "thread_id": self.thread_id,
         }
 
     @classmethod
@@ -211,6 +216,7 @@ class ExecuteNodeInput:
             node_name=data["node_name"],
             channel_state=ChannelState.from_dict(data["channel_state"]),
             config=data.get("config"),
+            thread_id=data.get("thread_id"),
         )
 
 
@@ -252,17 +258,24 @@ class EvaluateConditionInput:
         source_node: The source node name
         condition_name: Name of the condition function
         channel_state: Current channel state
+        config: Optional LangGraph config dict (used to inject a ``Runtime``
+            when the condition is a ``RunnableCallable``)
+        thread_id: Thread identifier for the execution
     """
 
     source_node: str
     condition_name: str
     channel_state: ChannelState
+    config: Optional[Dict[str, Any]] = None
+    thread_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "source_node": self.source_node,
             "condition_name": self.condition_name,
             "channel_state": self.channel_state.to_dict(),
+            "config": self.config,
+            "thread_id": self.thread_id,
         }
 
     @classmethod
@@ -271,6 +284,8 @@ class EvaluateConditionInput:
             source_node=data["source_node"],
             condition_name=data["condition_name"],
             channel_state=ChannelState.from_dict(data["channel_state"]),
+            config=data.get("config"),
+            thread_id=data.get("thread_id"),
         )
 
 
