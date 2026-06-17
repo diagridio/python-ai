@@ -61,10 +61,12 @@ async def main():
 asyncio.run(main())
 ```
 
-Run with the Dapr sidecar:
+Run with the Dapr sidecar. The runnable script lives in this repo's [`examples/claude_agents/`](https://github.com/diagridio/python-ai/tree/main/examples/claude_agents) directory — clone the repo (or copy the script) before running, since it is not bundled with the installed package:
 
 ```bash
-dapr run --app-id claude-agents-demo --resources-path ./components -- python3 simple_agent.py
+# From a clone of github.com/diagridio/python-ai
+cd examples/claude_agents
+dapr run --app-id claude-agents-demo --resources-path ./resources -- python3 simple_agent.py
 ```
 
 ## Configuration

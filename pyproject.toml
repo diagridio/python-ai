@@ -148,6 +148,11 @@ override-dependencies = [
     # ``mcp>=1.26.0``. mcp 1.26 adds APIs over 1.25 and is wire-compatible
     # for the surfaces both libraries use.
     "mcp==1.26.0",
+    # Cap numpy below the 2.5.x line — 2.5.0rc1's stubs use PEP 695
+    # ``type X = ...`` syntax (Python 3.12+), which trips mypy's
+    # ``python_version = 3.11`` target with ``Type statement is only
+    # supported in Python 3.12 and greater``. Stay on the 2.4.x stable line.
+    "numpy<2.5",
 ]
 
 # HolmesGPT ships strict pins on fastapi, uvicorn, cachetools, mcp, and
@@ -198,17 +203,17 @@ conflicts = [
 members = [
     "diagrid/core",
     "diagrid/cli",
-    "diagrid/agent/langgraph/examples",
-    "diagrid/agent/crewai/examples",
-    "diagrid/agent/openai_agents/examples",
-    "diagrid/agent/pydantic_ai/examples",
-    "diagrid/agent/adk/examples",
-    "diagrid/agent/strands/examples",
-    "diagrid/agent/deepagents/examples",
-    "diagrid/agent/claude_agents/examples",
+    "examples/langgraph",
+    "examples/crewai",
+    "examples/openai_agents",
+    "examples/pydantic_ai",
+    "examples/adk",
+    "examples/strands",
+    "examples/deepagents",
+    "examples/claude_agents",
     # HolmesGPT examples deliberately NOT a workspace member — see the note
     # next to the ``holmesgpt`` extra above. The example scripts still run
-    # standalone via ``dapr run -- python diagrid/agent/holmesgpt/examples/...``.
+    # standalone via ``dapr run -- python examples/holmesgpt/...``.
 ]
 
 [tool.uv.sources]

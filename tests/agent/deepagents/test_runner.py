@@ -8,7 +8,7 @@ No mocks are used.
 
 Run with a Dapr sidecar:
     dapr run --app-id deepagent-test \
-        --resources-path ./diagrid/agent/deepagents/examples/components -- \
+        --resources-path ./examples/deepagents/resources -- \
         uv run pytest tests/agent/deepagents/test_runner.py -m integration -v
 
 Prerequisites:
