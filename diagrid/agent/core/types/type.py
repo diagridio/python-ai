@@ -13,3 +13,4 @@ class SupportedFrameworks(StrEnum):
     OPENAI = "OpenAI"
     PYDANTIC_AI = "PydanticAI"
     CLAUDE_AGENTS = "ClaudeAgents"
+    DEEPAGENTS = "DeepAgents"

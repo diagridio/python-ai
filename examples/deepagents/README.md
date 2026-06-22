@@ -117,7 +117,7 @@ User Message
 DaprWorkflowDeepAgentRunner
     |
     v
-START WORKFLOW: dapr.langgraph.<name>.workflow
+START WORKFLOW: dapr.deepagents.<name>.workflow
     |
     +--> Activity: execute_node (Deep Agent planning node)
     |         |

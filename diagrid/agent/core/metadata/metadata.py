@@ -231,6 +231,10 @@ class AgentRegistryAdapter:
                 "diagrid.agent.core.metadata.mapping.claude_agents",
                 "ClaudeAgentsMapper",
             ),
+            SupportedFrameworks.DEEPAGENTS: (
+                "diagrid.agent.core.metadata.mapping.deepagents",
+                "DeepAgentsMapper",
+            ),
         }
 
         entry = _mapper_modules.get(self._framework)
