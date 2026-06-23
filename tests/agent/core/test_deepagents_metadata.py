@@ -66,8 +66,9 @@ def _repair_langgraph_namespace() -> None:
 
 
 class _FakeTool:
-    def __init__(self, description: str):
+    def __init__(self, description: str, args=None):
         self.description = description
+        self.args = {} if args is None else args
 
 
 class _FakeToolNode:
@@ -124,15 +125,19 @@ class DeepAgentsMapperHelperTest(unittest.TestCase):
                 bound=_FakeToolNode(
                     {
                         "write_todos": _FakeTool("manage a todo list"),
-                        "get_weather": _FakeTool("get the weather"),
+                        "get_weather": _FakeTool(
+                            "get the weather", args={"city": {"type": "string"}}
+                        ),
                     }
                 )
             ),
         }
         tools = DeepAgentsMapper._extract_tools(nodes)
-        names = {t["name"] for t in tools}
-        self.assertEqual(names, {"write_todos", "get_weather"})
-        self.assertEqual(tools[0]["description"], "manage a todo list")
+        by_name = {t["name"]: t for t in tools}
+        self.assertEqual(set(by_name), {"write_todos", "get_weather"})
+        self.assertEqual(by_name["write_todos"]["description"], "manage a todo list")
+        # Tool args schema is captured (not hardcoded empty).
+        self.assertIn("city", by_name["get_weather"]["args"])
 
     def test_extract_tools_handles_no_tool_node(self):
         nodes = {"model": _FakeNodeSpec(bound=object())}
@@ -236,6 +241,17 @@ class DeepAgentsMapperFallbackTest(unittest.TestCase):
         self.assertIsNotNone(md.registered_at)
         self.assertIn("T", md.registered_at)
 
+    def test_max_iterations_defaults_to_one_without_hint(self):
+        md = DeepAgentsMapper().map_agent_metadata(_FakeGraph(), schema_version="1.0.0")
+        self.assertEqual(md.agent.max_iterations, 1)
+
+    def test_max_iterations_reads_runner_step_hint(self):
+        # The runner surfaces its (user-settable) max_steps via this hint.
+        graph = _FakeGraph(nodes={})
+        graph._diagrid_max_steps = 50  # type: ignore[attr-defined]
+        md = DeepAgentsMapper().map_agent_metadata(graph, schema_version="1.0.0")
+        self.assertEqual(md.agent.max_iterations, 50)
+
 
 class DeepAgentsProviderExtractionTest(unittest.TestCase):
     """Module-name provider extraction inherited from ``BaseAgentMapper``."""
@@ -276,7 +292,7 @@ class DeepAgentsMapperRealGraphTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         pytest.importorskip("langchain_openai", reason="langchain_openai not installed")
-        os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy-not-used")
+        cls._prev_openai_key = os.environ.get("OPENAI_API_KEY")
 
         # Repair the langgraph namespace shadow so the real graph builder imports.
         _repair_langgraph_namespace()
@@ -290,6 +306,10 @@ class DeepAgentsMapperRealGraphTest(unittest.TestCase):
 
         from langchain_core.tools import tool
 
+        # Dummy key only if unset (graph is constructed, never invoked); reverted
+        # in tearDownClass so it can't leak into other tests.
+        os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy-not-used")
+
         @tool
         def get_weather(city: str) -> str:
             """Get the current weather for a city."""
@@ -300,6 +320,13 @@ class DeepAgentsMapperRealGraphTest(unittest.TestCase):
             tools=[get_weather],
             system_prompt="You are a helpful research assistant.",
         )
+
+    @classmethod
+    def tearDownClass(cls):
+        if getattr(cls, "_prev_openai_key", None) is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = cls._prev_openai_key
 
     def test_extracts_llm_metadata(self):
         md = DeepAgentsMapper().map_agent_metadata(self.agent, schema_version="edge")
@@ -314,9 +341,12 @@ class DeepAgentsMapperRealGraphTest(unittest.TestCase):
         self.assertTrue(md.agent.system_prompt.startswith("You are a helpful research"))
         self.assertEqual(md.agent.goal, "You are a helpful research assistant.")
 
-    def test_extracts_user_tool_from_tool_node(self):
+    def test_extracts_user_tool_with_args_schema(self):
         md = DeepAgentsMapper().map_agent_metadata(self.agent, schema_version="edge")
-        self.assertIn("get_weather", {t.name for t in md.tools})
+        weather = next((t for t in md.tools if t.name == "get_weather"), None)
+        self.assertIsNotNone(weather)
+        # The tool's arg schema is captured, not hardcoded empty.
+        self.assertIn("city", weather.args)
 
     def test_name_uses_explicit_runner_name(self):
         md = DeepAgentsMapper().map_agent_metadata(

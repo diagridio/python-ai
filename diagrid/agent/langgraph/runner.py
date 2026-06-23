@@ -136,6 +136,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             self._graph._diagrid_role = role  # type: ignore[attr-defined]
         if goal:
             self._graph._diagrid_goal = goal  # type: ignore[attr-defined]
+        # Surface the runner's step budget so the registry reflects the actual
+        # max_iterations instead of a hardcoded default (read by DeepAgentsMapper).
+        self._graph._diagrid_max_steps = max_steps  # type: ignore[attr-defined]
 
         # Register metadata
         self._register_agent_metadata(

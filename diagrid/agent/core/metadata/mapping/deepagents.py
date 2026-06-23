@@ -86,7 +86,7 @@ class DeepAgentsMapper(BaseAgentMapper):
                 instructions=[],
                 system_prompt=system_prompt or "",
                 framework=SupportedFrameworks.DEEPAGENTS,
-                max_iterations=1,
+                max_iterations=getattr(agent, "_diagrid_max_steps", 1),
                 tool_choice="auto",
                 metadata=None,
             ),
@@ -126,7 +126,7 @@ class DeepAgentsMapper(BaseAgentMapper):
                 ToolMetadata(
                     name=tool.get("name", ""),
                     description=tool.get("description", ""),
-                    args="",
+                    args=tool.get("args", ""),
                 )
                 for tool in tools
             ],
@@ -156,6 +156,7 @@ class DeepAgentsMapper(BaseAgentMapper):
                 {
                     "name": tool_name,
                     "description": getattr(tool, "description", "") or "",
+                    "args": str(getattr(tool, "args", {}) or {}),
                 }
                 for tool_name, tool in tools_by_name.items()
             )
@@ -186,6 +187,10 @@ class DeepAgentsMapper(BaseAgentMapper):
                     self._build_llm_metadata(model),
                     self._extract_prompt_text(system_message),
                 )
+        logger.debug(
+            "DeepAgentsMapper: no chat model found in any node closure; "
+            "LLM metadata will be reported as 'unknown'."
+        )
         return None, None
 
     @staticmethod
@@ -238,7 +243,13 @@ class DeepAgentsMapper(BaseAgentMapper):
         """
         try:
             ls_params = model._get_ls_params()
-        except Exception:  # noqa: BLE001 - defensive; module-name fallback follows
+        except Exception as exc:  # noqa: BLE001 - defensive; module-name fallback follows
+            logger.debug(
+                "DeepAgentsMapper: _get_ls_params() failed on %s (%s); "
+                "falling back to module-name provider detection.",
+                type(model).__name__,
+                exc,
+            )
             return None
         provider = ls_params.get("ls_provider") if isinstance(ls_params, dict) else None
         return provider if isinstance(provider, str) and provider else None
