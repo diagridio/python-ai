@@ -16,6 +16,8 @@ from typing import Any, Callable, Generator, TypeVar
 
 from strands import Agent
 
+from diagrid.agent.core.workflow.naming import build_workflow_name, sanitize_agent_name
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -70,10 +72,11 @@ class DaprAgentWorkflow:
     ) -> None:
         self.agent = agent
         self._name = name
-        self.workflow_name = f"dapr.strands.{name}.workflow"
+        sanitized = sanitize_agent_name(name)
+        self.workflow_name = build_workflow_name("strands", name)
         self._workflow_runtime: Any = None
         self._workflow_func: Any = None
-        self._activity_name = f"dapr.strands.{name}.run_agent"
+        self._activity_name = f"dapr.strands.{sanitized}.run_agent"
 
     def register(self, workflow_runtime: Any) -> None:
         """Register the agent workflow and activities with Dapr.

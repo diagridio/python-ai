@@ -7,6 +7,7 @@ import asyncio
 from typing import Any, AsyncIterator
 from unittest import TestCase, mock
 
+from diagrid.agent.core.workflow.naming import build_workflow_name
 from diagrid.agent.core.workflow.runner import BaseWorkflowRunner
 
 
@@ -304,3 +305,19 @@ class TestConstructor(TestCase):
     ):
         ConcreteRunner(host="myhost", port="12345")
         mock_runtime_cls.assert_called_once_with(host="myhost", port="12345")
+
+
+@mock.patch("diagrid.agent.core.workflow.runner.DaprWorkflowClient")
+@mock.patch("diagrid.agent.core.workflow.runner.WorkflowRuntime")
+class TestWorkflowNameProperty(TestCase):
+    """workflow_name must delegate to build_workflow_name (single source of truth)."""
+
+    def test_delegates_to_builder(self, mock_runtime_cls, mock_client_cls):
+        runner = ConcreteRunner(name="catering-coordinator", framework="LangGraph")
+        self.assertEqual(
+            runner.workflow_name,
+            build_workflow_name("LangGraph", "catering-coordinator"),
+        )
+        self.assertEqual(
+            runner.workflow_name, "dapr.langgraph.CateringCoordinator.workflow"
+        )
