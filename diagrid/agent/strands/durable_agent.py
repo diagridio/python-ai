@@ -71,7 +71,10 @@ class DurableAgent:
 
         Args:
             agent: The Strands Agent instance to make durable
-            name: Required name (produces ``dapr.strands.<name>.workflow``)
+            name: Required name. The workflow is registered under the canonical
+                ``dapr.strands.<TitleCaseName>.workflow`` — the name is
+                TitleCased/sanitized via ``build_workflow_name`` (e.g.
+                ``"schedule-planner"`` → ``dapr.strands.SchedulePlanner.workflow``).
         """
         self._agent = agent
         self._name = name
