@@ -700,8 +700,10 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
     ) -> None:
         """Run a uvicorn server exposing investigation endpoints."""
         self._setup_telemetry()
-        self.start()
         app = self.build_fastapi_app()
+        # Tie the Dapr runtime to the server lifecycle: start on startup and
+        # shut down gracefully on SIGINT/SIGTERM (driven by uvicorn).
+        app.router.lifespan_context = self._serve_lifespan
         uvicorn.run(app, host=host, port=port)
 
     # ------------------------------------------------------------------
