@@ -8,9 +8,11 @@ import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional
 
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
+from dapr_agents.utils.signal.mixin import SignalMixin
 
 from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
@@ -20,12 +22,16 @@ from diagrid.agent.core.workflow.naming import sanitize_agent_name
 logger = logging.getLogger(__name__)
 
 
-class BaseWorkflowRunner(AgentRegistryMixin, ABC):
+class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
     """Base class for all framework workflow runners.
 
     Extracts the shared lifecycle, polling, status management, and serve
     logic that is duplicated across CrewAI, ADK, OpenAI Agents, Strands,
     and LangGraph runners.
+
+    Mixes in ``SignalMixin`` so served processes shut the Dapr workflow
+    runtime down gracefully on SIGINT/SIGTERM (e.g. Kubernetes pod
+    termination), matching the dapr-agents behavior.
 
     Subclasses must implement:
         - ``_setup_telemetry(app)`` — framework-specific OTEL setup
@@ -45,6 +51,9 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
         max_iterations: int = 25,
         state_store: Any = None,
     ) -> None:
+        # Initialize SignalMixin state (shutdown event, captured loop, etc.)
+        # so graceful shutdown on SIGINT/SIGTERM is available.
+        super().__init__()
         self._name = name
         self._framework = framework
         self._host = host
@@ -105,6 +114,30 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
             self._state_store.close()
         self._started = False
         logger.info("Dapr Workflow runtime stopped")
+
+    async def graceful_shutdown(self) -> None:
+        """Stop the Dapr workflow runtime and close resources.
+
+        Overrides ``SignalMixin.graceful_shutdown`` so the same cleanup path
+        runs on SIGINT/SIGTERM (or a programmatic ``request_shutdown()``).
+        ``shutdown()`` is synchronous and idempotent.
+        """
+        self.shutdown()
+
+    @asynccontextmanager
+    async def _serve_lifespan(self, _app: Any) -> AsyncIterator[None]:
+        """FastAPI lifespan that ties the Dapr runtime to the server lifecycle.
+
+        Starts the runtime on server startup and runs ``graceful_shutdown()``
+        on server shutdown. uvicorn's own SIGINT/SIGTERM handling drives the
+        shutdown phase, so the Dapr runtime and state store are always closed
+        cleanly when the process is terminated.
+        """
+        self.start()
+        try:
+            yield
+        finally:
+            await self.graceful_shutdown()
 
     # ------------------------------------------------------------------
     # Shared workflow management
@@ -327,11 +360,10 @@ class BaseWorkflowRunner(AgentRegistryMixin, ABC):
                 "Install them with: pip install fastapi uvicorn[standard]"
             )
 
-        app = FastAPI()
+        app = FastAPI(lifespan=self._serve_lifespan)
 
         self._setup_telemetry()
         self._setup_serve_defaults()
-        self.start()
 
         # Set up pub/sub publisher if configured
         pubsub_client = None
