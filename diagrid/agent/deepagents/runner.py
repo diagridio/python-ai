@@ -14,6 +14,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from langgraph.constants import START, END
 
+from diagrid.agent.core.types import SupportedFrameworks
 from diagrid.agent.langgraph.runner import DaprWorkflowGraphRunner
 from diagrid.agent.langgraph.workflow import (
     register_node,
@@ -55,6 +56,11 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
         runner.shutdown()
         ```
     """
+
+    #: Register under the Deep Agents framework identity (not LangGraph), so the
+    #: registry and workflow name reflect ``DeepAgents`` and the dedicated
+    #: ``DeepAgentsMapper`` is selected for metadata extraction.
+    _REGISTRY_FRAMEWORK = SupportedFrameworks.DEEPAGENTS
 
     def __init__(
         self,

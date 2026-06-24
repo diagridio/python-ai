@@ -89,6 +89,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         workflow_client: The Dapr WorkflowClient for managing workflows
     """
 
+    #: Framework identity used for the agent registry and the workflow name
+    #: (``dapr.<framework>.<name>.workflow``). Subclasses that wrap a different
+    #: framework on top of the LangGraph runtime (e.g. Deep Agents) override this.
+    _REGISTRY_FRAMEWORK: SupportedFrameworks = SupportedFrameworks.LANGGRAPH
+
     def __init__(
         self,
         graph: "CompiledStateGraph",
@@ -118,7 +123,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
         super().__init__(
             name,
-            framework=SupportedFrameworks.LANGGRAPH,
+            framework=self._REGISTRY_FRAMEWORK,
             host=host,
             port=port,
             max_iterations=max_steps,
@@ -131,11 +136,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             self._graph._diagrid_role = role  # type: ignore[attr-defined]
         if goal:
             self._graph._diagrid_goal = goal  # type: ignore[attr-defined]
+        # Surface the runner's step budget so the registry reflects the actual
+        # max_iterations instead of a hardcoded default (read by DeepAgentsMapper).
+        self._graph._diagrid_max_steps = max_steps  # type: ignore[attr-defined]
 
         # Register metadata
         self._register_agent_metadata(
             agent=self._graph,
-            framework=SupportedFrameworks.LANGGRAPH,
+            framework=self._REGISTRY_FRAMEWORK,
             registry=registry_config,
             name=self._name,
         )
