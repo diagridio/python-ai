@@ -84,7 +84,9 @@ class TestDaprAgentWorkflow:
         workflow = DaprAgentWorkflow(agent=mock_agent, name="my_agent")
 
         assert workflow.agent is mock_agent
-        assert workflow.workflow_name == "dapr.strands.my_agent.workflow"
+        # Name is sanitized to canonical TitleCase so the registered workflow
+        # matches the workflow_name published to the agent registry.
+        assert workflow.workflow_name == "dapr.strands.MyAgent.workflow"
 
     def test_init_custom_name(self, mock_agent):
         """Test initialization with custom name."""
@@ -93,7 +95,7 @@ class TestDaprAgentWorkflow:
             name="test_workflow",
         )
 
-        assert workflow.workflow_name == "dapr.strands.test_workflow.workflow"
+        assert workflow.workflow_name == "dapr.strands.TestWorkflow.workflow"
 
     def test_register(self, mock_agent):
         """Test that register creates workflow and activity."""
@@ -123,7 +125,7 @@ class TestDaprAgentWorkflowDecorator:
         workflow = create_agent()
 
         assert isinstance(workflow, DaprAgentWorkflow)
-        assert workflow.workflow_name == "dapr.strands.decorated_workflow.workflow"
+        assert workflow.workflow_name == "dapr.strands.DecoratedWorkflow.workflow"
 
     def test_decorator_passes_args(self):
         """Test that decorator passes arguments to factory."""

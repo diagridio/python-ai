@@ -55,6 +55,29 @@ def _is_etag_conflict(exc: Exception) -> bool:
     return "etag" in msg or "aborted" in msg
 
 
+def apply_workflow_name(
+    metadata: AgentMetadataSchema, framework: str, name: str
+) -> None:
+    """Publish the canonical workflow name into ``metadata.agent.metadata``.
+
+    The orchestrator reads ``agent.metadata['workflow_name']`` verbatim when
+    invoking this agent, so it must equal the name the runner registered the
+    workflow under. Setting it here makes our registration the single source of
+    truth instead of relying on the orchestrator re-deriving the name with
+    potentially different casing rules.
+
+    Mutates ``metadata`` in place (consistent with the surrounding registration
+    code) and preserves any existing ``agent.metadata`` keys.
+    """
+    # Imported lazily: importing the ``workflow`` package at module load would
+    # form a cycle (workflow -> runner -> metadata.mixins -> metadata).
+    from diagrid.agent.core.workflow.naming import build_workflow_name
+
+    if metadata.agent.metadata is None:
+        metadata.agent.metadata = {}
+    metadata.agent.metadata["workflow_name"] = build_workflow_name(framework, name)
+
+
 class AgentRegistryAdapter:
     @classmethod
     def create_from_stack(
@@ -159,6 +182,14 @@ class AgentRegistryAdapter:
                 _metadata.agent.metadata = {}
             if not _metadata.agent.metadata.get("state_store"):
                 _metadata.agent.metadata["state_store"] = self._state_store_name
+
+        # Publish the canonical workflow name so the orchestrator invokes the
+        # exact name our runner registered, instead of re-deriving it.
+        apply_workflow_name(
+            _metadata,
+            self._framework,
+            self._agent_name or _metadata.name,
+        )
 
         self._register(_metadata)
 

@@ -19,6 +19,8 @@ from typing import Any, Generator
 from strands import Agent
 from strands.types.tools import ToolUse
 
+from diagrid.agent.core.workflow.naming import build_workflow_name, sanitize_agent_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,11 +71,15 @@ class DurableAgent:
 
         Args:
             agent: The Strands Agent instance to make durable
-            name: Required name (produces ``dapr.strands.<name>.workflow``)
+            name: Required name. The workflow is registered under the canonical
+                ``dapr.strands.<TitleCaseName>.workflow`` — the name is
+                TitleCased/sanitized via ``build_workflow_name`` (e.g.
+                ``"schedule-planner"`` → ``dapr.strands.SchedulePlanner.workflow``).
         """
         self._agent = agent
         self._name = name
-        self._workflow_name = f"dapr.strands.{name}.workflow"
+        self._sanitized_name = sanitize_agent_name(name)
+        self._workflow_name = build_workflow_name("strands", name)
 
         # Dapr components (initialized on first call)
         self._workflow_runtime: Any = None
@@ -365,10 +371,11 @@ class DurableAgent:
             agent_workflow, name=self._workflow_name
         )
         self._workflow_runtime.register_activity(
-            call_model_activity, name=f"dapr.strands.{self._name}.call_model"
+            call_model_activity, name=f"dapr.strands.{self._sanitized_name}.call_model"
         )
         self._workflow_runtime.register_activity(
-            execute_tool_activity, name=f"dapr.strands.{self._name}.execute_tool"
+            execute_tool_activity,
+            name=f"dapr.strands.{self._sanitized_name}.execute_tool",
         )
 
         # Store reference to workflow function for scheduling

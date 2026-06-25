@@ -17,7 +17,7 @@ from dapr_agents.utils.signal.mixin import SignalMixin
 from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
 from diagrid.agent.core.observability import resolve_observability_config
-from diagrid.agent.core.workflow.naming import sanitize_agent_name
+from diagrid.agent.core.workflow.naming import build_workflow_name
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +83,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         The agent name is sanitized to TitleCase to match the convention
         used by dapr-agents (e.g. ``dapr.openai.CateringCoordinator.workflow``).
         """
-        return (
-            f"dapr.{self._framework.lower()}.{sanitize_agent_name(self._name)}.workflow"
-        )
+        return build_workflow_name(self._framework, self._name)
 
     # ------------------------------------------------------------------
     # Shared lifecycle
