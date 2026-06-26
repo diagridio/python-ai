@@ -32,9 +32,7 @@ class PluginRegistry:
     def __init__(self, plugins: Optional[Sequence[Plugin]] = None) -> None:
         # Stable sort by priority alone preserves registration order for
         # ties, which is the tie-break the chain relies on.
-        self._plugins: List[Plugin] = sorted(
-            plugins or [], key=lambda p: getattr(p, "priority", 100)
-        )
+        self._plugins: List[Plugin] = sorted(plugins or [], key=lambda p: p.priority)
 
     def attach(self, agent: Any) -> None:
         """Configure each plugin against ``agent``; called at init time."""

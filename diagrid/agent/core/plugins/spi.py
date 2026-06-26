@@ -19,7 +19,9 @@ if TYPE_CHECKING:
 
 # dapr-agents owns the decision taxonomy so the two codebases share a single
 # definition. The local fallback below keeps the SPI importable on its own
-# until that module is available.
+# until a dapr-agents release ships the ``hooks`` module. Catch only
+# ModuleNotFoundError so a genuine import error inside an existing module
+# surfaces instead of being masked by the fallback.
 if TYPE_CHECKING:
     from dapr_agents.hooks import (
         Deny,
@@ -39,7 +41,7 @@ else:
             RequireApproval,
             Skip,
         )
-    except ImportError:
+    except ModuleNotFoundError:
         # Name-only placeholders; the real shapes arrive with the import above.
         class Proceed:
             pass
