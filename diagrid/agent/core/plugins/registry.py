@@ -14,7 +14,7 @@ import asyncio
 import inspect
 import logging
 from dataclasses import fields
-from typing import Any, Dict, Final, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Final, List, Optional, Sequence, Tuple, cast
 
 from dapr_agents.hooks import (
     Deny,
@@ -184,19 +184,19 @@ class PluginRegistry(LifecycleDispatcher):
         if isinstance(decision, Mutate):
             return {"type": _MUTATE, "payload": decision.payload or {}}
         if isinstance(decision, RequireApproval):
-            d: DecisionDict = {"type": _REQUIRE_APPROVAL}
+            approval: Dict[str, Any] = {"type": _REQUIRE_APPROVAL}
             for f in _REQUIRE_APPROVAL_FIELDS:
                 v = getattr(decision, f, None)
                 if v is not None:
-                    d[f] = list(v) if isinstance(v, (set, frozenset)) else v
-            return d
+                    approval[f] = list(v) if isinstance(v, (set, frozenset)) else v
+            return cast(DecisionDict, approval)
         if isinstance(decision, Deny):
-            d = {"type": _DENY}
+            deny: Dict[str, Any] = {"type": _DENY}
             for f in _DENY_FIELDS:
                 v = getattr(decision, f, None)
                 if v is not None:
-                    d[f] = v
-            return d
+                    deny[f] = v
+            return cast(DecisionDict, deny)
         raise TypeError(f"unknown HookDecision: {type(decision)!r}")
 
 
