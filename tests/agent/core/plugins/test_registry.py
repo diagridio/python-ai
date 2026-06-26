@@ -1,6 +1,8 @@
 # Copyright (c) 2026-Present Diagrid Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
+import asyncio
+
 from dapr_agents.hooks import Deny, Mutate, Proceed, RequireApproval, Skip
 
 from diagrid.agent.core.plugins.registry import PluginRegistry
@@ -167,6 +169,25 @@ def test_all_proceed_returns_none():
     assert result is None
 
 
+def test_mutate_payload_visible_to_downstream_plugins():
+    seen = {}
+
+    class Mutator(FakePlugin):
+        async def on_event(self, ctx):
+            return Mutate(payload={"injected": "value"})
+
+    class Observer(FakePlugin):
+        async def on_event(self, ctx):
+            seen.update(ctx.payload)
+            return None
+
+    p1 = Mutator(name="mutator", priority=10)
+    p2 = Observer(name="observer", priority=20)
+    reg = PluginRegistry([p1, p2])
+    reg.dispatch("BEFORE_LLM_CALL", {})
+    assert seen == {"injected": "value"}
+
+
 # ----- failure_mode -----
 
 
@@ -228,3 +249,31 @@ def test_sync_hook_auto_wrapped():
     reg = PluginRegistry([p])
     reg.dispatch("BEFORE_AGENT_INVOKE", {})
     assert p.invocations == 1
+
+
+def test_empty_capabilities_disables_plugin():
+    class NoCaps(FakePlugin):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.capabilities = frozenset()
+
+    p = NoCaps(name="disabled")
+    reg = PluginRegistry([p])
+    reg.dispatch("BEFORE_AGENT_INVOKE", {})
+    reg.dispatch("BEFORE_TOOL_CALL", {})
+    assert p.invocations == 0
+
+
+# ----- dispatch from within a running event loop -----
+
+
+def test_dispatch_inside_running_loop_does_not_crash():
+    p = FakePlugin(name="p", priority=10, on_event_return=Deny(code="x"))
+    reg = PluginRegistry([p])
+
+    async def call():
+        return reg.dispatch("BEFORE_AGENT_INVOKE", {})
+
+    result = asyncio.run(call())
+    assert result["type"] == "deny"
+    assert result["code"] == "x"

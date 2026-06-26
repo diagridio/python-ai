@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from typing import Any, Dict, Final, List, Optional, Sequence, Tuple, cast
 
@@ -113,10 +114,14 @@ class PluginRegistry(LifecycleDispatcher):
 
     def _run_chain_sync(self, ctx: LifecycleContext) -> Optional[HookDecision]:
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(self._run_chain_async(ctx))
-        return loop.run_until_complete(self._run_chain_async(ctx))
+        # Already inside a running loop: drive the chain on a private loop in a
+        # worker thread so we never touch the caller's live loop, which can't be
+        # re-entered with run_until_complete.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(lambda: asyncio.run(self._run_chain_async(ctx))).result()
 
     async def _run_chain_async(self, ctx: LifecycleContext) -> Optional[HookDecision]:
         accumulated_mutate_payload: Dict[str, Any] = {}
@@ -133,7 +138,11 @@ class PluginRegistry(LifecycleDispatcher):
             if decision is None or isinstance(decision, Proceed):
                 continue
             if isinstance(decision, Mutate):
-                accumulated_mutate_payload.update(decision.payload or {})
+                payload = decision.payload or {}
+                accumulated_mutate_payload.update(payload)
+                # Merge back onto the context so later plugins observe the
+                # accumulated payload, not just the original input.
+                ctx.payload.update(payload)
                 continue
             return decision
 
@@ -143,7 +152,7 @@ class PluginRegistry(LifecycleDispatcher):
 
     def _plugin_handles_event(self, plugin: Plugin, event: LifecycleEvent) -> bool:
         capabilities = getattr(plugin, "capabilities", None)
-        if not capabilities:
+        if capabilities is None:
             return True
         return event in capabilities
 
@@ -165,11 +174,13 @@ class PluginRegistry(LifecycleDispatcher):
             logger.warning(
                 _PLUGIN_EXCEPTION_EVENT,
                 extra={"plugin": plugin.name, "error": str(exc)},
+                exc_info=exc,
             )
             return Proceed()
         logger.error(
             _PLUGIN_EXCEPTION_EVENT,
             extra={"plugin": plugin.name, "error": str(exc)},
+            exc_info=exc,
         )
         return Deny(
             code=f"plugin.{plugin.name}.exception",
