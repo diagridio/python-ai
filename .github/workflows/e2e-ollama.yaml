@@ -31,7 +31,7 @@ jobs:
 
       - name: Cache Ollama model
         id: cache-ollama
-        uses: actions/cache@v5
+        uses: actions/cache@v6.1.0
         with:
           path: ~/.ollama
           key: ollama-qwen3-0.6b-v2-${{ runner.os }}
