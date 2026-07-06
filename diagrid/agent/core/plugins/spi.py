@@ -1,9 +1,7 @@
 # Copyright (c) 2026-Present Diagrid Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-# TODO(AI-598): This is minimal scaffolding for the plugins SPI. Replace with
-# the full module from the AI-598 PR once it lands; the OAuthPlugin (AI-602)
-# only depends on LifecycleEvent.
+# TODO: Minimal scaffolding for the plugins SPI; replace with the full module.
 
 from enum import StrEnum
 

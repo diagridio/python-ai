@@ -1,39 +1,36 @@
 # Copyright (c) 2026-Present Diagrid Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
+from types import SimpleNamespace
+
 import pytest
-from unittest.mock import AsyncMock
 
 from dapr_agents.hooks import Deny, Proceed
 
 from diagrid.agent.core.plugins.context import LifecycleContext
 from diagrid.agent.core.plugins.spi import LifecycleEvent
 from diagrid.agent.core.plugins.oauth import OAuthPlugin
-from diagrid.agent.core.plugins.oauth.client import AuthVerifyResponse
 
 
-def make_ctx(headers: dict) -> LifecycleContext:
+def make_ctx(claims: dict | None) -> LifecycleContext:
+    """Build a BEFORE_AGENT_INVOKE context with sidecar-delivered claims."""
+    trigger = SimpleNamespace(caller_claims=claims)
     ctx = LifecycleContext(event=LifecycleEvent.BEFORE_AGENT_INVOKE)
-    ctx.caller_headers = headers
+    ctx.trigger_action = trigger
     return ctx
 
 
 @pytest.mark.asyncio
-async def test_valid_token_populates_caller_and_proceeds(monkeypatch):
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
-    plugin._client.verify = AsyncMock(
-        return_value=AuthVerifyResponse(
-            verified=True,
-            claims={
-                "sub": "alice@acme.com",
-                "tenant": "acme",
-                "scopes": ["agent.invoke"],
-                "email": "alice@acme.com",
-            },
-            issuer_id="catalyst-sentry",
-        )
+async def test_verified_claims_populate_caller_and_proceed():
+    plugin = OAuthPlugin()
+    ctx = make_ctx(
+        {
+            "sub": "alice@acme.com",
+            "tenant": "acme",
+            "scopes": ["agent.invoke"],
+            "iss": "catalyst-sentry",
+        }
     )
-    ctx = make_ctx({"Authorization": "Bearer eyJhbGciOi..."})
     result = await plugin.on_event(ctx)
     assert isinstance(result, Proceed)
     assert ctx.caller.subject == "alice@acme.com"
@@ -43,117 +40,88 @@ async def test_valid_token_populates_caller_and_proceeds(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_raw_token_scrubbed_after_verification(monkeypatch):
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
-    plugin._client.verify = AsyncMock(
-        return_value=AuthVerifyResponse(
-            verified=True,
-            claims={"sub": "alice"},
-            issuer_id="catalyst-sentry",
-        )
-    )
-    headers = {"Authorization": "Bearer eyJhbG..."}
-    ctx = make_ctx(headers)
-    await plugin.on_event(ctx)
-    assert "Authorization" not in headers
-    assert "authorization" not in headers
+async def test_missing_claims_denies_closed():
+    plugin = OAuthPlugin()
+    ctx = make_ctx(None)  # sidecar delivered no claims
+    result = await plugin.on_event(ctx)
+    assert isinstance(result, Deny)
+    assert result.code == "oauth.missing_caller_claims"
 
 
 @pytest.mark.asyncio
-async def test_missing_token_denies():
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
-    ctx = make_ctx({})  # no Authorization header
+async def test_required_scope_satisfied_proceeds():
+    plugin = OAuthPlugin(required_scopes=frozenset({"agent.invoke"}))
+    ctx = make_ctx({"sub": "alice", "scopes": ["agent.invoke", "agent.read"]})
     result = await plugin.on_event(ctx)
-    assert isinstance(result, Deny)
-    assert result.code == "oauth.missing_token"
+    assert isinstance(result, Proceed)
 
 
 @pytest.mark.asyncio
-async def test_invalid_signature_denies(monkeypatch):
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
-    plugin._client.verify = AsyncMock(
-        return_value=AuthVerifyResponse(
-            verified=False,
-            error="invalid_signature",
-            error_description="JWT signature verification failed",
-        )
-    )
-    ctx = make_ctx({"Authorization": "Bearer tampered"})
+async def test_missing_required_scope_denies():
+    plugin = OAuthPlugin(required_scopes=frozenset({"agent.invoke", "agent.admin"}))
+    ctx = make_ctx({"sub": "alice", "scopes": ["agent.invoke"]})
     result = await plugin.on_event(ctx)
     assert isinstance(result, Deny)
-    assert result.code == "oauth.invalid_signature"
+    assert result.code == "oauth.missing_scope"
+    assert result.details["missing"] == ["agent.admin"]
 
 
 @pytest.mark.asyncio
-async def test_expired_token_denies(monkeypatch):
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
-    plugin._client.verify = AsyncMock(
-        return_value=AuthVerifyResponse(
-            verified=False, error="expired", error_description="token expired"
-        )
-    )
-    ctx = make_ctx({"Authorization": "Bearer eyJold"})
+async def test_tenant_not_allowed_denies():
+    plugin = OAuthPlugin(allowed_tenants=frozenset({"acme"}))
+    ctx = make_ctx({"sub": "alice", "tenant": "evilcorp"})
     result = await plugin.on_event(ctx)
     assert isinstance(result, Deny)
-    assert result.code == "oauth.expired"
+    assert result.code == "oauth.tenant_not_allowed"
+    assert result.details["tenant"] == "evilcorp"
 
 
 @pytest.mark.asyncio
-async def test_invalid_audience_denies(monkeypatch):
-    plugin = OAuthPlugin(
-        sidecar_url="http://localhost:3500",
-        expected_audience="spiffe://.../my-agent",
-    )
-    plugin._client.verify = AsyncMock(
-        return_value=AuthVerifyResponse(
-            verified=False,
-            error="invalid_audience",
-            error_description="audience mismatch",
-        )
-    )
-    ctx = make_ctx({"Authorization": "Bearer wrong-aud"})
+async def test_subject_not_allowed_denies():
+    plugin = OAuthPlugin(allowed_subjects=frozenset({"alice@acme.com"}))
+    ctx = make_ctx({"sub": "mallory@acme.com"})
     result = await plugin.on_event(ctx)
     assert isinstance(result, Deny)
-    assert result.code == "oauth.invalid_audience"
+    assert result.code == "oauth.subject_not_allowed"
+    assert result.details["subject"] == "mallory@acme.com"
 
 
 @pytest.mark.asyncio
-async def test_sidecar_unavailable_denies_closed(monkeypatch):
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
-    plugin._client.verify = AsyncMock(side_effect=ConnectionError("sidecar down"))
-    ctx = make_ctx({"Authorization": "Bearer x"})
+async def test_sub_workflow_caller_claims_populate_caller():
+    """Sub-workflow path: parent propagates caller_claims on TriggerAction."""
+    plugin = OAuthPlugin(required_scopes=frozenset({"agent.invoke"}))
+    ctx = make_ctx(
+        {"sub": "bob@acme.com", "tenant": "acme", "scopes": ["agent.invoke"]}
+    )
     result = await plugin.on_event(ctx)
-    assert isinstance(result, Deny)
-    assert result.code == "oauth.verify_unavailable"
+    assert isinstance(result, Proceed)
+    assert ctx.caller.subject == "bob@acme.com"
+    assert ctx.caller.tenant == "acme"
 
 
 @pytest.mark.asyncio
 async def test_plugin_ignores_non_inbound_events():
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
+    plugin = OAuthPlugin()
     ctx = LifecycleContext(event=LifecycleEvent.BEFORE_TOOL_CALL)
     result = await plugin.on_event(ctx)
     assert result is None
 
 
 def test_plugin_capabilities_only_inbound():
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
+    plugin = OAuthPlugin()
     assert plugin.capabilities == frozenset({LifecycleEvent.BEFORE_AGENT_INVOKE})
 
 
 def test_failure_mode_is_closed():
-    plugin = OAuthPlugin(sidecar_url="http://localhost:3500")
+    plugin = OAuthPlugin()
     assert plugin.failure_mode == "closed"
 
 
-# TODO(AI-592): Add tests for LifecycleContext sourcing caller_headers from
-# TriggerAction once `TriggerAction.caller_headers` lands. These should cover
-# the header-propagation path end-to-end (TriggerAction -> LifecycleContext ->
-# OAuthPlugin._extract_bearer), which is stubbed here via make_ctx.
+# TODO: Add tests for LifecycleContext sourcing caller_claims from a real
+# TriggerAction once that field lands (delivery path is stubbed via make_ctx).
 
-# TODO(AI-595): Add e2e tests for the lifecycle dispatcher (AI-596
-# `lifecycle_dispatcher` kwarg + BEFORE_AGENT_INVOKE dispatch site) once it is
-# wired into DurableAgent, verifying the OAuthPlugin actually fires at ingress.
+# TODO: Add e2e tests once the lifecycle dispatcher is wired into DurableAgent,
+# verifying the plugin fires at ingress.
 
-# TODO(AI-599): Add chain integration tests for the PluginRegistry dispatcher —
-# OAuthPlugin (priority=10) running first, short-circuiting the chain on Deny,
-# and propagating ctx.caller to downstream plugins on Proceed.
+# TODO: Add PluginRegistry chain integration tests — plugin runs first,
+# short-circuits the chain on Deny, propagates ctx.caller on Proceed.

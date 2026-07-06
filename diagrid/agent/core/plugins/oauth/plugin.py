@@ -2,135 +2,128 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """
-OAuthPlugin — verifies inbound caller JWTs at agent ingress.
+OAuthPlugin — app-side policy layer.
 
-Thin client of the local Catalyst sidecar's /v1.0-alpha/auth/verify
-endpoint (AI-647). The sidecar owns JWKS, multi-issuer config, claim
-mapping, and trust context; the plugin just forwards the JWT and
-populates ctx.caller with the verified claims.
+Reads verified caller claims delivered by the sidecar (via headers or
+TriggerAction.caller_claims), populates ctx.caller, and applies per-agent
+authorization policy (scope checks, tenant checks, subject allowlist).
+
+Does NOT verify JWTs. Does NOT call the sidecar. The sidecar's inbound
+exchange middleware has already verified and exchanged the JWT before the
+request reaches the agent app.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-from typing import Optional
+from typing import FrozenSet, Optional
 
 try:
     from dapr_agents.hooks import Deny, HookDecision, Proceed
 except ModuleNotFoundError:  # pragma: no cover
-    # TODO(AI-596): dapr-agents has not yet shipped its hooks module. Fall back
-    # to the local definitions so the plugin stays consumable until it does.
+    # TODO: Fall back to local definitions until dapr-agents ships its hooks module.
     from .._hooks import Deny, HookDecision, Proceed
 
 from ..context import CallerIdentity, LifecycleContext
 from ..spi import LifecycleEvent
-from .client import AuthVerifyClient
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_SIDECAR_PORT = "3500"
 
 
 class OAuthPlugin:
     """
-    Verifies inbound caller JWTs via the local sidecar /auth/verify
-    endpoint and populates ctx.caller with the verified claims.
+    App-side policy layer for user-identity-based authorization.
 
-    Per the "raw access tokens never enter signed workflow history"
-    rule, scrubs the raw Authorization header from caller_headers
-    after verification — only the verified-claims subset propagates
-    into workflow input.
+    Reads verified claims delivered by the sidecar; populates ctx.caller;
+    enforces per-agent policy (scope allowlist, tenant allowlist, subject
+    allowlist).
     """
 
     name = "oauth"
-    priority = 10  # Runs first in the chain
+    priority = 10  # Runs first in the chain (policy gate)
     capabilities = frozenset({LifecycleEvent.BEFORE_AGENT_INVOKE})
-    failure_mode = "closed"  # Verification failure → Deny
+    failure_mode = "closed"
 
     def __init__(
         self,
         *,
-        sidecar_url: Optional[str] = None,
-        expected_audience: Optional[str] = None,
-        timeout_seconds: float = 5.0,
+        required_scopes: Optional[FrozenSet[str]] = None,
+        allowed_tenants: Optional[FrozenSet[str]] = None,
+        allowed_subjects: Optional[FrozenSet[str]] = None,
     ):
-        self._client = AuthVerifyClient(
-            sidecar_url=sidecar_url or _default_sidecar_url(),
-            timeout_seconds=timeout_seconds,
-        )
-        self._expected_audience = expected_audience
+        self._required_scopes = required_scopes or frozenset()
+        self._allowed_tenants = allowed_tenants
+        self._allowed_subjects = allowed_subjects
 
     @classmethod
-    def from_catalyst(cls, *, expected_audience: Optional[str] = None) -> "OAuthPlugin":
-        """Construct with Catalyst defaults (sidecar URL from env)."""
-        return cls(expected_audience=expected_audience)
+    def from_catalyst(
+        cls,
+        *,
+        required_scopes: Optional[FrozenSet[str]] = None,
+        allowed_tenants: Optional[FrozenSet[str]] = None,
+        allowed_subjects: Optional[FrozenSet[str]] = None,
+    ) -> "OAuthPlugin":
+        return cls(
+            required_scopes=required_scopes,
+            allowed_tenants=allowed_tenants,
+            allowed_subjects=allowed_subjects,
+        )
 
     def configure(self, agent: object) -> None:
-        # Could read agent's SPIFFE ID here to default expected_audience.
-        # For v1, expected_audience defaults to the sidecar's own identity
-        # if not provided (sidecar handles the fallback).
         pass
 
     async def on_event(self, ctx: LifecycleContext) -> Optional[HookDecision]:
         if ctx.event != LifecycleEvent.BEFORE_AGENT_INVOKE:
             return None
 
-        caller_headers = getattr(ctx, "caller_headers", None) or {}
-        jwt = self._extract_bearer(caller_headers)
-        if not jwt:
+        claims = self._extract_verified_claims(ctx)
+        if claims is None:
             return Deny(
-                code="oauth.missing_token",
-                details={"reason": "no Authorization: Bearer header on inbound call"},
+                code="oauth.missing_caller_claims",
+                details={"reason": "sidecar did not deliver verified claims"},
             )
 
-        try:
-            response = await self._client.verify(
-                jwt=jwt, expected_audience=self._expected_audience
-            )
-        except Exception as exc:
-            logger.error("oauth.verify_call_failed", extra={"error": str(exc)})
-            return Deny(
-                code="oauth.verify_unavailable",
-                details={"error": str(exc)},
-            )
-
-        if not response.verified:
-            return Deny(
-                code=f"oauth.{response.error or 'verification_failed'}",
-                details={
-                    "error_description": response.error_description,
-                },
-            )
-
-        # Populate ctx.caller from verified claims.
         ctx.caller = CallerIdentity(
-            subject=response.claims.get("sub", ""),
-            tenant=response.claims.get("tenant"),
-            scopes=frozenset(response.claims.get("scopes", []) or []),
-            issuer_id=response.issuer_id,
-            claims=response.claims,
+            subject=claims.get("sub", ""),
+            tenant=claims.get("tenant"),
+            scopes=frozenset(claims.get("scopes", []) or []),
+            issuer_id=claims.get("iss"),
+            claims=claims,
         )
 
-        # Scrub raw token from caller_headers — verified claims propagate,
-        # raw JWT does NOT enter workflow input or signed history.
-        self._scrub_authorization_header(caller_headers)
+        return self._apply_policy(ctx.caller)
 
-        return Proceed()
-
-    def _extract_bearer(self, headers: dict) -> Optional[str]:
-        for key in ("authorization", "Authorization"):
-            value = headers.get(key)
-            if value and value.lower().startswith("bearer "):
-                return value[7:].strip()
+    def _extract_verified_claims(self, ctx: LifecycleContext) -> Optional[dict]:
+        """Read the verified claims the sidecar delivered on the TriggerAction."""
+        trigger = getattr(ctx, "trigger_action", None)
+        if trigger and getattr(trigger, "caller_claims", None):
+            return trigger.caller_claims
         return None
 
-    def _scrub_authorization_header(self, headers: dict) -> None:
-        for key in ("authorization", "Authorization"):
-            headers.pop(key, None)
-
-
-def _default_sidecar_url() -> str:
-    """Resolve the local sidecar URL from env (DAPR_HTTP_PORT) or default."""
-    port = os.environ.get("DAPR_HTTP_PORT", DEFAULT_SIDECAR_PORT)
-    return f"http://127.0.0.1:{port}"
+    def _apply_policy(self, caller: CallerIdentity) -> HookDecision:
+        if self._required_scopes and not (self._required_scopes <= caller.scopes):
+            missing = self._required_scopes - caller.scopes
+            return Deny(
+                code="oauth.missing_scope",
+                details={
+                    "required": sorted(self._required_scopes),
+                    "missing": sorted(missing),
+                },
+            )
+        if (
+            self._allowed_tenants is not None
+            and caller.tenant not in self._allowed_tenants
+        ):
+            return Deny(
+                code="oauth.tenant_not_allowed",
+                details={"tenant": caller.tenant},
+            )
+        if (
+            self._allowed_subjects is not None
+            and caller.subject not in self._allowed_subjects
+        ):
+            return Deny(
+                code="oauth.subject_not_allowed",
+                details={"subject": caller.subject},
+            )
+        return Proceed()

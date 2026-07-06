@@ -1,10 +1,8 @@
 # Copyright (c) 2026-Present Diagrid Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-# TODO(AI-598): Minimal scaffolding for the plugins lifecycle context. Replace
-# with the full module from the AI-598 PR once it lands. The caller_headers
-# field is sourced from TriggerAction (AI-592); see the LifecycleContext test
-# TODO in tests/agent/core/plugins/test_oauth_plugin.py.
+# TODO: Minimal scaffolding for the plugins lifecycle context; replace with the
+# full module.
 
 from __future__ import annotations
 
@@ -36,4 +34,5 @@ class LifecycleContext:
 
     event: LifecycleEvent
     caller_headers: Dict[str, str] = field(default_factory=dict)
+    trigger_action: Optional[Any] = None
     caller: Optional[CallerIdentity] = None
