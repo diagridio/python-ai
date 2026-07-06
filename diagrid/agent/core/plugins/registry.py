@@ -1,11 +1,11 @@
 # Copyright (c) 2026-Present Diagrid Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-"""
-PluginRegistry runs the plugin chain on every lifecycle event.
+"""PluginRegistry — the chain dispatcher for the plugin system.
 
-Implements the ``LifecycleDispatcher`` Protocol so it can be passed to an
-agent via the ``lifecycle_dispatcher=`` keyword.
+Runs the plugin chain on every lifecycle event and satisfies dapr-agents'
+``LifecycleDispatcher`` Protocol (``attach``, ``detach``, ``dispatch``) so
+it can be passed as ``DurableAgent(lifecycle_dispatcher=registry)``.
 """
 
 from __future__ import annotations
@@ -15,24 +15,26 @@ import inspect
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
-from typing import Any, Dict, Final, List, Optional, Sequence, Tuple, cast
+from typing import Any, Dict, Final, List, Optional, Sequence, Tuple
 
-from dapr_agents.hooks import (
+from diagrid.agent.core.plugins.context import LifecycleContext
+from diagrid.agent.core.plugins.spi import (
     Deny,
     HookDecision,
+    LifecycleEvent,
     Mutate,
+    Plugin,
     Proceed,
     RequireApproval,
     Skip,
 )
-from dapr_agents.lifecycle import DecisionDict, LifecycleDispatcher
-
-from .context import LifecycleContext
-from .spi import FAILURE_MODE_CLOSED, FAILURE_MODE_OPEN, LifecycleEvent, Plugin
 
 logger = logging.getLogger(__name__)
 
-# Decision discriminators emitted in ``DecisionDict["type"]``.
+_FAILURE_MODE_CLOSED: Final = "closed"
+_FAILURE_MODE_OPEN: Final = "open"
+
+# Decision discriminators emitted in the returned decision dict.
 _PROCEED: Final = "proceed"
 _SKIP: Final = "skip"
 _MUTATE: Final = "mutate"
@@ -50,30 +52,30 @@ _REQUIRE_APPROVAL_FIELDS: Final[Tuple[str, ...]] = (
 )
 _DENY_FIELDS: Final[Tuple[str, ...]] = ("reason", "code", "details")
 
-# Structured log event name and the key collecting unmapped context entries.
+# Structured log event name for a plugin that raises from on_event.
 _PLUGIN_EXCEPTION_EVENT: Final = "plugin.exception"
-_EXTRA_KEY: Final = "extra"
 
 
-class PluginRegistry(LifecycleDispatcher):
-    """Chain dispatcher running plugins in priority order.
+class PluginRegistry:
+    """Holds an ordered chain of plugins and dispatches lifecycle events.
 
-    Plugins are stable-sorted by ``(priority, registration_index)``.
+    Plugins run in ascending ``priority`` order, with registration order
+    breaking ties.
     The first non-``Proceed`` ``Deny`` / ``Skip`` / ``RequireApproval``
-    short-circuits the chain.
-    ``Mutate`` decisions accumulate, so each subsequent plugin sees the
-    merged payload.
+    short-circuits the chain, while ``Mutate`` decisions accumulate so each
+    subsequent plugin observes the merged payload.
 
-    An exception raised from ``plugin.on_event`` is handled per the
-    plugin's ``failure_mode``: ``"closed"`` short-circuits the chain with
-    ``Deny(code="plugin.<name>.exception")``, while ``"open"`` logs the
-    error and treats the plugin as ``Proceed``.
+    An exception raised from ``plugin.on_event`` is handled per the plugin's
+    ``failure_mode``: ``"closed"`` short-circuits with
+    ``Deny(code="plugin.<name>.exception")``, while ``"open"`` logs the error
+    and treats the plugin as ``Proceed``.
     """
 
-    def __init__(self, plugins: Sequence[Plugin] = ()):
-        self._plugins: List[Plugin] = list(plugins)
-        registration_index = {id(p): i for i, p in enumerate(self._plugins)}
-        self._plugins.sort(key=lambda p: (p.priority, registration_index[id(p)]))
+    def __init__(self, plugins: Optional[Sequence[Plugin]] = None) -> None:
+        # Python's sort is stable, so a key of priority alone keeps
+        # registration order for ties, which is the tie-break the chain relies
+        # on.
+        self._plugins: List[Plugin] = sorted(plugins or [], key=lambda p: p.priority)
         self._agent: Optional[Any] = None
 
     # ----- LifecycleDispatcher Protocol -----
@@ -90,11 +92,11 @@ class PluginRegistry(LifecycleDispatcher):
         self,
         event_name: str,
         context: Dict[str, Any],
-    ) -> Optional[DecisionDict]:
-        """Sync entry point called by the agent.
+    ) -> Optional[Dict[str, Any]]:
+        """Run the plugin chain for a lifecycle event.
 
-        Bridges into the async chain via ``asyncio.run`` when no loop is
-        running, otherwise drives the existing loop to completion.
+        Returns a serialized decision dict when a plugin alters the step, or
+        ``None`` when the whole chain proceeds.
         """
         ctx = self._build_context(event_name, context)
         decision = self._run_chain_sync(ctx)
@@ -107,9 +109,10 @@ class PluginRegistry(LifecycleDispatcher):
     ) -> LifecycleContext:
         known = {f.name for f in fields(LifecycleContext)} - {"event"}
         mapped = {k: v for k, v in context.items() if k in known}
-        unmapped = {k: v for k, v in context.items() if k not in known and k != "event"}
-        if unmapped:
-            mapped.setdefault(_EXTRA_KEY, {}).update(unmapped)
+        # LifecycleContext requires these; default them so a caller can
+        # dispatch with a partial context without tripping construction.
+        mapped.setdefault("workflow_instance_id", "")
+        mapped.setdefault("agent_identity", {})
         return LifecycleContext(event=LifecycleEvent(event_name), **mapped)
 
     def _run_chain_sync(self, ctx: LifecycleContext) -> Optional[HookDecision]:
@@ -169,8 +172,8 @@ class PluginRegistry(LifecycleDispatcher):
         return result
 
     def _handle_plugin_exception(self, plugin: Plugin, exc: Exception) -> HookDecision:
-        mode = getattr(plugin, "failure_mode", FAILURE_MODE_CLOSED)
-        if mode == FAILURE_MODE_OPEN:
+        mode = getattr(plugin, "failure_mode", _FAILURE_MODE_CLOSED)
+        if mode == _FAILURE_MODE_OPEN:
             logger.warning(
                 _PLUGIN_EXCEPTION_EVENT,
                 extra={"plugin": plugin.name, "error": str(exc)},
@@ -187,7 +190,7 @@ class PluginRegistry(LifecycleDispatcher):
             details={"plugin": plugin.name, "error": str(exc)},
         )
 
-    def _to_decision_dict(self, decision: HookDecision) -> DecisionDict:
+    def _to_decision_dict(self, decision: HookDecision) -> Dict[str, Any]:
         if isinstance(decision, Proceed):
             return {"type": _PROCEED}
         if isinstance(decision, Skip):
@@ -200,14 +203,14 @@ class PluginRegistry(LifecycleDispatcher):
                 v = getattr(decision, f, None)
                 if v is not None:
                     approval[f] = list(v) if isinstance(v, (set, frozenset)) else v
-            return cast(DecisionDict, approval)
+            return approval
         if isinstance(decision, Deny):
             deny: Dict[str, Any] = {"type": _DENY}
             for f in _DENY_FIELDS:
                 v = getattr(decision, f, None)
                 if v is not None:
                     deny[f] = v
-            return cast(DecisionDict, deny)
+            return deny
         raise TypeError(f"unknown HookDecision: {type(decision)!r}")
 
 
@@ -217,18 +220,18 @@ def dispatch_plugin_event(
     context: Dict[str, Any],
     *,
     propagate_lineage: bool = True,
-) -> Optional[DecisionDict]:
+) -> Optional[Dict[str, Any]]:
     """Run the plugin chain and propagate workflow lineage.
 
-    Sub-workflow scheduling sites call this so that the lineage propagation
-    step lives inside the dispatch helper itself.
+    Sub-workflow scheduling sites call this so the lineage propagation step
+    lives inside the dispatch helper itself.
     Folding it in here means a per-framework runner cannot accidentally
     schedule a sub-workflow without joining the workflow history lineage
     chain.
     """
     if propagate_lineage:
-        # Imported lazily so this module does not hard-depend on the
-        # workflow runtime being initialized.
+        # Imported lazily so this module does not hard-depend on the workflow
+        # runtime being initialized.
         from dapr.ext.workflow import wfctx  # type: ignore
 
         try:

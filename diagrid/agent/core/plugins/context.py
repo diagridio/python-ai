@@ -1,65 +1,109 @@
 # Copyright (c) 2026-Present Diagrid Inc.
 # SPDX-License-Identifier: BUSL-1.1
 
-"""
-Context objects passed to plugins on each lifecycle event.
+"""Lifecycle context types passed into ``Plugin.on_event``.
 
-``LifecycleContext`` carries the dispatched event plus everything a plugin
-needs to make a decision: who is calling (``CallerIdentity``), what is
-being called (``CallTarget``), and the step payload.
+A ``LifecycleContext`` is the input to every plugin invocation.
+It carries the event name and the event-specific payload — caller
+identity, target, headers, and metadata.
+Plugins read what they need, optionally leave metadata for downstream
+plugins, and return a ``HookDecision``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
-from .spi import LifecycleEvent
+from diagrid.agent.core.plugins.spi import LifecycleEvent
 
 
 @dataclass
 class CallerIdentity:
-    """The authenticated principal on whose behalf a step runs.
+    """Verified caller identity for the current request.
 
-    ``claims`` holds the verified token claims; ``token`` is the raw
-    credential when a plugin needs to forward it.
-    Neither is logged by the registry.
+    Populated by the OAuth plugin on ``BEFORE_AGENT_INVOKE`` once the
+    sidecar ``/auth/verify`` call returns.
+    Downstream plugins read it through ``ctx.caller`` on later events in
+    the same request lifecycle.
+
+    Attributes:
+        subject: Verified ``sub`` claim, typically an email or user ID.
+        tenant: Tenant claim (e.g. ``org_id`` or ``tid``) per the IdP mapping.
+        scopes: OAuth scopes carried by the caller's JWT.
+        claims: Full verified claims, for plugins that need richer access.
+        issuer_id: Identifier of the IdP that issued the JWT.
+        is_agent: True when ``subject`` looks like an agent SPIFFE ID rather
+            than a human user, letting plugins tell sub-agent calls apart
+            from user calls.
     """
 
-    subject: Optional[str] = None
-    scopes: Tuple[str, ...] = ()
+    subject: str
+    tenant: str
+    scopes: frozenset[str] = field(default_factory=frozenset)
     claims: Dict[str, Any] = field(default_factory=dict)
-    token: Optional[str] = None
+    issuer_id: str = ""
+    is_agent: bool = False
 
 
 @dataclass
 class CallTarget:
-    """The step a lifecycle event is about to run.
+    """Target of an outbound call.
 
-    ``kind`` is ``"tool"``, ``"llm"``, or ``"agent"``; ``source`` records
-    where a tool came from, such as ``"local"``, ``"mcp"``, or
-    ``"openapi"``.
+    Set for ``BEFORE_TOOL_CALL``, ``BEFORE_MCP_CALL``, and sub-agent
+    dispatch.
+
+    Attributes:
+        kind: One of ``"tool"``, ``"mcp"``, ``"subagent"``, or ``"llm"``.
+        name: Logical name, such as an MCP server or tool name.
+        source: Origin of the tool definition — ``"local"``, ``"mcp"``,
+            or ``"openapi"``.
+        audience: Target audience for token-bound auth, when applicable.
+        resource_indicators: RFC 8707 resource indicators.
     """
 
-    name: Optional[str] = None
-    kind: Optional[str] = None
-    source: Optional[str] = None
+    kind: str
+    name: str
+    source: str = "local"
+    audience: Optional[str] = None
+    resource_indicators: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass
 class LifecycleContext:
-    """Everything a plugin sees for a single dispatched event.
+    """Per-event context passed into ``Plugin.on_event``.
 
-    ``payload`` is the mutable step input plugins may rewrite via a
-    ``Mutate`` decision.
-    ``extra`` collects any context keys that do not map onto a named field,
-    keeping the context forward-compatible with new dispatch sites.
+    Attributes:
+        event: Which lifecycle event this is.
+        workflow_instance_id: Workflow instance ID, used for binding and audit.
+        agent_identity: The agent's own identity (SPIFFE ID, AppID, name).
+        caller: Verified caller identity, populated from
+            ``BEFORE_AGENT_INVOKE`` onward.
+        target: Outbound call target, populated for tool and MCP events.
+        caller_headers: Headers from the inbound request; upstream plugins
+            may scrub sensitive values.
+        request_id: Request correlation ID.
+        trace_id: W3C trace ID for correlation.
+        span_id: W3C span ID for correlation.
+        metadata: Plugin-to-plugin scratchpad, read and write.
+        payload: Event-specific payload such as LLM messages or tool args.
     """
 
     event: LifecycleEvent
+    workflow_instance_id: str
+    agent_identity: Dict[str, str]
     caller: Optional[CallerIdentity] = None
     target: Optional[CallTarget] = None
-    payload: Dict[str, Any] = field(default_factory=dict)
-    agent: Any = None
+    caller_headers: Dict[str, str] = field(default_factory=dict)
+    request_id: str = ""
+    trace_id: Optional[str] = None
+    span_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-    extra: Dict[str, Any] = field(default_factory=dict)
+    payload: Dict[str, Any] = field(default_factory=dict)
+
+
+__all__ = [
+    "LifecycleContext",
+    "CallerIdentity",
+    "CallTarget",
+]
