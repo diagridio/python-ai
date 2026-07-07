@@ -16,8 +16,8 @@ The Licensor grants permission to make production use of the Licensed Work witho
 
 The organization using the Licensed Work:
 
-- Has fewer than **eighty (60) full-time equivalent employees**, and
-- Has less than **twenty million U.S. dollars (USD $15,000,000) in annual gross revenue**, and
+- Has fewer than **sixty (60) full-time equivalent employees**, and
+- Has less than **fifteen million U.S. dollars (USD $15,000,000) in annual gross revenue**, and
 - Is not directly or indirectly controlled by, controlling, under common control with, **or acting on behalf of** an entity that exceeds either of the above thresholds.
 
 ## 2. Prohibited uses
