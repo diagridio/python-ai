@@ -47,6 +47,8 @@ Clone this repo and run any of these directly. Each subdirectory has its own REA
 | Claude Agent SDK | [`claude_agents/`](claude_agents/) — [README](claude_agents/README.md) | Simple agent, crash recovery |
 | Pydantic AI | [`pydantic_ai/`](pydantic_ai/) | Simple agent, subagent workflows, incident-response demo, crash recovery, retry |
 | Deep Agents | [`deepagents/`](deepagents/) | Simple agent, crash recovery, retry |
+| LangChain | [`langchain/`](langchain/) — [README](langchain/README.md) | Simple agent, crash recovery, retry |
+| Smolagents | [`smolagents/`](smolagents/) — [README](smolagents/README.md) | Simple agent, crash recovery, retry |
 | HolmesGPT | [`holmesgpt/`](holmesgpt/) | CLI runner, SSE server, schedule + park + resume phases, ask test |
 
 ## Shared prerequisites

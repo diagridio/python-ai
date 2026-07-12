@@ -70,6 +70,63 @@ class IntrospectionTest(unittest.TestCase):
             result = find_agent_in_stack()
             self.assertEqual(result, agent)
 
+    def test_detect_framework_smolagents(self):
+        class ToolCallingAgent:
+            """Mock smolagents ToolCallingAgent."""
+
+            __module__ = "smolagents.agents"
+
+        agent = ToolCallingAgent()
+        self.assertEqual(type(agent).__name__, "ToolCallingAgent")
+        self.assertEqual(detect_framework(agent), "smolagents")
+
+    def test_find_agent_in_stack_smolagents_runner(self):
+        class ToolCallingAgent:
+            __module__ = "smolagents.agents"
+
+        class DaprWorkflowAgentRunner:
+            """Mock smolagents runner - unwraps to the wrapped agent."""
+
+            __module__ = "diagrid.agent.smolagents.runner"
+
+            def __init__(self, agent):
+                self._agent = agent
+
+        agent = ToolCallingAgent()
+        runner = DaprWorkflowAgentRunner(agent)
+
+        with mock.patch("inspect.stack") as mock_stack:
+            mock_frame = mock.MagicMock()
+            mock_frame.frame.f_locals = {"self": runner}
+            mock_stack.return_value = [mock_frame]
+
+            result = find_agent_in_stack()
+            self.assertEqual(result, agent)
+
+    def test_detect_framework_langchain(self):
+        # LangChain has no native Agent object - the runner doubles as the
+        # agent (see diagrid.agent.langchain.runner), so detection keys off
+        # the runner's own type/module.
+        class DaprWorkflowAgentRunner:
+            __module__ = "diagrid.agent.langchain.runner"
+
+        runner = DaprWorkflowAgentRunner()
+        self.assertEqual(detect_framework(runner), "langchain")
+
+    def test_find_agent_in_stack_langchain_runner(self):
+        class DaprWorkflowAgentRunner:
+            __module__ = "diagrid.agent.langchain.runner"
+
+        runner = DaprWorkflowAgentRunner()
+
+        with mock.patch("inspect.stack") as mock_stack:
+            mock_frame = mock.MagicMock()
+            mock_frame.frame.f_locals = {"self": runner}
+            mock_stack.return_value = [mock_frame]
+
+            result = find_agent_in_stack()
+            self.assertIs(result, runner)
+
 
 if __name__ == "__main__":
     unittest.main()

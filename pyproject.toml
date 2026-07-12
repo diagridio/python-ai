@@ -78,6 +78,15 @@ deepagents = [
     "diagrid[langgraph]",
     "langchain-openai>=1.2.1",
 ]
+langchain = [
+    "langchain-core>=1.3.2",
+    "langchain-openai>=1.2.1",
+    "diagrid[agent-core]",
+]
+smolagents = [
+    "smolagents>=1.26.0",
+    "diagrid[agent-core]",
+]
 # NOTE: holmesgpt is intentionally NOT in the ``all`` meta-extra below.
 # HolmesGPT pins many of its transitive deps tightly (fastapi <0.122,
 # uvicorn <0.41, cachetools <6, mcp ==1.25, httpx[socks] <0.28, …) which
@@ -88,7 +97,7 @@ holmesgpt = [
     "diagrid[agent-core]",
 ]
 all = [
-    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents]",
+    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents,langchain,smolagents]",
 ]
 
 [dependency-groups]
@@ -195,6 +204,14 @@ conflicts = [
     ],
     [
         { extra = "holmesgpt" },
+        { extra = "langchain" },
+    ],
+    [
+        { extra = "holmesgpt" },
+        { extra = "smolagents" },
+    ],
+    [
+        { extra = "holmesgpt" },
         { extra = "all" },
     ],
 ]
@@ -211,6 +228,8 @@ members = [
     "examples/strands",
     "examples/deepagents",
     "examples/claude_agents",
+    "examples/langchain",
+    "examples/smolagents",
     # HolmesGPT examples deliberately NOT a workspace member — see the note
     # next to the ``holmesgpt`` extra above. The example scripts still run
     # standalone via ``dapr run -- python examples/holmesgpt/...``.

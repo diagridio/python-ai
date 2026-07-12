@@ -57,6 +57,8 @@ _ADAPTERS: tuple[tuple[str, str], ...] = (
     ("diagrid.agent.deepagents", "DaprWorkflowDeepAgentRunner"),
     ("diagrid.agent.holmesgpt", "DaprWorkflowHolmesRunner"),
     ("diagrid.agent.claude_agents", "DaprWorkflowAgentRunner"),
+    ("diagrid.agent.langchain", "DaprWorkflowAgentRunner"),
+    ("diagrid.agent.smolagents", "DaprWorkflowAgentRunner"),
 )
 
 

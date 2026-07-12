@@ -266,6 +266,14 @@ class AgentRegistryAdapter:
                 "diagrid.agent.core.metadata.mapping.deepagents",
                 "DeepAgentsMapper",
             ),
+            SupportedFrameworks.LANGCHAIN: (
+                "diagrid.agent.core.metadata.mapping.langchain",
+                "LangChainMapper",
+            ),
+            SupportedFrameworks.SMOLAGENTS: (
+                "diagrid.agent.core.metadata.mapping.smolagents",
+                "SmolagentsMapper",
+            ),
         }
 
         entry = _mapper_modules.get(self._framework)

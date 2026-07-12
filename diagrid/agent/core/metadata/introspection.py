@@ -81,6 +81,19 @@ def find_agent_in_stack() -> Optional[Any]:
             if obj_type == "DaprWorkflowAgentRunner" and "claude_agents" in obj_module:
                 return obj
 
+            # smolagents support - ToolCallingAgent
+            if obj_type == "ToolCallingAgent" and "smolagents" in obj_module:
+                return obj
+            if obj_type == "DaprWorkflowAgentRunner" and "smolagents" in obj_module:
+                return getattr(obj, "_agent", None)
+
+            # LangChain support — runner is the agent (no separate Agent
+            # object; langchain_core has no native Agent class outside of
+            # LangGraph, which is handled by the CompiledStateGraph case
+            # above), so return it directly.
+            if obj_type == "DaprWorkflowAgentRunner" and "langchain" in obj_module:
+                return obj
+
             # If we found a checkpointer, use gc to find the graph that references it
             if obj_type == "DaprCheckpointer":
                 # Use garbage collector to find objects referencing this checkpointer
@@ -135,5 +148,13 @@ def detect_framework(agent: Any) -> Optional[str]:
     # Claude Agent SDK — runner doubles as the agent.
     if agent_type == "DaprWorkflowAgentRunner" and "claude_agents" in agent_module:
         return "claudeagents"
+
+    # smolagents
+    if agent_type == "ToolCallingAgent" and "smolagents" in agent_module:
+        return "smolagents"
+
+    # LangChain — runner doubles as the agent.
+    if agent_type == "DaprWorkflowAgentRunner" and "langchain" in agent_module:
+        return "langchain"
 
     return None
