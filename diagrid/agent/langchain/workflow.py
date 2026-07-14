@@ -14,6 +14,8 @@ from dapr.ext.workflow import (
     when_all,
 )
 
+from diagrid.agent.core.telemetry import get_tracer
+
 from .models import (
     AgentWorkflowInput,
     AgentWorkflowOutput,
@@ -236,8 +238,6 @@ def call_llm_activity(
     """
     llm_input = CallLlmInput.from_dict(input_data)
 
-    from diagrid.agent.core.telemetry import get_tracer
-
     _tracer = get_tracer("langchain.agent")
     _span = _tracer.start_span("ChatModel.invoke") if _tracer else None
 
@@ -326,8 +326,6 @@ def execute_tool_activity(
             content=f"Error: unknown tool '{tool_call.name}'",
             is_error=True,
         ).to_dict()
-
-    from diagrid.agent.core.telemetry import get_tracer
 
     _tracer = get_tracer("langchain.agent")
     _span = _tracer.start_span("Tool.invoke") if _tracer else None
