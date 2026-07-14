@@ -184,6 +184,27 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
     # Framework-specific run methods
     # ------------------------------------------------------------------
 
+    def _build_agent_workflow_input(
+        self,
+        task: str,
+        session_id: str,
+        agent_config: AgentConfig,
+    ) -> dict[str, Any]:
+        """Build the AgentWorkflowInput payload shared by run_async and the
+        serve default factory (registered in _setup_serve_defaults)."""
+        messages = [
+            ChatEntry(role="system", content=self._system_prompt or ""),
+            ChatEntry(role="user", content=f"New task:\n{task}"),
+        ]
+
+        return AgentWorkflowInput(
+            agent_config=agent_config,
+            messages=messages,
+            session_id=session_id,
+            iteration=0,
+            max_iterations=self._max_iterations,
+        ).to_dict()
+
     async def run_async(
         self,
         task: str,
@@ -211,18 +232,9 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         if workflow_id is None:
             workflow_id = f"smolagents-{session_id}-{uuid.uuid4().hex[:8]}"
 
-        messages = [ChatEntry(role="system", content=self._system_prompt or "")]
-        messages.append(ChatEntry(role="user", content=f"New task:\n{task}"))
-
-        workflow_input = AgentWorkflowInput(
-            agent_config=self._get_agent_config(),
-            messages=messages,
-            session_id=session_id,
-            iteration=0,
-            max_iterations=self._max_iterations,
+        workflow_input_dict = self._build_agent_workflow_input(
+            task, session_id, self._get_agent_config()
         )
-
-        workflow_input_dict = workflow_input.to_dict()
         json.dumps(workflow_input_dict)
 
         logger.info("Starting workflow: %s", workflow_id)
@@ -304,20 +316,11 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
     def _setup_serve_defaults(self) -> None:
         agent_config = self._get_agent_config()
-        system_prompt = self._system_prompt
 
         def _build_workflow_input(task_str: str) -> dict[str, Any]:
-            messages = [
-                ChatEntry(role="system", content=system_prompt or ""),
-                ChatEntry(role="user", content=f"New task:\n{task_str}"),
-            ]
-            return AgentWorkflowInput(
-                agent_config=agent_config,
-                messages=messages,
-                session_id=uuid.uuid4().hex[:8],
-                iteration=0,
-                max_iterations=self._max_iterations,
-            ).to_dict()
+            return self._build_agent_workflow_input(
+                task_str, uuid.uuid4().hex[:8], agent_config
+            )
 
         set_default_workflow_input_factory(_build_workflow_input)
 
