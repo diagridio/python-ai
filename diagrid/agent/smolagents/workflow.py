@@ -160,6 +160,10 @@ def agent_workflow(
             # tool_choice is forced ("required") whenever tools are passed, so
             # smolagents always returns at least one tool call in practice.
             # Defensively treat a content-only response as the final answer.
+            if model_output.content is not None:
+                workflow_input.messages.append(
+                    ChatEntry(role="assistant", content=model_output.content)
+                )
             return AgentWorkflowOutput(
                 final_answer=model_output.content,
                 messages=workflow_input.messages,
