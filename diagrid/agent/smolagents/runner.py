@@ -201,7 +201,6 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             agent_config=agent_config,
             messages=messages,
             session_id=session_id,
-            iteration=0,
             max_iterations=self._max_iterations,
         ).to_dict()
 

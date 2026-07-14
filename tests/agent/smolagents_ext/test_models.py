@@ -94,13 +94,11 @@ class TestAgentWorkflowInput(unittest.TestCase):
             agent_config=AgentConfig(name="test_agent", model_key="TestAgent"),
             messages=[ChatEntry(role="user", content="Hello!")],
             session_id="session-123",
-            iteration=5,
             max_iterations=50,
         )
         restored = AgentWorkflowInput.from_dict(workflow_input.to_dict())
 
         self.assertEqual(restored.session_id, "session-123")
-        self.assertEqual(restored.iteration, 5)
         self.assertEqual(restored.max_iterations, 50)
         self.assertEqual(len(restored.messages), 1)
 

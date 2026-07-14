@@ -152,7 +152,6 @@ class AgentWorkflowInput:
     agent_config: AgentConfig
     messages: list[Message]
     session_id: str
-    iteration: int = 0
     max_iterations: int = 25
 
     def to_dict(self) -> dict[str, Any]:
@@ -161,7 +160,6 @@ class AgentWorkflowInput:
             "agent_config": self.agent_config.to_dict(),
             "messages": [m.to_dict() for m in self.messages],
             "session_id": self.session_id,
-            "iteration": self.iteration,
             "max_iterations": self.max_iterations,
         }
 
@@ -172,7 +170,6 @@ class AgentWorkflowInput:
             agent_config=AgentConfig.from_dict(data["agent_config"]),
             messages=[Message.from_dict(m) for m in data["messages"]],
             session_id=data["session_id"],
-            iteration=data.get("iteration", 0),
             max_iterations=data.get("max_iterations", 25),
         )
 
