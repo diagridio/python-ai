@@ -24,9 +24,9 @@ agent-core = [
     # range overlaps with no opentelemetry-sdk version google-adk accepts
     # (sdk 1.36–1.41.1 each pin semconv to a different exact version,
     # none of which is 0.60b1). 1.0.1 has no mistralai and resolves cleanly.
-    # TEMPORARY: tracking the lifecycle-dispatcher branch on a fork until the
-    # upstream PR lands and dapr-agents cuts a release. Revert to a pinned
-    # release (see note above re: 1.0.1) before merge.
+    # TEMPORARY: tracking dapr-agents main for the lifecycle-dispatcher and
+    # hooks modules until it cuts a release that includes them. Revert to a
+    # pinned release (see note above re: 1.0.1) before merge.
     "dapr-agents",
     "dapr-ext-langgraph>=1.17.3",
     "dapr-ext-strands>=1.17.3",
@@ -237,4 +237,4 @@ diagrid = { workspace = true }
 diagrid-core = { workspace = true }
 diagrid-cli = { workspace = true }
 # TEMPORARY: see note next to the dapr-agents dependency above.
-dapr-agents = { git = "https://github.com/sicoyle/dapr-agents", branch = "samcoyle/dapr-agents-lifecycle-dispatcher" }
+dapr-agents = { git = "https://github.com/dapr/dapr-agents", branch = "main" }
