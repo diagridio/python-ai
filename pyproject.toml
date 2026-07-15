@@ -24,7 +24,10 @@ agent-core = [
     # range overlaps with no opentelemetry-sdk version google-adk accepts
     # (sdk 1.36–1.41.1 each pin semconv to a different exact version,
     # none of which is 0.60b1). 1.0.1 has no mistralai and resolves cleanly.
-    "dapr-agents==1.0.1",
+    # TEMPORARY: tracking dapr-agents main for the lifecycle-dispatcher and
+    # hooks modules until it cuts a release that includes them. Revert to a
+    # pinned release (see note above re: 1.0.1) before merge.
+    "dapr-agents",
     "dapr-ext-langgraph>=1.17.3",
     "dapr-ext-strands>=1.17.3",
     "fastapi>=0.129.0",
@@ -131,10 +134,23 @@ prerelease = "if-necessary-or-explicit"
 # crewai pins `opentelemetry-api~=1.34.0`, but dapr-agents requires
 # `>=1.35.0`. OpenTelemetry 1.x is backwards compatible, so override
 # crewai's tight pin so both resolve against the same line.
+#
+# TEMPORARY: while dapr-agents tracks the lifecycle-dispatcher fork branch
+# (see the dependency note above), its mistralai dep forces
+# opentelemetry-semantic-conventions to 0.60b1 — the 1.39.x core line. With
+# the wider ranges below, uv pinned the sdk down to 1.39.1 but left the api
+# and OTLP exporters at 1.42.1, an inconsistent stack whose gRPC exporter
+# imports a symbol the 1.39.1 sdk lacks. Pin the whole OTEL stack to the
+# 1.39.x / 0.60b1 line so every piece agrees; google-adk accepts sdk
+# 1.36-1.41.1. Restore the wider ranges when the dependency returns to a
+# released pin.
 override-dependencies = [
-    "opentelemetry-api>=1.35.0,<2.0.0",
-    "opentelemetry-sdk>=1.35.0,<2.0.0",
-    "opentelemetry-exporter-otlp-proto-http>=1.36.0,<2.0.0",
+    "opentelemetry-api==1.39.1",
+    "opentelemetry-sdk==1.39.1",
+    "opentelemetry-semantic-conventions==0.60b1",
+    "opentelemetry-exporter-otlp-proto-common==1.39.1",
+    "opentelemetry-exporter-otlp-proto-grpc==1.39.1",
+    "opentelemetry-exporter-otlp-proto-http==1.39.1",
     # holmesgpt pins fastapi ``^0.121.1`` and uvicorn ``^0.40`` which collide
     # with diagrid[agent-core]'s ``>=0.129.0`` and ``>=0.41.0`` floors. Both
     # deltas are backwards-compatible for the surface holmesgpt uses (only
@@ -220,3 +236,5 @@ members = [
 diagrid = { workspace = true }
 diagrid-core = { workspace = true }
 diagrid-cli = { workspace = true }
+# TEMPORARY: see note next to the dapr-agents dependency above.
+dapr-agents = { git = "https://github.com/dapr/dapr-agents", branch = "main" }

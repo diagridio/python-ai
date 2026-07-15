@@ -7,8 +7,6 @@ Behavioral tests for the registry land alongside its dispatch
 implementation.
 """
 
-import pytest
-
 from diagrid.agent.core.plugins import (
     Plugin,
     LifecycleEvent,
@@ -125,10 +123,3 @@ def test_plugin_registry_sorts_by_priority():
 
     registry = PluginRegistry([StubA(), StubB()])
     assert [p.name for p in registry._plugins] == ["b", "a"]
-
-
-def test_plugin_registry_dispatch_not_implemented_yet():
-    """The scaffold ships without dispatch; it raises NotImplementedError."""
-    registry = PluginRegistry()
-    with pytest.raises(NotImplementedError):
-        registry.dispatch("BEFORE_AGENT_INVOKE", {})
