@@ -15,6 +15,8 @@ Public API:
     - LifecycleContext: per-event context object passed to plugins
     - PluginRegistry: chain dispatcher implementing dapr-agents'
       LifecycleDispatcher Protocol
+    - dispatch_plugin_event: helper that runs the chain and propagates
+      workflow lineage at sub-workflow scheduling sites
 """
 
 from .spi import (
@@ -32,7 +34,7 @@ from .context import (
     CallerIdentity,
     CallTarget,
 )
-from .registry import PluginRegistry
+from .registry import PluginRegistry, dispatch_plugin_event
 
 __all__ = [
     "Plugin",
@@ -47,4 +49,5 @@ __all__ = [
     "CallerIdentity",
     "CallTarget",
     "PluginRegistry",
+    "dispatch_plugin_event",
 ]
