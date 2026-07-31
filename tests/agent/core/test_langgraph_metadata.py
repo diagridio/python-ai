@@ -150,14 +150,7 @@ class LangGraphMapperTest(unittest.TestCase):
         graph = MockCompiledStateGraph(name="test")
 
         mapper = LangGraphMapper()
-
-        prompt_text = "You are a helpful assistant."
-        with mock.patch.object(
-            mapper,
-            "map_agent_metadata",
-            wraps=mapper.map_agent_metadata,
-        ):
-            metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
+        metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
 
         self.assertEqual(metadata.agent.instructions, [])
         self.assertEqual(metadata.agent.system_prompt, "")
