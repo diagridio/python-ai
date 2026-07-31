@@ -99,7 +99,10 @@ class LangGraphMapper(BaseAgentMapper):
                                         system_prompt = content
 
                                 # Fallback: look for lists of @tool-decorated functions
-                                elif isinstance(global_value, (list, tuple)) and global_value:
+                                elif (
+                                    isinstance(global_value, (list, tuple))
+                                    and global_value
+                                ):
                                     self._collect_tools_from_list(
                                         global_value, tools, seen_tool_names
                                     )
@@ -193,7 +196,9 @@ class LangGraphMapper(BaseAgentMapper):
     ) -> None:
         """Extract tool metadata from a list of langchain-style tool objects."""
         first = candidates[0]
-        if not (hasattr(first, "name") and hasattr(first, "description") and callable(first)):
+        if not (
+            hasattr(first, "name") and hasattr(first, "description") and callable(first)
+        ):
             return
         for tool_obj in candidates:
             tool_name = getattr(tool_obj, "name", None)

@@ -198,7 +198,9 @@ class LangGraphMapperTest(unittest.TestCase):
 
     def test_collect_tools_from_list(self):
         """Test _collect_tools_from_list extracts tool metadata."""
-        tool_a = MockTool("get_balance", "Look up balance", {"customer_id": {"type": "integer"}})
+        tool_a = MockTool(
+            "get_balance", "Look up balance", {"customer_id": {"type": "integer"}}
+        )
         tool_b = MockTool("credit_account", "Credit an account")
 
         tools: list = []
