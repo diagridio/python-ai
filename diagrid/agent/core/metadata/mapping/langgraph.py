@@ -37,6 +37,7 @@ class LangGraphMapper(BaseAgentMapper):
         nodes: Dict[str, object] = introspected_vars.get("nodes", {})  # type: ignore
 
         tools: list[Dict[str, Any]] = []
+        seen_tool_names: set[str] = set()
         llm_metadata: Optional[Dict[str, Any]] = None
         system_prompt: Optional[str] = None
 
@@ -53,23 +54,19 @@ class LangGraphMapper(BaseAgentMapper):
                     # Check if it's a ToolNode
                     if hasattr(bound, "_tools_by_name"):
                         tools_by_name = getattr(bound, "_tools_by_name", {})
-                        tools.extend(
-                            [
-                                {
-                                    "name": tool_name,
-                                    "description": getattr(tool, "description", ""),
-                                    "args_schema": getattr(
-                                        tool, "args_schema", {}
-                                    ),  # TODO: See if we can extract the pydantic model
-                                }
-                                for tool_name, tool in tools_by_name.items()
-                            ]
-                        )
+                        for tool_name, tool in tools_by_name.items():
+                            if tool_name not in seen_tool_names:
+                                seen_tool_names.add(tool_name)
+                                tools.append(
+                                    {
+                                        "name": tool_name,
+                                        "description": getattr(tool, "description", ""),
+                                        "args": str(getattr(tool, "args", {}) or {}),
+                                    }
+                                )
 
                     # Check if it's an assistant RunnableCallable
                     elif type(bound).__name__ == "RunnableCallable":
-                        logger.info(f"Node '{node_name}' is a RunnableCallable")
-
                         func = getattr(bound, "func", None)
                         if func and hasattr(func, "__globals__"):
                             func_globals = func.__globals__
@@ -101,6 +98,12 @@ class LangGraphMapper(BaseAgentMapper):
                                     if content and not system_prompt:
                                         system_prompt = content
 
+                                # Fallback: look for lists of @tool-decorated functions
+                                elif isinstance(global_value, (list, tuple)) and global_value:
+                                    self._collect_tools_from_list(
+                                        global_value, tools, seen_tool_names
+                                    )
+
         checkpointer: Optional["DaprCheckpointer"] = introspected_vars.get(
             "checkpointer", None
         )  # type: ignore
@@ -129,10 +132,10 @@ class LangGraphMapper(BaseAgentMapper):
                 orchestrator=False,
                 role=role,
                 goal=goal,
-                instructions=[],
-                system_prompt="",
+                instructions=[system_prompt] if system_prompt else [],
+                system_prompt=system_prompt or "",
                 framework=SupportedFrameworks.LANGGRAPH,
-                max_iterations=1,
+                max_iterations=getattr(agent, "_diagrid_max_steps", 1),
                 tool_choice="auto",
                 metadata=None,
             ),
@@ -176,8 +179,30 @@ class LangGraphMapper(BaseAgentMapper):
                 ToolMetadata(
                     name=tool.get("name", ""),
                     description=tool.get("description", ""),
-                    args="",
+                    args=tool.get("args", ""),
                 )
                 for tool in tools
             ],
         )
+
+    @staticmethod
+    def _collect_tools_from_list(
+        candidates: Any,
+        tools: list[Dict[str, Any]],
+        seen: set[str],
+    ) -> None:
+        """Extract tool metadata from a list of langchain-style tool objects."""
+        first = candidates[0]
+        if not (hasattr(first, "name") and hasattr(first, "description") and callable(first)):
+            return
+        for tool_obj in candidates:
+            tool_name = getattr(tool_obj, "name", None)
+            if tool_name and tool_name not in seen:
+                seen.add(tool_name)
+                tools.append(
+                    {
+                        "name": tool_name,
+                        "description": getattr(tool_obj, "description", "") or "",
+                        "args": str(getattr(tool_obj, "args", {}) or {}),
+                    }
+                )

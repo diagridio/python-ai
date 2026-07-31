@@ -21,6 +21,18 @@ class MockCheckpointer:
         self.state_store_name = state_store_name
 
 
+class MockTool:
+    """Mock langchain-style tool for testing."""
+
+    def __init__(self, name, description="", args=None):
+        self.name = name
+        self.description = description
+        self.args = args or {}
+
+    def __call__(self, *a, **kw):
+        pass
+
+
 class MockCompiledStateGraph:
     """Mock CompiledStateGraph for testing."""
 
@@ -131,6 +143,91 @@ class LangGraphMapperTest(unittest.TestCase):
 
         self.assertIsNotNone(metadata.registered_at)
         self.assertIn("T", metadata.registered_at)
+
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
+    def test_system_prompt_populates_instructions(self, mock_pregel_node):
+        """Test that a discovered system prompt populates instructions and system_prompt."""
+        graph = MockCompiledStateGraph(name="test")
+
+        mapper = LangGraphMapper()
+
+        prompt_text = "You are a helpful assistant."
+        with mock.patch.object(
+            mapper,
+            "map_agent_metadata",
+            wraps=mapper.map_agent_metadata,
+        ):
+            metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
+
+        self.assertEqual(metadata.agent.instructions, [])
+        self.assertEqual(metadata.agent.system_prompt, "")
+
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
+    def test_runner_hints_role_goal(self, mock_pregel_node):
+        """Test that _diagrid_role and _diagrid_goal hints are used."""
+        graph = MockCompiledStateGraph(name="test")
+        graph._diagrid_role = "Banker worker"
+        graph._diagrid_goal = "Process credit tasks"
+
+        mapper = LangGraphMapper()
+        metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
+
+        self.assertEqual(metadata.agent.role, "Banker worker")
+        self.assertEqual(metadata.agent.goal, "Process credit tasks")
+
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
+    def test_max_iterations_from_hint(self, mock_pregel_node):
+        """Test that _diagrid_max_steps hint is used for max_iterations."""
+        graph = MockCompiledStateGraph(name="test")
+        graph._diagrid_max_steps = 50
+
+        mapper = LangGraphMapper()
+        metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
+
+        self.assertEqual(metadata.agent.max_iterations, 50)
+
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
+    def test_max_iterations_default(self, mock_pregel_node):
+        """Test that max_iterations defaults to 1 without hint."""
+        graph = MockCompiledStateGraph(name="test")
+
+        mapper = LangGraphMapper()
+        metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
+
+        self.assertEqual(metadata.agent.max_iterations, 1)
+
+    def test_collect_tools_from_list(self):
+        """Test _collect_tools_from_list extracts tool metadata."""
+        tool_a = MockTool("get_balance", "Look up balance", {"customer_id": {"type": "integer"}})
+        tool_b = MockTool("credit_account", "Credit an account")
+
+        tools: list = []
+        seen: set = set()
+        LangGraphMapper._collect_tools_from_list([tool_a, tool_b], tools, seen)
+
+        self.assertEqual(len(tools), 2)
+        self.assertEqual(tools[0]["name"], "get_balance")
+        self.assertEqual(tools[0]["description"], "Look up balance")
+        self.assertIn("customer_id", tools[0]["args"])
+        self.assertEqual(tools[1]["name"], "credit_account")
+        self.assertEqual({"get_balance", "credit_account"}, seen)
+
+    def test_collect_tools_deduplicates(self):
+        """Test that _collect_tools_from_list skips already-seen tools."""
+        tool = MockTool("get_balance", "Look up balance")
+
+        tools: list = []
+        seen: set = {"get_balance"}
+        LangGraphMapper._collect_tools_from_list([tool], tools, seen)
+
+        self.assertEqual(len(tools), 0)
+
+    def test_collect_tools_ignores_non_tools(self):
+        """Test that _collect_tools_from_list skips non-tool lists."""
+        tools: list = []
+        seen: set = set()
+        LangGraphMapper._collect_tools_from_list(["a", "b"], tools, seen)
+        self.assertEqual(len(tools), 0)
 
 
 class LangGraphProviderExtractionTest(unittest.TestCase):
