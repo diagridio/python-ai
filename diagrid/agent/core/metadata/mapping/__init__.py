@@ -11,6 +11,8 @@ __all__ = [
     "ADKMapper",
     "OpenAIAgentsMapper",
     "PydanticAIMapper",
+    "LangChainMapper",
+    "SmolagentsMapper",
 ]
 
 
@@ -39,4 +41,12 @@ def __getattr__(name: str):  # type: ignore[no-untyped-def]
         from .pydantic_ai import PydanticAIMapper
 
         return PydanticAIMapper
+    if name == "LangChainMapper":
+        from .langchain import LangChainMapper
+
+        return LangChainMapper
+    if name == "SmolagentsMapper":
+        from .smolagents import SmolagentsMapper
+
+        return SmolagentsMapper
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

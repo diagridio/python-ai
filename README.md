@@ -12,7 +12,7 @@ Have questions, hit a bug, or want to share what you're building? Join the [Diag
 
 ## Features
 
-- **Multi-Framework Support:** Native integrations for LangGraph, CrewAI, Google ADK, Strands, PydanticAI, OpenAI Agents, Claude Agent SDK, LangChain Deep Agents, and HolmesGPT.
+- **Multi-Framework Support:** Native integrations for LangGraph, CrewAI, Google ADK, Strands, PydanticAI, OpenAI Agents, Claude Agent SDK, LangChain, Smolagents, LangChain Deep Agents, and HolmesGPT.
 - **Durability:** Agent state is automatically persisted in the database of your choice. If your process crashes, the agent resumes from the last successful step.
 - **Fault Tolerance:** Built-in retries and error handling powered by Dapr.
 - **Observability:** Deep insights into agent execution, tool calls, and state transitions.
@@ -46,6 +46,12 @@ pip install "diagrid[deepagents]"
 # For Claude Agent SDK
 pip install "diagrid[claude_agents]"
 
+# For LangChain
+pip install "diagrid[langchain]"
+
+# For Smolagents
+pip install "diagrid[smolagents]"
+
 # For HolmesGPT (install in a dedicated environment — see note below)
 pip install "diagrid[holmesgpt]"
 ```
@@ -61,7 +67,7 @@ pip install "diagrid[holmesgpt]"
 Two paths to your first running agent:
 
 - **Managed quickstart templates** — `diagridpy init my-project --framework langgraph` bootstraps a Catalyst project, local kind cluster, Helm chart, and framework template in one command. Templates are cloned from [`diagridio/catalyst-quickstarts`](https://github.com/diagridio/catalyst-quickstarts).
-- **In-repo code samples** — clone this repo and run any framework's example directly. See [`examples/`](examples/) for the index, or jump straight to a framework: [`langgraph`](examples/langgraph/), [`crewai`](examples/crewai/), [`adk`](examples/adk/), [`strands`](examples/strands/), [`openai_agents`](examples/openai_agents/), [`claude_agents`](examples/claude_agents/), [`pydantic_ai`](examples/pydantic_ai/), [`deepagents`](examples/deepagents/), [`holmesgpt`](examples/holmesgpt/).
+- **In-repo code samples** — clone this repo and run any framework's example directly. See [`examples/`](examples/) for the index, or jump straight to a framework: [`langgraph`](examples/langgraph/), [`crewai`](examples/crewai/), [`adk`](examples/adk/), [`strands`](examples/strands/), [`openai_agents`](examples/openai_agents/), [`claude_agents`](examples/claude_agents/), [`pydantic_ai`](examples/pydantic_ai/), [`deepagents`](examples/deepagents/), [`langchain`](examples/langchain/), [`smolagents`](examples/smolagents/), [`holmesgpt`](examples/holmesgpt/).
 
 ## Getting Started with Diagrid Catalyst
 
