@@ -196,9 +196,7 @@ class LangGraphMapper(BaseAgentMapper):
     ) -> None:
         """Extract tool metadata from a list of langchain-style tool objects."""
         first = candidates[0]
-        if not (
-            hasattr(first, "name") and hasattr(first, "description") and callable(first)
-        ):
+        if not (hasattr(first, "name") and hasattr(first, "description")):
             return
         for tool_obj in candidates:
             tool_name = getattr(tool_obj, "name", None)
