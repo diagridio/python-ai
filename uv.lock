@@ -46,7 +46,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-07-15T18:00:39.410453Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P1D"
 
 [manifest]
@@ -1501,7 +1501,7 @@ wheels = [
 
 [[package]]
 name = "diagrid"
-version = "0.4.2"
+version = "0.4.3"
 source = { editable = "." }
 dependencies = [
     { name = "dapr" },
@@ -1734,7 +1734,7 @@ test = [
 
 [[package]]
 name = "diagrid-cli"
-version = "0.4.2"
+version = "0.4.3"
 source = { editable = "diagrid/cli" }
 dependencies = [
     { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
@@ -1753,7 +1753,7 @@ requires-dist = [
 
 [[package]]
 name = "diagrid-core"
-version = "0.4.2"
+version = "0.4.3"
 source = { editable = "diagrid/core" }
 dependencies = [
     { name = "httpx" },
