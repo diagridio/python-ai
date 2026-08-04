@@ -22,7 +22,7 @@ class MockCheckpointer:
 
 
 class MockTool:
-    """Mock langchain-style tool for testing."""
+    """Mock langchain-style tool for testing (callable, like plain functions)."""
 
     def __init__(self, name, description="", args=None):
         self.name = name
@@ -30,6 +30,18 @@ class MockTool:
         self.args = args or {}
 
     def __call__(self, *a, **kw):
+        pass
+
+
+class MockStructuredTool:
+    """Mock StructuredTool for testing (not callable, like @tool-decorated objects)."""
+
+    def __init__(self, name, description="", args=None):
+        self.name = name
+        self.description = description
+        self.args = args or {}
+
+    def invoke(self, *a, **kw):
         pass
 
 
@@ -216,6 +228,19 @@ class LangGraphMapperTest(unittest.TestCase):
         LangGraphMapper._collect_tools_from_list([tool], tools, seen)
 
         self.assertEqual(len(tools), 0)
+
+    def test_collect_tools_structured_tool(self):
+        """Test that _collect_tools_from_list works with non-callable StructuredTool objects."""
+        tool_a = MockStructuredTool("credit_next", "Credit the next customer")
+        tool_b = MockStructuredTool("get_balance", "Look up balance")
+
+        tools: list = []
+        seen: set = set()
+        LangGraphMapper._collect_tools_from_list([tool_a, tool_b], tools, seen)
+
+        self.assertEqual(len(tools), 2)
+        self.assertEqual(tools[0]["name"], "credit_next")
+        self.assertEqual(tools[1]["name"], "get_balance")
 
     def test_collect_tools_ignores_non_tools(self):
         """Test that _collect_tools_from_list skips non-tool lists."""
