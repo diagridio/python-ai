@@ -24,7 +24,7 @@
 A Deep Agent with tools running as a durable Dapr Workflow:
 
 ```bash
-cd examples
+cd examples/deepagents
 dapr run --app-id deep-agent --resources-path ./resources -- python3 simple_agent.py
 ```
 
@@ -119,16 +119,16 @@ DaprWorkflowDeepAgentRunner
     v
 START WORKFLOW: dapr.deepagents.<name>.workflow
     |
-    +--> Activity: execute_node (Deep Agent planning node)
+    +--> Activity: execute_node_activity (Deep Agent planning node)
     |         |
     |         v
-    +--> Activity: execute_node (tool execution node)
+    +--> Activity: execute_node_activity (tool execution node)
     |         |
     |         v
-    +--> Activity: evaluate_condition (should continue?)
+    +--> Activity: evaluate_condition_activity (should continue?)
     |         |
     |         v
-    +--> Activity: execute_node (next node...)
+    +--> Activity: execute_node_activity (next node...)
     |         |
     |         v
     +--> ... (continues until END)

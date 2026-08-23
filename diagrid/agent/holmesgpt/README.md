@@ -95,7 +95,7 @@ Event types streamed:
 │ └────────────────────┘ │  │    │   └─ invoke_tool_a. │
 │                        │  │    └──────┬──────────────┘
 │ Dapr state store ◀─────│──┘           │ writes
-│  "holmes-events"  ─────│──────────────┘ events
+│  "statestore"  ────────│──────────────┘ events
 └────────────────────────┘
 ```
 

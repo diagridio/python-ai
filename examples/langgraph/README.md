@@ -77,12 +77,12 @@ User Input
 DaprWorkflowGraphRunner
     |
     v
-START WORKFLOW: langgraph_workflow
+START WORKFLOW: dapr.langgraph.<name>.workflow
     |
-    +--> Activity: execute_node (node_a)
+    +--> Activity: execute_node_activity (node_a)
     |         |
     |         v
-    +--> Activity: execute_node (node_b)
+    +--> Activity: execute_node_activity (node_b)
     |         |
     |         v
     +--> ... (continues until END)

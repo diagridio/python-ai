@@ -4,14 +4,18 @@
 
 The following tools are required for local development:
 
-- **Python ≥ 3.11**
+- **Python ≥ 3.11, < 3.14** — `.python-version` pins the local interpreter to 3.13
 - **[uv](https://docs.astral.sh/uv/)** — package manager and virtual environment tool
 - **Docker** (daemon running)
 - **kind** — local Kubernetes clusters
 - **kubectl** — Kubernetes CLI
 - **helm** — Kubernetes package manager
+- **piko** — tunnelling binary used by the generated quickstart projects
 
-> **Note:** Running `diagridpy init` will auto-install `kind`, `kubectl`, and `helm` if they are missing.
+> **Note:** `diagridpy init` runs a preflight check for all five binaries
+> (`docker`, `kind`, `kubectl`, `helm`, `piko`) and *prompts* before installing
+> any that are missing — it aborts rather than proceeding in a non-interactive
+> shell. See `REQUIRED_BINARIES` in `diagrid/cli/utils/deps.py`.
 
 ## Setup
 
@@ -23,12 +27,21 @@ uv sync --all-packages --extra all --group test --group dev
 
 ## Running unit tests
 
+There is no `addopts` in `[tool.pytest.ini_options]`, so nothing is excluded by
+default: `-m "not integration"` is what makes a run unit-only. Without it,
+pytest also collects `tests/e2e/` (needs a running Dapr sidecar) and
+`tests/cli/utils/test_deps_functional.py` (downloads binaries over the network).
+
 | What | Command |
 |------|---------|
-| All unit tests (default) | `uv run pytest tests` |
-| Unit tests only (explicit) | `make test-unit` or `uv run pytest tests -m "not integration"` |
-| With coverage report | `make test-cov` |
-| Verbose + short tracebacks | `make test` |
+| Unit tests only — same as CI | `make test-unit` or `uv run pytest tests -m "not integration"` |
+| Everything, including e2e + functional | `uv run pytest tests` or `make test` |
+| Everything, with a coverage report | `make test-cov` |
+
+Always pass `tests` as the path. Bare `pytest` from the repo root fails
+collection: the `examples/*/test_crash_recovery.py` and
+`examples/*/test_retry.py` scripts are standalone `dapr run` programs, not
+pytest tests, despite the names.
 
 ## Running integration / functional tests locally
 
@@ -57,10 +70,21 @@ make typecheck   # uv run mypy --config-file mypy.ini
 Or individually:
 
 ```bash
-uv run ruff format diagrid tests
+uv run ruff format
 uv run flake8 diagrid tests --ignore=E501,F401,W503,E203,E704
 uv run mypy --config-file mypy.ini
 ```
+
+> **Note:** the CI format gate (`.github/workflows/build.yaml`) runs
+> `uv run ruff format` with **no path arguments**, which covers `examples/` too.
+> `make format` and the pre-push hook narrow it to `diagrid tests`, so a change
+> under `examples/` can pass every local check and still fail CI. Run the bare
+> form before pushing.
+>
+> `ruff` is only the formatter here — nothing runs `ruff check`. Linting is
+> flake8, and its `--ignore` list lives in no config file: it is repeated in the
+> `Makefile`, `.pre-commit-config.yaml` and `build.yaml`, so `flake8` without it
+> reports a large number of findings CI does not enforce.
 
 ## Pre-commit hooks
 

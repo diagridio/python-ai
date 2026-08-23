@@ -24,7 +24,7 @@
 A basic example demonstrating a Pydantic AI agent with tools running as durable Dapr Workflow activities:
 
 ```bash
-cd examples
+cd examples/pydantic_ai
 dapr run --app-id pydantic-ai-agent --resources-path ./resources -- python3 simple_agent.py
 ```
 
@@ -39,7 +39,7 @@ Demonstrates Dapr Workflow fault tolerance by simulating a process crash mid-exe
 rm -f /tmp/pydantic_ai_crash_test_state.json
 
 # First run (will crash during tool 2):
-cd examples
+cd examples/pydantic_ai
 dapr run --app-id pydantic-ai-crash-test --resources-path ./resources -- python3 test_crash_recovery.py
 
 # Second run (Dapr auto-resumes and completes):
@@ -54,7 +54,7 @@ Demonstrates Dapr's automatic activity retry policy. Tool 2 raises a `Connection
 
 ```bash
 rm -f /tmp/pydantic_ai_retry_test_state.json
-cd examples
+cd examples/pydantic_ai
 dapr run --app-id pydantic-ai-retry-test --resources-path ./resources -- python3 test_retry.py
 ```
 
@@ -79,7 +79,7 @@ User Message
 DaprWorkflowAgentRunner
     |
     v
-START WORKFLOW: pydantic_ai_agent_workflow
+START WORKFLOW: dapr.pydanticai.<name>.workflow
     |
     +--> Activity: call_llm_activity (get next action from LLM)
     |         |

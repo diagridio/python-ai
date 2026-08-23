@@ -56,7 +56,7 @@ class DurableAgent:
             tools=[search],
         )
 
-        durable = DurableAgent(agent)
+        durable = DurableAgent(agent, name="paper-searcher")
         result = durable("Search for AI papers")
         ```
     """

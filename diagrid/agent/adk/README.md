@@ -16,7 +16,7 @@ Have questions, hit a bug, or want to share what you're building? Join the [Diag
 ## Installation
 
 ```bash
-pip install diagrid
+pip install "diagrid[adk]"
 ```
 
 ## Quick Start
@@ -66,11 +66,11 @@ The extension wraps your ADK agent execution in a Dapr Workflow:
 ## Architecture
 
 ```text
-DaprAgentWorkflow (orchestrates the agent loop)
-+-- Activity: call_llm()          # Get next action from LLM
-+-- Activity: execute_tool_1()    # First tool call
-+-- Activity: call_llm()          # LLM processes tool result
-+-- Activity: execute_tool_2()    # Second tool call
+agent_workflow (registered by DaprWorkflowAgentRunner; orchestrates the agent loop)
++-- Activity: call_llm_activity()      # Get next action from LLM
++-- Activity: execute_tool_activity()  # First tool call
++-- Activity: call_llm_activity()      # LLM processes tool result
++-- Activity: execute_tool_activity()  # Second tool call
 +-- ... continues until agent completes
 ```
 

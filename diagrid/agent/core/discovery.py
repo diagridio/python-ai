@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Unified Dapr sidecar component discovery.
 
 Queries ``DaprClient.get_metadata()`` once and discovers all known

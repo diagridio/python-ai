@@ -67,16 +67,16 @@ User Message
 DaprWorkflowAgentRunner
     |
     v
-START WORKFLOW: openai_agents_workflow
+START WORKFLOW: dapr.openai.<name>.workflow
     |
-    +--> Activity: call_llm (OpenAI Chat Completions API)
+    +--> Activity: call_llm_activity (OpenAI Chat Completions API)
     |         |
     |         v
-    +--> Activity: execute_tool (tool call 1)  \
-    +--> Activity: execute_tool (tool call 2)   > parallel via when_all
+    +--> Activity: execute_tool_activity (tool call 1)  \
+    +--> Activity: execute_tool_activity (tool call 2)   > parallel via when_all
     |         |
     |         v
-    +--> Activity: call_llm (get next action)
+    +--> Activity: call_llm_activity (get next action)
     |         |
     |         v
     +--> ... (continues until final response)

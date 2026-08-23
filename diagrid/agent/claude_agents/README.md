@@ -20,7 +20,7 @@ results are all checkpointed.
 ## Installation
 
 ```bash
-pip install diagrid claude-agent-sdk anthropic
+pip install "diagrid[claude_agents]"
 ```
 
 ## Quick start
@@ -101,4 +101,4 @@ to your application's state.
 
 ## Examples
 
-See [`examples/`](./examples/) for a runnable demo with three tools.
+See [`examples/claude_agents/`](https://github.com/diagridio/python-ai/tree/main/examples/claude_agents) for a runnable demo with three tools.

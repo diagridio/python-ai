@@ -16,7 +16,7 @@ Have questions, hit a bug, or want to share what you're building? Join the [Diag
 ## Installation
 
 ```bash
-pip install diagrid
+pip install "diagrid[strands]"
 ```
 
 ## Prerequisites
@@ -40,7 +40,7 @@ agent = Agent(
     tools=[search],
 )
 
-durable = DurableAgent(agent)
+durable = DurableAgent(agent, name="paper-searcher")
 result = durable("Search for AI papers")
 ```
 
@@ -69,7 +69,7 @@ Using the decorator pattern:
 ```python
 from diagrid.agent.strands import dapr_agent_workflow
 
-@dapr_agent_workflow(workflow_name="my_agent")
+@dapr_agent_workflow(name="my_agent")
 def create_agent() -> Agent:
     return Agent(model="us.amazon.nova-pro-v1:0", tools=[my_tool])
 
