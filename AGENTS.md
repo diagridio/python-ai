@@ -253,6 +253,26 @@ reaches:
   Dapr. If you change `discovery.py`, `state/store.py`, `pubsub/` or any
   `runner.py`, the unit suite cannot catch the regression — run the e2e suite.
 
+## Do not modify these
+
+Carried forward verbatim in intent from the `CLAUDE.md` this file replaces, because
+they are guardrails other contributors and agents were already relying on and
+nothing else in the repo states them:
+
+- `pyproject.toml`, root and package-level
+- `uv.lock` — it is generated; `deps-check.yaml` runs `uv lock --check` on every PR
+- `mypy.ini`
+- `charts/` — the Helm charts, including `values.yaml`. Dependabot owns the
+  dependency versions in there, and a hand-edit to `chartVersion` goes stale the
+  next time it opens a PR.
+- `.github/workflows/` — workflow definitions
+- Do not add dependencies
+- Do not change public APIs in `diagrid/core/`
+- Do not delete or skip existing tests
+
+If one of these genuinely needs to change, that is its own pull request with the
+reason in the body, not a hunk inside an unrelated change.
+
 ## Conventions
 
 - Every file under `diagrid/` opens with the two-line BUSL header

@@ -123,7 +123,7 @@ opentelemetry-collector:
 # ------------------------------------------------------------------------------
 chaos:
   enabled: true
-  chartVersion: "2.8.3"  # must match Chart.yaml chaos-mesh dependency version
+  chartVersion: "2.7.3"  # must match Chart.yaml chaos-mesh dependency version
 
 chaos-mesh:
   controllerManager:
