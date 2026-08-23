@@ -14,7 +14,7 @@
 
 3. **Install dependencies**:
    ```bash
-   pip install diagrid claude-agent-sdk anthropic
+   pip install "diagrid[claude_agents]"
    ```
 
 4. **ANTHROPIC_API_KEY** environment variable set:

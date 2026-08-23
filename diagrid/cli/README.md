@@ -1,6 +1,6 @@
 # Diagrid CLI
 
-The Diagrid CLI (`diagrid-cli`) is a command-line tool for managing Diagrid Catalyst resources, deploying agents, and handling infrastructure tasks.
+The Diagrid CLI (`diagridpy`) is a command-line tool for managing Diagrid Catalyst resources, deploying agents, and running chaos experiments.
 
 ## Community
 
@@ -8,47 +8,56 @@ Have questions, hit a bug, or want to share what you're building? Join the [Diag
 
 ## Installation
 
-The CLI is installed automatically when you install the main `diagrid` package. You can also install it standalone:
+The `diagridpy` executable ships with the main `diagrid` package:
 
 ```bash
-pip install diagrid-cli
+pip install diagrid
 ```
+
+Installing the standalone `diagrid-cli` distribution gives you the CLI library code only — it declares no console script, so it installs no `diagridpy` executable.
 
 ## Usage
 
-The CLI provides several command groups for different tasks. Run `diagrid --help` to see all available commands.
+The CLI provides three commands. Run `diagridpy --help` to see all available commands.
 
-### Common Commands
+Global flags:
+
+- `-v`, `--verbose` — show subprocess output
+- `--env {prod,staging}` — target the prod or staging Diagrid API
+
+### Commands
 
 #### Initialization
-Initialize a new Diagrid Catalyst project.
+Initialize a local agent development environment (Catalyst project, Kind cluster, Helm install).
 
 ```bash
-diagrid init
+diagridpy init
 ```
 
 #### Deployment
-Deploy your agent to a target environment.
+Build and deploy your agent to the Kind cluster.
 
 ```bash
-# Deploy to the currently configured context
-diagrid deploy
+diagridpy deploy
 ```
 
-#### Infrastructure
-Manage local development infrastructure using Kind (Kubernetes in Docker) and Helm.
+#### Chaos
+Manage Chaos Mesh experiments for agent resilience testing.
 
 ```bash
-# Check if required tools (Docker, Helm, Kind, Kubectl) are installed
-diagrid infra check
+# Start chaos experiments against deployed agents
+diagridpy chaos start
 
-# Set up a local development cluster
-diagrid infra setup
+# Show active chaos experiments
+diagridpy chaos status
+
+# Stop and delete all chaos experiments
+diagridpy chaos stop
 ```
 
 ## Configuration
 
-The CLI manages configuration and authentication contexts.
+The CLI manages configuration and authentication.
 
 - **Authentication:** Supports API key and device code authentication flows for connecting to Diagrid Catalyst.
-- **Contexts:** Switch between different environments (e.g., local, dev, prod).
+- **Environment:** The global `--env {prod,staging}` flag selects which Diagrid API the CLI talks to.

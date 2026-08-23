@@ -67,16 +67,16 @@ User Input
 DaprWorkflowAgentRunner
     |
     v
-START WORKFLOW: adk_agent_workflow
+START WORKFLOW: dapr.adk.<name>.workflow
     |
-    +--> Activity: call_llm (get next action from Gemini)
+    +--> Activity: call_llm_activity (get next action from Gemini)
     |         |
     |         v
-    +--> Activity: execute_tool (tool call 1)
-    +--> Activity: execute_tool (tool call 2)
+    +--> Activity: execute_tool_activity (tool call 1)
+    +--> Activity: execute_tool_activity (tool call 2)
     |         |
     |         v
-    +--> Activity: call_llm (get next action)
+    +--> Activity: call_llm_activity (get next action)
     |         |
     |         v
     +--> ... (continues until final response)

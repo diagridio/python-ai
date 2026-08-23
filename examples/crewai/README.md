@@ -67,16 +67,16 @@ User Input (Task)
 DaprWorkflowAgentRunner
     |
     v
-START WORKFLOW: crewai_agent_workflow
+START WORKFLOW: dapr.crewai.<name>.workflow
     |
-    +--> Activity: call_llm (get next action from LLM)
+    +--> Activity: call_llm_activity (get next action from LLM)
     |         |
     |         v
-    +--> Activity: execute_tool (tool call 1)
-    +--> Activity: execute_tool (tool call 2)
+    +--> Activity: execute_tool_activity (tool call 1)
+    +--> Activity: execute_tool_activity (tool call 2)
     |         |
     |         v
-    +--> Activity: call_llm (get next action)
+    +--> Activity: call_llm_activity (get next action)
     |         |
     |         v
     +--> ... (continues until final response)

@@ -1,3 +1,6 @@
+# Copyright (c) 2026-Present Diagrid Inc.
+# SPDX-License-Identifier: BUSL-1.1
+
 """Observability configuration resolution with 3-tier precedence.
 
 Reuses ``AgentObservabilityConfig`` from ``dapr_agents.agents.configs``

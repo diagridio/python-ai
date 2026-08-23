@@ -16,7 +16,7 @@ Have questions, hit a bug, or want to share what you're building? Join the [Diag
 ## Installation
 
 ```bash
-pip install diagrid
+pip install "diagrid[crewai]"
 ```
 
 ## Prerequisites
@@ -73,7 +73,7 @@ dapr run --app-id crewai-agent --dapr-grpc-port 50001 -- python your_script.py
 
 The extension wraps CrewAI agent execution in a Dapr Workflow:
 
-1. **Workflow**: `crewai_agent_workflow` orchestrates the agent's execution loop
+1. **Workflow**: `dapr.crewai.<name>.workflow` (built from the runner's `name`) orchestrates the agent's execution loop
 2. **Activities**:
    - `call_llm_activity`: Calls the LLM to decide the next action
    - `execute_tool_activity`: Executes a single tool durably

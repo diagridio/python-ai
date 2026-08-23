@@ -15,7 +15,10 @@ from diagrid.core.config.constants import PROD_API_URL, STAGING_API_URL
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="diagridpy")
+# Read the version from the installed ``diagrid-cli`` distribution rather than
+# hardcoding it. The release workflow bumps ``diagrid/cli/pyproject.toml`` but
+# never touched a literal here, so a hardcoded string silently goes stale.
+@click.version_option(package_name="diagrid-cli", prog_name="diagridpy")
 @click.option("-v", "--verbose", is_flag=True, help="Show subprocess output")
 @click.option(
     "--env",

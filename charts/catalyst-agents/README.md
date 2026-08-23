@@ -2,7 +2,7 @@
 
 **Durable AI Agents with Diagrid Catalyst**
 
-The `catalyst-agents` chart is a batteries-included Helm chart for developing durable, fault-tolerant AI agents using [Diagrid Catalyst](https://www.diagrid.io/catalyst). It deploys a complete local Kubernetes environment — including Dapr, observability tooling, and an LLM backend — so your agents can recover from failures, persist state across restarts, and scale effectively.
+The `catalyst-agents` chart is a batteries-included Helm chart for developing durable, fault-tolerant AI agents using [Diagrid Catalyst](https://www.diagrid.io/catalyst). It deploys the supporting tooling for a local Kubernetes environment — observability, chaos injection, and a local gateway — so you can trace, debug, and fault-test agents that recover from failures and persist state across restarts.
 
 Coupled with the [Diagrid Python package](https://pypi.org/project/diagrid/) you'll have everything at hand to get started in no time.
 
@@ -16,16 +16,18 @@ Have questions, hit a bug, or want to share what you're building? Join the [Diag
 
 ## Description
 
-The `catalyst-agents` chart deploys everything needed to develop AI agents locally:
+The `catalyst-agents` chart deploys the local supporting stack for AI agent development:
 
-- **Dapr control plane** – sidecar injection, pub/sub, state stores, workflows, and conversation
-  building blocks
-- **Redis** – default state store and pub/sub broker, with optional RedisInsight UI
 - **OpenTelemetry Collector** – receives traces, metrics, and logs from agents via OTLP
 - **Loki + Tempo + kube-prometheus-stack (Grafana)** – full observability stack with pre-wired
-  data sources
-- **Diagrid Dashboard** – visual overview of agents, components, and traffic
-- **Gateway** – optional ingress for local routing
+  data sources, plus a ServiceMonitor for the collector
+- **Chaos Mesh** – fault injection for agent resilience testing, with a job that installs its CRDs
+- **Gateway** – an nginx reverse proxy that fronts Grafana for local routing
+- **`llm-secret`** – holds the LLM API keys your agents read
+- **Registry ConfigMap** – advertises the `localhost:5001` Kind registry
+- **Catalyst `Project`** – created only when `catalystOperator.enabled` is set
+
+The chart does **not** ship a Dapr control plane, Redis, RedisInsight, or a Diagrid Dashboard.
 
 ## Prerequisites
 
@@ -62,9 +64,7 @@ helm install catalyst-agents \
   --set llm.apiKey=<YOUR_OPENAI_KEY> \
   --set llm.googleApiKey=<YOUR_GOOGLE_KEY> \
   --set monitoring.enabled=true \
-  --set redisInsight.enabled=true \
-  --set diagridDashboard.enabled=true \
-  --set gateway.enabled=true
+  --set chaos.enabled=true
 ```
 
 ### Upgrade
@@ -86,38 +86,41 @@ helm uninstall catalyst-agents --namespace catalyst-agents
 
 | Key | Default | Description |
 |---|---|---|
-| `registry` | `localhost:5001` | Container registry used to pull agent images |
-| `global.logLevel` | `DEBUG` | Log level applied across all components |
-| `monitoring.enabled` | `true` | Deploy the full observability stack (Loki, Tempo, Prometheus, Grafana, OTel Collector) |
-| `dapr.enabled` | `true` | Deploy the Dapr control plane |
-| `redis.enabled` | `true` | Deploy a Redis instance as state store and pub/sub broker |
-| `redis.image` | `redis` | Redis container image |
-| `redis.tag` | `6.2` | Redis image tag |
-| `redis.port` | `6379` | Redis service port |
-| `redis.password` | `""` | Redis password (empty = no auth) |
+| `registry` | `localhost:5001` | Container registry for agent images |
+| `global.logLevel` | `DEBUG` | Log level for agent workloads |
+| `monitoring.enabled` | `true` | Gate for the observability sub-charts (Loki, Tempo, kube-prometheus-stack, OTel Collector) and the collector ServiceMonitor |
+| `chaos.enabled` | `true` | Gate for the `chaos-mesh` sub-chart and the CRD install job |
+| `chaos.chartVersion` | see `values.yaml` | Chaos Mesh chart the CRD install job pulls; must match the `chaos-mesh` dependency version in `Chart.yaml` |
 | `llm.provider` | `ollama` | LLM backend – `ollama` or `openAI` |
 | `llm.ollama.enabled` | `true` | Enable Ollama as the LLM provider |
 | `llm.ollama.model` | `llama3.2:latest` | Ollama model to use |
 | `llm.ollama.endpoint` | `http://host.docker.internal:11434/v1` | Ollama API endpoint |
 | `llm.openAI.model` | `gpt-4o-mini` | OpenAI model to use when `llm.provider=openAI` |
-| `llm.apiKey` | `dummy-key` | API key passed to the LLM provider |
-| `llm.googleApiKey` | `""` | Google API key for ADK agent |
-| `opentelemetry.enabled` | `true` | Enable OpenTelemetry export from agents |
-| `opentelemetry.endpoint` | `…opentelemetry-collector…:4317` | OTLP gRPC collector endpoint |
-| `opentelemetry.protocol` | `grpc` | OTLP transport protocol (`grpc` or `http`) |
-| `redisInsight.enabled` | `true` | Deploy RedisInsight UI (NodePort 30540) |
-| `diagridDashboard.enabled` | `true` | Deploy Diagrid Dashboard UI (NodePort 30088) |
-| `gateway.enabled` | `true` | Deploy the ingress gateway |
+| `llm.apiKey` | `dummy-key` | Written to the `apiKey` field of the `llm-secret` secret |
+| `llm.googleApiKey` | `""` | Written to the `googleApiKey` field of the `llm-secret` secret (used by the ADK agent) |
+| `agents` | `{}` | Per-agent overrides |
+| `gateway.enabled` | `true` | Gateway settings — note the gateway templates currently render unconditionally |
+| `nameOverride` | _unset_ | Override the chart name used in generated resource names |
+| `fullnameOverride` | _unset_ | Override the full name used in generated resource names |
+| `catalystOperator.enabled` | _unset_ | Render the Catalyst `Project` resource (operator values are commented out by default) |
+| `catalystOperator.region` | `aws-us-west` | Region for the Catalyst `Project` resource |
+| `loki`, `tempo`, `kube-prometheus-stack`, `opentelemetry-collector`, `chaos-mesh` | see `values.yaml` | Value overrides passed straight to each sub-chart |
 
 For the full set of values (including all sub-chart tunables), see
 [`values.yaml`](./values.yaml).
 
 ## Dependencies
 
-| Chart | Version | Source |
+Five sub-charts, each gated by a condition:
+
+| Chart | Source | Condition |
 |---|---|---|
-| loki | 6.6.x | https://grafana.github.io/helm-charts |
-| tempo | 1.10.x | https://grafana.github.io/helm-charts |
-| kube-prometheus-stack | 82.1.0 | https://prometheus-community.github.io/helm-charts |
-| opentelemetry-collector | 0.145.0 | https://open-telemetry.github.io/opentelemetry-helm-charts |
-| dapr | 1.17.0-rc.3 | https://dapr.github.io/helm-charts/ |
+| loki | https://grafana.github.io/helm-charts | `monitoring.enabled` |
+| tempo | https://grafana.github.io/helm-charts | `monitoring.enabled` |
+| kube-prometheus-stack | https://prometheus-community.github.io/helm-charts | `monitoring.enabled` |
+| opentelemetry-collector | https://open-telemetry.github.io/opentelemetry-helm-charts | `monitoring.enabled` |
+| chaos-mesh | https://charts.chaos-mesh.org | `chaos.enabled` |
+
+Pinned versions are deliberately not repeated here — Dependabot bumps them in
+[`Chart.yaml`](./Chart.yaml), so a copy in this file goes stale within days.
+Read `Chart.yaml` for the constraint and `Chart.lock` for what was last resolved.

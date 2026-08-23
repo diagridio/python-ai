@@ -33,7 +33,7 @@ cd examples/strands
 dapr run --app-id strands-agent --resources-path ./resources -- python3 simple_agent.py
 ```
 
-The agent has three tools (`search_web`, `calculate`, `get_weather`) and responds to a weather/calculation query. The entire agent invocation becomes a durable workflow activity.
+The agent has three tools (`search_web`, `calculate`, `get_weather`) and responds to a weather/calculation query. Each LLM call and each tool call becomes a separate durable workflow activity.
 
 ### Crash Recovery Test
 
@@ -63,13 +63,13 @@ DaprWorkflowAgentRunner
     v
 START WORKFLOW: dapr.strands.<name>.workflow
     |
-    +--> Activity: run_agent (invoke Strands agent)
+    +--> Activity: strands_call_model (get next action from the LLM)
     |         |
     |         v
-    |    Agent calls tools, gets LLM responses
+    +--> Activity: strands_execute_tool (one per requested tool)
     |         |
     |         v
-    +--> Return result
+    +--> ... (loops until the model returns a final response)
     |
     v
 Yield workflow events to caller

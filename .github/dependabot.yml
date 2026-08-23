@@ -20,16 +20,6 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
-  # Python - diagrid-agent-core workspace member
-  - package-ecosystem: "uv"
-    directory: "/diagrid/agent/core"
-    schedule:
-      interval: "daily"
-    cooldown:
-      default-days: 7
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
   # Helm chart dependencies
   - package-ecosystem: "helm"
     directory: "/charts/catalyst-agents"

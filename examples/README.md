@@ -27,7 +27,7 @@ diagridpy init my-project --framework <framework>
 | `openai-agents`  | `diagridpy init my-project --framework openai-agents`                                  |
 | `pydantic-ai`    | `diagridpy init my-project --framework pydantic-ai`                                    |
 | `deepagents`     | `diagridpy init my-project --framework deepagents`                                     |
-| `orchestrator`   | `diagridpy init my-project --framework orchestrator` — multi-agent template (crewai + openai-agents + adk working together) |
+| `orchestrator`   | `diagridpy init my-project --framework orchestrator` — multi-agent template deploying eight agents (crewai-agent, openai-agent, adk-agent, strands-agent, langgraph-agent, dapr-agent, event-orchestrator, pydantic-ai-agent) |
 
 Run `diagridpy init --help` for the full list of options (auth, project creation, cluster provisioning, Helm install).
 
@@ -45,8 +45,8 @@ Clone this repo and run any of these directly. Each subdirectory has its own REA
 | Strands | [`strands/`](strands/) — [README](strands/README.md) | Simple agent, crash recovery, retry |
 | OpenAI Agents | [`openai_agents/`](openai_agents/) — [README](openai_agents/README.md) | Simple agent, crash recovery |
 | Claude Agent SDK | [`claude_agents/`](claude_agents/) — [README](claude_agents/README.md) | Simple agent, crash recovery |
-| Pydantic AI | [`pydantic_ai/`](pydantic_ai/) | Simple agent, subagent workflows, incident-response demo, crash recovery, retry |
-| Deep Agents | [`deepagents/`](deepagents/) | Simple agent, crash recovery, retry |
+| Pydantic AI | [`pydantic_ai/`](pydantic_ai/) | Simple agent, crash recovery, retry |
+| Deep Agents | [`deepagents/`](deepagents/) | Simple agent, subagent workflows, incident-response demo, crash recovery, retry |
 | LangChain | [`langchain/`](langchain/) — [README](langchain/README.md) | Simple agent, crash recovery, retry |
 | Smolagents | [`smolagents/`](smolagents/) — [README](smolagents/README.md) | Simple agent, crash recovery, retry |
 | HolmesGPT | [`holmesgpt/`](holmesgpt/) | CLI runner, SSE server, schedule + park + resume phases, ask test |
