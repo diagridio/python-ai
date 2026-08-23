@@ -123,7 +123,10 @@ opentelemetry-collector:
 # ------------------------------------------------------------------------------
 chaos:
   enabled: true
-  chartVersion: "2.7.3"  # must match Chart.yaml chaos-mesh dependency version
+  # Must equal the chaos-mesh dependency version in Chart.yaml. The CRD job
+  # runs `helm pull chaos-mesh --version <this>`, so a mismatch installs the
+  # subchart at one version and its CRDs at another. helm-ci.yaml asserts it.
+  chartVersion: "2.8.3"
 
 chaos-mesh:
   controllerManager:
