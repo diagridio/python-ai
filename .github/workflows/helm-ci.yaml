@@ -48,6 +48,26 @@ jobs:
       - name: Helm dependency update
         run: helm dependency update ./charts/catalyst-agents
 
+      - name: Assert the chaos-mesh CRD version matches the subchart
+        # values.yaml's chaos.chartVersion drives `helm pull chaos-mesh --version
+        # <it>` in templates/chaos-mesh-crds/job.yaml, while the subchart itself
+        # is pinned in Chart.yaml. Nothing coupled the two, so they had already
+        # drifted to 2.7.3 CRDs against a 2.8.3 controller. Dependabot updates
+        # Chart.yaml and Chart.lock and never values.yaml, so this step is what
+        # turns its next bump into a visible failure instead of a silent skew.
+        run: |
+          set -euo pipefail
+          chart=$(yq '.dependencies[] | select(.name == "chaos-mesh") | .version' \
+            charts/catalyst-agents/Chart.yaml)
+          values=$(yq '.chaos.chartVersion' charts/catalyst-agents/values.yaml)
+          echo "Chart.yaml chaos-mesh dependency: $chart"
+          echo "values.yaml chaos.chartVersion:   $values"
+          if [ "$chart" != "$values" ]; then
+            echo "::error::chaos-mesh version skew: Chart.yaml says $chart, values.yaml chaos.chartVersion says $values. The CRD job pulls the values.yaml version while the subchart installs the Chart.yaml one, so the CRDs would not match the controller. Update charts/catalyst-agents/values.yaml."
+            exit 1
+          fi
+          echo "CRD version matches the subchart."
+
       - name: Helm lint (full)
         run: make helm-test-lint
 
