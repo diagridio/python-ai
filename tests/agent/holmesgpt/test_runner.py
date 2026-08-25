@@ -191,3 +191,12 @@ def test_build_fastapi_app_exposes_expected_routes():
     assert "/investigations/{workflow_id}/stream" in paths
     assert "/investigations/{workflow_id}/approve" in paths
     assert "/investigations/{workflow_id}/frontend_result" in paths
+
+
+def test_build_fastapi_app_has_oauth_middleware():
+    from diagrid.identity.asgi import OAuthMiddleware
+
+    r = _runner()
+    app = r.build_fastapi_app()
+    middleware_types = [cls for cls, _, _ in app.user_middleware]
+    assert OAuthMiddleware in middleware_types

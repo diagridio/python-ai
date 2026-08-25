@@ -559,8 +559,17 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
     # ------------------------------------------------------------------
 
     def build_fastapi_app(self) -> FastAPI:
-        """Return a FastAPI app with /investigations and /investigations/{id}/stream."""
+        """Return a FastAPI app with /investigations and /investigations/{id}/stream.
+
+        Identity middleware is installed here rather than in
+        ``BaseWorkflowRunner.serve()`` because HolmesGPT builds its own
+        FastAPI app.  If the base runner gains middleware, keep this in sync.
+        """
+        from diagrid.identity import OAuthConfig
+        from diagrid.identity.asgi import OAuthMiddleware
+
         app = FastAPI()
+        app.add_middleware(OAuthMiddleware, config=OAuthConfig())
         runner = self
 
         @app.post("/investigations")
