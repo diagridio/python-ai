@@ -9,7 +9,7 @@ calls read it and set ``X-Diagrid-User-Token`` on the request.
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from typing import Dict, Optional
 
 USER_TOKEN_HEADER = "X-Diagrid-User-Token"
@@ -20,9 +20,17 @@ _current_user_token: ContextVar[Optional[str]] = ContextVar(
 )
 
 
-def set_current_token(raw_token: str) -> None:
-    """Store the raw bearer token for the duration of this request."""
-    _current_user_token.set(raw_token)
+def set_current_token(raw_token: str) -> Token[Optional[str]]:
+    """Store the raw bearer token for the duration of this request.
+
+    Returns the reset token so the caller can restore the previous value.
+    """
+    return _current_user_token.set(raw_token)
+
+
+def reset_current_token(token: Token[Optional[str]]) -> None:
+    """Restore the previous contextvar value."""
+    _current_user_token.reset(token)
 
 
 def clear_current_token() -> None:

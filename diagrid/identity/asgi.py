@@ -17,6 +17,7 @@ from diagrid.identity.outbound import (
     BEARER_PREFIX,
     USER_TOKEN_HEADER,
     clear_current_token,
+    reset_current_token,
     set_current_token,
 )
 from diagrid.identity.verifier import (
@@ -94,12 +95,12 @@ class OAuthMiddleware(BaseHTTPMiddleware):
             issuer_id=payload.get("iss", ""),
         )
         request.state.user = user
-        set_current_token(token)
+        cv_token = set_current_token(token)
 
         try:
             return await call_next(request)
         finally:
-            clear_current_token()
+            reset_current_token(cv_token)
 
 
 def _trim_bearer(value: str) -> str:

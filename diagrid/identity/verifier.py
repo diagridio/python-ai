@@ -7,14 +7,13 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import httpx
 import jwt
-from jwt import PyJWKClient, PyJWK
+from jwt import PyJWKClient
 
 logger = logging.getLogger(__name__)
 
@@ -155,9 +154,10 @@ def _discover_from_metadata() -> Optional[_IdentityCoordinates]:
     identity = data.get("identity")
     if not identity or not identity.get("issuer"):
         return None
+    issuer = identity["issuer"]
     return _IdentityCoordinates(
-        issuer=identity["issuer"],
-        jwks_uri=identity.get("jwks_uri", identity["issuer"] + "/jwks.json"),
+        issuer=issuer,
+        jwks_uri=identity.get("jwks_uri", issuer.rstrip("/") + "/jwks.json"),
         audience=identity.get("audience", ""),
     )
 
@@ -169,7 +169,7 @@ def _discover_from_env() -> Optional[_IdentityCoordinates]:
         return None
     return _IdentityCoordinates(
         issuer=issuer,
-        jwks_uri=issuer + "/jwks.json",
+        jwks_uri=issuer.rstrip("/") + "/jwks.json",
         audience=os.environ.get("DIAGRID_DP_SENTRY_AUDIENCE", ""),
     )
 
@@ -183,23 +183,29 @@ def build_verifier(
 
     Priority: explicit args > /v1.0/metadata > env vars.
     """
-    if issuer and jwks_uri:
-        coords = _IdentityCoordinates(
-            issuer=issuer, jwks_uri=jwks_uri, audience=audience or ""
-        )
-    else:
+    discovered: Optional[_IdentityCoordinates] = None
+    if not (issuer and jwks_uri):
         discovered = _discover_from_metadata() or _discover_from_env()
-        if discovered is None:
-            raise RuntimeError(
-                "Cannot discover identity coordinates: "
-                "set issuer/jwks_uri explicitly, configure the sidecar metadata endpoint, "
-                "or set DIAGRID_DP_SENTRY_ISSUER"
-            )
-        coords = _IdentityCoordinates(
-            issuer=issuer or discovered.issuer,
-            jwks_uri=jwks_uri or discovered.jwks_uri,
-            audience=audience or discovered.audience,
+
+    resolved_issuer = issuer or (discovered.issuer if discovered else "")
+    resolved_jwks_uri = jwks_uri
+    if not resolved_jwks_uri and resolved_issuer:
+        resolved_jwks_uri = resolved_issuer.rstrip("/") + "/jwks.json"
+    if not resolved_jwks_uri and discovered:
+        resolved_jwks_uri = discovered.jwks_uri
+    resolved_audience = audience or (discovered.audience if discovered else "")
+
+    if not resolved_issuer or not resolved_jwks_uri:
+        raise RuntimeError(
+            "Cannot discover identity coordinates: "
+            "set issuer/jwks_uri explicitly, configure the sidecar metadata endpoint, "
+            "or set DIAGRID_DP_SENTRY_ISSUER"
         )
+    coords = _IdentityCoordinates(
+        issuer=resolved_issuer,
+        jwks_uri=resolved_jwks_uri,
+        audience=resolved_audience,
+    )
 
     v = JWKSVerifier(
         issuer=coords.issuer, jwks_uri=coords.jwks_uri, audience=coords.audience
