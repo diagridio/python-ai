@@ -12,7 +12,6 @@ import asyncio
 
 from dapr_agents.hooks import Deny, Mutate, Proceed, RequireApproval, Skip
 
-from diagrid.agent.core.plugins.context import LifecycleContext
 from diagrid.agent.core.plugins.registry import PluginRegistry
 from diagrid.agent.core.plugins.spi import LifecycleEvent
 
