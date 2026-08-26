@@ -9,7 +9,7 @@ plugins, consecutive open failures, and exception message propagation.
 
 import logging
 
-from dapr_agents.hooks import Deny, Proceed
+from dapr_agents.hooks import Deny
 
 from diagrid.agent.core.plugins.registry import PluginRegistry
 from diagrid.agent.core.plugins.spi import LifecycleEvent
