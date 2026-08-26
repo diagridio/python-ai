@@ -5,7 +5,7 @@
 
 Complements test_registry.py with scenarios that exercise less-obvious
 dispatch paths: Mutate-then-Deny, key overwrite, decision serialization
-branches, context build defaults, and the dispatch_plugin_event helper.
+branches, and context build defaults.
 """
 
 import asyncio
