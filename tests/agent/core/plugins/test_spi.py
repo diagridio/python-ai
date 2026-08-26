@@ -45,7 +45,9 @@ class FakePlugin:
 
 
 def test_mutate_then_deny_returns_deny_not_mutate():
-    p1 = FakePlugin(name="enrich", priority=10, on_event_return=Mutate(payload={"a": 1}))
+    p1 = FakePlugin(
+        name="enrich", priority=10, on_event_return=Mutate(payload={"a": 1})
+    )
     p2 = FakePlugin(name="guard", priority=20, on_event_return=Deny(code="blocked"))
     p3 = FakePlugin(name="tail", priority=30)
     reg = PluginRegistry([p1, p2, p3])
@@ -151,7 +153,9 @@ def test_build_context_defaults_missing_fields():
 
 def test_build_context_ignores_unknown_keys():
     reg = PluginRegistry([])
-    ctx = reg._build_context("BEFORE_AGENT_INVOKE", {"unknown_field": 42, "workflow_instance_id": "wf-1"})
+    ctx = reg._build_context(
+        "BEFORE_AGENT_INVOKE", {"unknown_field": 42, "workflow_instance_id": "wf-1"}
+    )
     assert ctx.workflow_instance_id == "wf-1"
     assert not hasattr(ctx, "unknown_field")
 
@@ -162,7 +166,9 @@ def test_build_context_ignores_unknown_keys():
 def test_multi_capability_selective_dispatch():
     p = FakePlugin(
         name="multi",
-        capabilities=frozenset({LifecycleEvent.BEFORE_AGENT_INVOKE, LifecycleEvent.BEFORE_TOOL_CALL}),
+        capabilities=frozenset(
+            {LifecycleEvent.BEFORE_AGENT_INVOKE, LifecycleEvent.BEFORE_TOOL_CALL}
+        ),
         on_event_return=Deny(code="x"),
     )
     reg = PluginRegistry([p])

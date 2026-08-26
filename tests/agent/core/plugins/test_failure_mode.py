@@ -47,7 +47,9 @@ class FakePlugin:
 
 
 def test_closed_deny_includes_error_string():
-    p = FakePlugin(name="oauth", failure_mode="closed", raises=ValueError("token expired"))
+    p = FakePlugin(
+        name="oauth", failure_mode="closed", raises=ValueError("token expired")
+    )
     reg = PluginRegistry([p])
     result = reg.dispatch("BEFORE_AGENT_INVOKE", {})
     assert result["type"] == "deny"
@@ -57,7 +59,9 @@ def test_closed_deny_includes_error_string():
 
 
 def test_closed_deny_code_reflects_plugin_name():
-    p = FakePlugin(name="my-custom-guard", failure_mode="closed", raises=RuntimeError("nope"))
+    p = FakePlugin(
+        name="my-custom-guard", failure_mode="closed", raises=RuntimeError("nope")
+    )
     reg = PluginRegistry([p])
     result = reg.dispatch("BEFORE_AGENT_INVOKE", {})
     assert result["code"] == "plugin.my-custom-guard.exception"
@@ -67,8 +71,12 @@ def test_closed_deny_code_reflects_plugin_name():
 
 
 def test_open_failure_lets_downstream_deny():
-    p_open = FakePlugin(name="telemetry", priority=10, failure_mode="open", raises=IOError("flush"))
-    p_guard = FakePlugin(name="guard", priority=20, failure_mode="closed", on_event_return=Deny(code="x"))
+    p_open = FakePlugin(
+        name="telemetry", priority=10, failure_mode="open", raises=IOError("flush")
+    )
+    p_guard = FakePlugin(
+        name="guard", priority=20, failure_mode="closed", on_event_return=Deny(code="x")
+    )
     reg = PluginRegistry([p_open, p_guard])
     result = reg.dispatch("BEFORE_AGENT_INVOKE", {})
     assert result["type"] == "deny"
@@ -77,7 +85,9 @@ def test_open_failure_lets_downstream_deny():
 
 
 def test_open_failure_lets_downstream_proceed():
-    p_open = FakePlugin(name="telemetry", priority=10, failure_mode="open", raises=IOError("flush"))
+    p_open = FakePlugin(
+        name="telemetry", priority=10, failure_mode="open", raises=IOError("flush")
+    )
     p_ok = FakePlugin(name="ok", priority=20, on_event_return=None)
     reg = PluginRegistry([p_open, p_ok])
     result = reg.dispatch("BEFORE_AGENT_INVOKE", {})
@@ -89,8 +99,12 @@ def test_open_failure_lets_downstream_proceed():
 
 
 def test_open_then_closed_both_raise():
-    p_open = FakePlugin(name="metrics", priority=10, failure_mode="open", raises=RuntimeError("a"))
-    p_closed = FakePlugin(name="auth", priority=20, failure_mode="closed", raises=RuntimeError("b"))
+    p_open = FakePlugin(
+        name="metrics", priority=10, failure_mode="open", raises=RuntimeError("a")
+    )
+    p_closed = FakePlugin(
+        name="auth", priority=20, failure_mode="closed", raises=RuntimeError("b")
+    )
     p_tail = FakePlugin(name="tail", priority=30)
     reg = PluginRegistry([p_open, p_closed, p_tail])
     result = reg.dispatch("BEFORE_AGENT_INVOKE", {})
@@ -100,8 +114,12 @@ def test_open_then_closed_both_raise():
 
 
 def test_closed_before_open_short_circuits_immediately():
-    p_closed = FakePlugin(name="auth", priority=10, failure_mode="closed", raises=RuntimeError("x"))
-    p_open = FakePlugin(name="metrics", priority=20, failure_mode="open", raises=RuntimeError("y"))
+    p_closed = FakePlugin(
+        name="auth", priority=10, failure_mode="closed", raises=RuntimeError("x")
+    )
+    p_open = FakePlugin(
+        name="metrics", priority=20, failure_mode="open", raises=RuntimeError("y")
+    )
     reg = PluginRegistry([p_closed, p_open])
     result = reg.dispatch("BEFORE_AGENT_INVOKE", {})
     assert result["type"] == "deny"
@@ -113,8 +131,12 @@ def test_closed_before_open_short_circuits_immediately():
 
 
 def test_multiple_open_failures_all_proceed():
-    p1 = FakePlugin(name="a", priority=10, failure_mode="open", raises=RuntimeError("1"))
-    p2 = FakePlugin(name="b", priority=20, failure_mode="open", raises=RuntimeError("2"))
+    p1 = FakePlugin(
+        name="a", priority=10, failure_mode="open", raises=RuntimeError("1")
+    )
+    p2 = FakePlugin(
+        name="b", priority=20, failure_mode="open", raises=RuntimeError("2")
+    )
     p3 = FakePlugin(name="c", priority=30, on_event_return=None)
     reg = PluginRegistry([p1, p2, p3])
     result = reg.dispatch("BEFORE_AGENT_INVOKE", {})
@@ -132,7 +154,10 @@ def test_open_failure_logs_warning(caplog):
     reg = PluginRegistry([p])
     with caplog.at_level(logging.WARNING, logger="diagrid.agent.core.plugins.registry"):
         reg.dispatch("BEFORE_AGENT_INVOKE", {})
-    assert any("telemetry" in r.message or "telemetry" in str(getattr(r, "plugin", "")) for r in caplog.records)
+    assert any(
+        "telemetry" in r.message or "telemetry" in str(getattr(r, "plugin", ""))
+        for r in caplog.records
+    )
 
 
 def test_closed_failure_logs_error(caplog):
