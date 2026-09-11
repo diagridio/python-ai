@@ -2,6 +2,7 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.testclient import TestClient
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -16,7 +17,7 @@ from diagrid.identity.verifier import TokenVerificationError, VerifierNotReady
 
 def _make_app(config=None):
     async def invoke(request: Request):
-        user: VerifiedUser = request.state.user
+        user: VerifiedUser = request.state.diagrid_user
         return JSONResponse(
             {
                 "subject": user.subject,
@@ -199,3 +200,123 @@ class TestOAuthMiddleware:
 
         assert resp.status_code == 200
         assert "read" in resp.json()["scopes"]
+
+    def test_verified_user_on_namespaced_state_attribute(self):
+        config = OAuthConfig()
+        captured = []
+
+        async def handler(request: Request):
+            captured.append(request.state.diagrid_user)
+            return JSONResponse({"ok": True})
+
+        app = Starlette(routes=[Route("/test", handler, methods=["POST"])])
+        app.add_middleware(OAuthMiddleware, config=config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        payload = {"sub": "alice", "iss": "x", "exp": int(time.time()) + 3600}
+        verifier = _mock_verifier(payload)
+
+        with patch.object(OAuthMiddleware, "_get_verifier", return_value=verifier):
+            resp = client.post("/test", headers={"X-Diagrid-User-Token": "Bearer t"})
+
+        assert resp.status_code == 200
+        assert isinstance(captured[0], VerifiedUser)
+        assert captured[0].subject == "alice"
+
+    def test_app_state_user_left_untouched(self):
+        """The middleware must never write ``request.state.user``.
+
+        That slot belongs to the application; writing it is the collision
+        this namespacing exists to remove.
+        """
+        config = OAuthConfig()
+        state_user_set = {}
+
+        async def handler(request: Request):
+            try:
+                request.state.user
+                state_user_set["value"] = True
+            except AttributeError:
+                state_user_set["value"] = False
+            return JSONResponse({"ok": True})
+
+        app = Starlette(routes=[Route("/test", handler, methods=["POST"])])
+        app.add_middleware(OAuthMiddleware, config=config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        payload = {"sub": "alice", "iss": "x", "exp": int(time.time()) + 3600}
+        verifier = _mock_verifier(payload)
+
+        with patch.object(OAuthMiddleware, "_get_verifier", return_value=verifier):
+            resp = client.post("/test", headers={"X-Diagrid-User-Token": "Bearer t"})
+
+        assert resp.status_code == 200
+        assert state_user_set["value"] is False
+
+    @pytest.mark.parametrize("oauth_outermost", [True, False])
+    def test_app_state_user_survives_oauth_middleware(self, oauth_outermost):
+        """An app that sets ``state.user`` itself still reads its own object.
+
+        ``request.state`` is one namespace shared by the whole stack, so if
+        both middlewares wrote ``state.user`` the one running second would
+        win.  Starlette makes the last-registered middleware outermost,
+        hence run first, so both orders are exercised.
+        """
+        config = OAuthConfig()
+        app_user = object()
+        captured = {}
+
+        async def handler(request: Request):
+            captured["app"] = request.state.user
+            captured["diagrid"] = request.state.diagrid_user
+            return JSONResponse({"ok": True})
+
+        class AppAuthMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                request.state.user = app_user
+                return await call_next(request)
+
+        app = Starlette(routes=[Route("/test", handler, methods=["POST"])])
+        if oauth_outermost:
+            app.add_middleware(AppAuthMiddleware)
+            app.add_middleware(OAuthMiddleware, config=config)
+        else:
+            app.add_middleware(OAuthMiddleware, config=config)
+            app.add_middleware(AppAuthMiddleware)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        payload = {"sub": "alice", "iss": "x", "exp": int(time.time()) + 3600}
+        verifier = _mock_verifier(payload)
+
+        with patch.object(OAuthMiddleware, "_get_verifier", return_value=verifier):
+            resp = client.post("/test", headers={"X-Diagrid-User-Token": "Bearer t"})
+
+        assert resp.status_code == 200
+        assert captured["app"] is app_user
+        assert captured["diagrid"].subject == "alice"
+
+    def test_no_verified_user_when_auth_not_required(self):
+        """An unauthenticated request must not populate the namespaced slot.
+
+        Downstream code distinguishes "no verified caller" by the attribute
+        being absent, so a ``None`` sentinel here would break ``hasattr``.
+        """
+        config = OAuthConfig(require_auth=False)
+        diagrid_user_set = {}
+
+        async def handler(request: Request):
+            try:
+                request.state.diagrid_user
+                diagrid_user_set["value"] = True
+            except AttributeError:
+                diagrid_user_set["value"] = False
+            return JSONResponse({"ok": True})
+
+        app = Starlette(routes=[Route("/health", handler)])
+        app.add_middleware(OAuthMiddleware, config=config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.get("/health")
+
+        assert resp.status_code == 200
+        assert diagrid_user_set["value"] is False
