@@ -99,7 +99,9 @@ smolagents = [
 # a higher floor forces a repo-wide upgrade, and asgi.py only needs
 # BaseHTTPMiddleware, Request and JSONResponse.
 identity = [
-    "pyjwt>=2.13",
+    # ``crypto`` is required, not optional: plain pyjwt ships no asymmetric
+    # backend and ``verifier.py`` decodes RS256/ES256.
+    "pyjwt[crypto]>=2.13",
     "httpx2>=2.12",
     "starlette>=1.3",
 ]
@@ -110,7 +112,8 @@ identity = [
 # Install via ``pip install diagrid[holmesgpt]`` in a dedicated environment.
 holmesgpt = [
     "holmesgpt>=0.26.0",
-    "diagrid[agent-core]",
+    # ``runner.build_fastapi_app`` installs ``OAuthMiddleware``.
+    "diagrid[agent-core,identity]",
 ]
 all = [
     "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents,langchain,smolagents,identity]",

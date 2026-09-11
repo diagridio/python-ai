@@ -72,6 +72,48 @@ jobs:
     - name: Run Tests
       run: uv run pytest tests -m "not integration"
   # ----------------------------------------------------------------------
+  # The jobs above run in the dev environment, where fastapi and PyJWT are
+  # present whether or not this package declares them. This one installs the
+  # built wheel into an empty venv instead.
+  # ----------------------------------------------------------------------
+  clean-install:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v6.3.0
+      with:
+        python-version: "3.11"
+    - name: Install uv
+      uses: astral-sh/setup-uv@v8.3.0
+      with:
+        version: "latest"
+    - name: Build the wheel
+      run: uv build --wheel --out-dir dist
+    - name: Import the base surface from a bare install
+      # No extras: only what `pip install diagrid` gets you must import.
+      run: |
+        uv venv --python 3.11 /tmp/bare
+        uv pip install --python /tmp/bare/bin/python dist/*.whl
+        /tmp/bare/bin/python -c "import diagrid.identity, diagrid.identity.outbound"
+    - name: Import the identity surface from a diagrid[identity] install
+      run: |
+        uv venv --python 3.11 /tmp/identity
+        uv pip install --python /tmp/identity/bin/python "diagrid[identity] @ $(ls "$PWD"/dist/*.whl)"
+        /tmp/identity/bin/python -c "import diagrid.identity, diagrid.identity.asgi, diagrid.identity.http, diagrid.identity.outbound, diagrid.identity.verifier"
+    - name: Verify the JWT algorithms the verifier decodes with
+      # Importing succeeds without cryptography; RS256/ES256 would fail
+      # only at decode time.
+      run: |
+        /tmp/identity/bin/python -c "
+        import jwt
+        jws = jwt.api_jws.PyJWS()
+        for alg in ('RS256', 'ES256'):
+            jws.get_algorithm_by_name(alg)
+        "
+
+  # ----------------------------------------------------------------------
   # HolmesGPT has its own dependency fork (see `[tool.uv].conflicts` in
   # pyproject.toml) — its pins on fastapi/uvicorn/mcp/httpx etc. don't
   # coexist with the `all` extra. The `build` job above silently skips
