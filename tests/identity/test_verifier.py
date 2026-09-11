@@ -139,6 +139,22 @@ class TestJWKSVerifier:
                 verifier.verify(token)
             assert exc_info.value.code == "oauth.invalid_signature"
 
+    def test_verify_malformed_token(self):
+        verifier = JWKSVerifier(
+            issuer="https://oidc.example.com", jwks_uri="https://example.com/jwks.json"
+        )
+
+        with patch.object(verifier, "_ensure_client") as mock_client:
+            mock_pyjwk_client = MagicMock()
+            mock_pyjwk_client.get_signing_key_from_jwt.side_effect = pyjwt.DecodeError(
+                "Not enough segments"
+            )
+            mock_client.return_value = mock_pyjwk_client
+
+            with pytest.raises(TokenVerificationError) as exc_info:
+                verifier.verify("not-a-jwt")
+            assert exc_info.value.code == "oauth.decode_error"
+
 
 class TestDiscovery:
     def test_discover_from_env(self):
