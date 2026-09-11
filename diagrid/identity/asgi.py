@@ -33,14 +33,25 @@ logger = logging.getLogger(__name__)
 class OAuthMiddleware(BaseHTTPMiddleware):
     """Verifies ``X-Diagrid-User-Token`` on every inbound request.
 
+    The verified caller is attached to ``request.state.diagrid_user`` as a
+    :class:`~diagrid.identity.VerifiedUser`.  The unnamespaced
+    ``request.state.user`` slot is left alone — it belongs to the
+    application, and ``request.state`` is one namespace shared by every
+    middleware in the stack.
+
     Usage::
 
-        from fastapi import FastAPI
+        from fastapi import FastAPI, Request
         from diagrid.identity import OAuthConfig
         from diagrid.identity.asgi import OAuthMiddleware
 
         app = FastAPI()
         app.add_middleware(OAuthMiddleware, config=OAuthConfig(scopes={"agent.invoke"}))
+
+        @app.post("/invoke")
+        async def invoke(request: Request):
+            user = request.state.diagrid_user
+            return {"subject": user.subject}
     """
 
     def __init__(self, app, config: Optional[OAuthConfig] = None) -> None:  # type: ignore[no-untyped-def]
@@ -94,7 +105,7 @@ class OAuthMiddleware(BaseHTTPMiddleware):
             claims=payload,
             issuer_id=payload.get("iss", ""),
         )
-        request.state.user = user
+        request.state.diagrid_user = user
         cv_token = set_current_token(token)
 
         try:

@@ -3,14 +3,26 @@
 
 """App-side identity surface for Catalyst agents.
 
-Two lines of app code buy verified inbound identity; zero lines buy
-outbound OBO::
+Two lines of app code buy verified inbound identity::
 
-    from diagrid.identity import OAuthConfig, VerifiedUser
+    from diagrid.identity import OAuthConfig
     from diagrid.identity.asgi import OAuthMiddleware
 
     oauth = OAuthConfig(scopes={"agent.invoke"})
     app.add_middleware(OAuthMiddleware, config=oauth)
+
+Handlers read the verified caller from ``request.state.diagrid_user``.
+
+Outbound on-behalf-of calls then cost zero lines beyond the client you
+already had to construct — see :mod:`diagrid.identity.http`::
+
+    from diagrid.identity.http import AsyncClient
+
+    client = AsyncClient()
+
+Nothing here imports the optional runtime dependencies; ``asgi``,
+``verifier`` and ``http`` each pull their own, so importing this module
+works on a bare install.
 """
 
 from __future__ import annotations
@@ -48,7 +60,7 @@ class OAuthConfig:
 
 @dataclass(frozen=True)
 class VerifiedUser:
-    """Verified caller identity attached to ``request.state.user``.
+    """Verified caller identity attached to ``request.state.diagrid_user``.
 
     Attributes:
         subject: ``sub`` claim — email, user-id, or agent SPIFFE URI.

@@ -101,7 +101,7 @@ jobs:
       run: |
         uv venv --python 3.11 /tmp/identity
         uv pip install --python /tmp/identity/bin/python "diagrid[identity] @ $(ls "$PWD"/dist/*.whl)"
-        /tmp/identity/bin/python -c "import diagrid.identity, diagrid.identity.asgi, diagrid.identity.verifier, diagrid.identity.outbound"
+        /tmp/identity/bin/python -c "import diagrid.identity, diagrid.identity.asgi, diagrid.identity.http, diagrid.identity.outbound, diagrid.identity.verifier"
     - name: Verify the JWT algorithms the verifier decodes with
       # Importing succeeds without cryptography; RS256/ES256 would fail
       # only at decode time.

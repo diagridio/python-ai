@@ -90,15 +90,20 @@ smolagents = [
     "smolagents>=1.26.0",
     "diagrid[agent-core]",
 ]
-# httpx2 rather than httpx: separate distributions that install side by
-# side, so this cannot collide with holmesgpt's ``httpx[socks] <0.28``.
+# Runtime deps of ``diagrid.identity``, kept out of the base dependency list
+# so a plain ``pip install diagrid`` stays lean. Nothing in the base deps
+# pulls starlette, so without this extra ``asgi.py`` does not import at all.
+# httpx2 is a separate distribution from httpx and installs alongside it, so
+# it cannot collide with the ``httpx[socks] <0.28`` pin holmesgpt brings.
+# starlette stays on the 1.x line the rest of the graph already resolves —
+# a higher floor forces a repo-wide upgrade, and asgi.py only needs
+# BaseHTTPMiddleware, Request and JSONResponse.
 identity = [
     # ``crypto`` is required, not optional: plain pyjwt ships no asymmetric
-    # backend and ``verifier.py`` decodes RS256/ES256. 2.5.0 added
-    # PyJWKClient's ``cache_jwk_set`` and ``lifespan``.
-    "pyjwt[crypto]>=2.5",
+    # backend and ``verifier.py`` decodes RS256/ES256.
+    "pyjwt[crypto]>=2.13",
     "httpx2>=2.12",
-    "starlette>=0.40",
+    "starlette>=1.3",
 ]
 # NOTE: holmesgpt is intentionally NOT in the ``all`` meta-extra below.
 # HolmesGPT pins many of its transitive deps tightly (fastapi <0.122,
