@@ -100,6 +100,8 @@ class JWKSVerifier:
             signing_key = client.get_signing_key_from_jwt(raw_token)
         except jwt.PyJWKClientError as exc:
             raise VerifierNotReady(str(exc)) from exc
+        except jwt.InvalidTokenError as exc:
+            raise TokenVerificationError("oauth.decode_error", str(exc)) from exc
 
         decode_opts: Dict[str, Any] = {
             "algorithms": ["RS256", "ES256"],
