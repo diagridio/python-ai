@@ -11,6 +11,8 @@ Two lines of app code buy verified inbound identity::
     oauth = OAuthConfig(scopes={"agent.invoke"})
     app.add_middleware(OAuthMiddleware, config=oauth)
 
+Handlers read the verified caller from ``request.state.diagrid_user``.
+
 Outbound on-behalf-of calls then cost zero lines beyond the client you
 already had to construct — see :mod:`diagrid.identity.http`::
 
@@ -58,7 +60,7 @@ class OAuthConfig:
 
 @dataclass(frozen=True)
 class VerifiedUser:
-    """Verified caller identity attached to ``request.state.user``.
+    """Verified caller identity attached to ``request.state.diagrid_user``.
 
     Attributes:
         subject: ``sub`` claim — email, user-id, or agent SPIFFE URI.

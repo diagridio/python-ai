@@ -374,7 +374,7 @@ def test_middleware_verified_token_reaches_concurrent_outbound_calls():
     )
 
     async def endpoint(request):
-        user = request.state.user
+        user = request.state.diagrid_user
         await outbound.get(f"/{user.subject}")
         return JSONResponse({"subject": user.subject})
 
