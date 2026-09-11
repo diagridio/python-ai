@@ -107,7 +107,8 @@ identity = [
 # Install via ``pip install diagrid[holmesgpt]`` in a dedicated environment.
 holmesgpt = [
     "holmesgpt>=0.26.0",
-    "diagrid[agent-core]",
+    # ``runner.build_fastapi_app`` installs ``OAuthMiddleware``.
+    "diagrid[agent-core,identity]",
 ]
 all = [
     "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents,langchain,smolagents,identity]",
