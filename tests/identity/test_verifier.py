@@ -168,7 +168,7 @@ class TestDiscovery:
 
         with (
             patch.dict("os.environ", {"DAPR_HTTP_PORT": "3500"}),
-            patch("diagrid.identity.verifier.httpx.get", return_value=mock_resp),
+            patch("diagrid.identity.verifier.httpx2.get", return_value=mock_resp),
         ):
             coords = _discover_from_metadata()
             assert coords is not None
@@ -185,7 +185,7 @@ class TestDiscovery:
 
         with (
             patch.dict("os.environ", {"DAPR_HTTP_PORT": "3500"}),
-            patch("diagrid.identity.verifier.httpx.get", return_value=mock_resp),
+            patch("diagrid.identity.verifier.httpx2.get", return_value=mock_resp),
         ):
             assert _discover_from_metadata() is None
 

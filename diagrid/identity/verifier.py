@@ -11,7 +11,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-import httpx
+import httpx2
 import jwt
 from jwt import PyJWKClient
 
@@ -144,7 +144,7 @@ def _discover_from_metadata() -> Optional[_IdentityCoordinates]:
         return None
     url = f"http://127.0.0.1:{port}/v1.0/metadata"
     try:
-        resp = httpx.get(url, timeout=5.0)
+        resp = httpx2.get(url, timeout=5.0)
         resp.raise_for_status()
         data = resp.json()
     except Exception:

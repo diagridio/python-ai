@@ -90,6 +90,16 @@ smolagents = [
     "smolagents>=1.26.0",
     "diagrid[agent-core]",
 ]
+# httpx2 rather than httpx: separate distributions that install side by
+# side, so this cannot collide with holmesgpt's ``httpx[socks] <0.28``.
+identity = [
+    # ``crypto`` is required, not optional: plain pyjwt ships no asymmetric
+    # backend and ``verifier.py`` decodes RS256/ES256. 2.5.0 added
+    # PyJWKClient's ``cache_jwk_set`` and ``lifespan``.
+    "pyjwt[crypto]>=2.5",
+    "httpx2>=2.12",
+    "starlette>=0.40",
+]
 # NOTE: holmesgpt is intentionally NOT in the ``all`` meta-extra below.
 # HolmesGPT pins many of its transitive deps tightly (fastapi <0.122,
 # uvicorn <0.41, cachetools <6, mcp ==1.25, httpx[socks] <0.28, …) which
@@ -100,7 +110,7 @@ holmesgpt = [
     "diagrid[agent-core]",
 ]
 all = [
-    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents,langchain,smolagents]",
+    "diagrid[langgraph,crewai,adk,strands,openai_agents,pydantic_ai,deepagents,claude_agents,langchain,smolagents,identity]",
 ]
 
 [dependency-groups]
