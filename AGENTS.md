@@ -38,10 +38,15 @@ Helm chart, commits and tags straight on `main`, then publishes three wheels.
 
 Eleven framework extras — `langgraph`, `crewai`, `adk`, `strands`,
 `openai_agents`, `claude_agents`, `pydantic_ai`, `deepagents`, `langchain`,
-`smolagents`, `holmesgpt` — plus `agent-core` (shared runtime) and `all`. Note
-that PyPI normalises the underscores, so `diagrid[openai-agents]` and
+`smolagents`, `holmesgpt` — plus `agent-core` (shared runtime), `identity`
+(`diagrid.identity`'s pyjwt / httpx2 / starlette) and `all`. Note that PyPI
+normalises the underscores, so `diagrid[openai-agents]` and
 `diagrid[openai_agents]` are the same extra.
 
+- **`identity` is the one non-framework extra.** `diagrid.identity` itself
+  imports on a bare install; `asgi`, `verifier` and `http` each need it. Its
+  `starlette` floor is deliberately the 1.x line the rest of the graph already
+  resolves — raising it forces a repo-wide starlette upgrade.
 - **`all` deliberately omits `holmesgpt`.** HolmesGPT's pins on
   fastapi/uvicorn/cachetools/mcp/httpx cannot coexist with the other frameworks,
   so `[tool.uv].conflicts` declares it incompatible with every other extra
