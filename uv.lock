@@ -7,9 +7,9 @@ resolution-markers = [
     "python_full_version >= '3.13' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph'",
     "python_full_version == '3.12.*' and extra != 'extra-7-diagrid-adk' and extra != 'extra-7-diagrid-all' and extra != 'extra-7-diagrid-claude-agents' and extra != 'extra-7-diagrid-crewai' and extra != 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langchain' and extra != 'extra-7-diagrid-langgraph' and extra != 'extra-7-diagrid-openai-agents' and extra != 'extra-7-diagrid-pydantic-ai' and extra != 'extra-7-diagrid-smolagents' and extra != 'extra-7-diagrid-strands'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph'",
     "(python_full_version < '3.13' and sys_platform != 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (python_full_version < '3.12' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph')",
     "python_full_version < '3.12' and extra != 'extra-7-diagrid-adk' and extra != 'extra-7-diagrid-all' and extra != 'extra-7-diagrid-claude-agents' and extra != 'extra-7-diagrid-crewai' and extra != 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langchain' and extra != 'extra-7-diagrid-langgraph' and extra != 'extra-7-diagrid-openai-agents' and extra != 'extra-7-diagrid-pydantic-ai' and extra != 'extra-7-diagrid-smolagents' and extra != 'extra-7-diagrid-strands'",
-    "python_full_version == '3.12.*' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph'",
     "(python_full_version < '3.13' and sys_platform != 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph') or (python_full_version < '3.12' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph')",
 ]
 conflicts = [[
@@ -1506,7 +1506,7 @@ wheels = [
 
 [[package]]
 name = "diagrid"
-version = "0.4.4"
+version = "0.4.5"
 source = { editable = "." }
 dependencies = [
     { name = "dapr" },
@@ -1753,7 +1753,7 @@ test = [
 
 [[package]]
 name = "diagrid-cli"
-version = "0.4.4"
+version = "0.4.5"
 source = { editable = "diagrid/cli" }
 dependencies = [
     { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
@@ -1772,7 +1772,7 @@ requires-dist = [
 
 [[package]]
 name = "diagrid-core"
-version = "0.4.4"
+version = "0.4.5"
 source = { editable = "diagrid/core" }
 dependencies = [
     { name = "httpx" },
