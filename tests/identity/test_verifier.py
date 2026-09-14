@@ -483,6 +483,64 @@ class TestDiscovery:
             )
             mock_instance.warm.assert_called_once()
 
+    def test_build_verifier_honours_discovered_jwks_uri(self):
+        """A sidecar publishing a jwks_uri away from its issuer means it.
+
+        Deriving ``issuer + /jwks.json`` ahead of the discovered value would
+        point the verifier at an endpoint that need not exist, and every
+        request would then fail with ``oauth.verifier_unavailable``.
+        """
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "id": "test-app",
+            "identity": {
+                "issuer": "https://sentry.acme",
+                "jwks_uri": "https://keys.acme/jwks",
+            },
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch.dict("os.environ", {"DAPR_HTTP_PORT": "3500"}),
+            patch("diagrid.identity.verifier.httpx2.get", return_value=mock_resp),
+            patch("diagrid.identity.verifier.JWKSVerifier") as mock_cls,
+        ):
+            build_verifier()
+            mock_cls.assert_called_once_with(
+                issuer="https://sentry.acme",
+                jwks_uri="https://keys.acme/jwks",
+                audience="",
+            )
+
+    def test_build_verifier_pinned_issuer_ignores_foreign_jwks_uri(self):
+        """A pinned issuer is never checked against another issuer's keys.
+
+        When the app names an issuer explicitly and the sidecar advertises a
+        different one, adopting the advertised ``jwks_uri`` would let a token
+        minted by that other issuer, claiming the pinned one, verify.
+        """
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "id": "test-app",
+            "identity": {
+                "issuer": "https://other.acme",
+                "jwks_uri": "https://keys.other.acme/jwks",
+            },
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch.dict("os.environ", {"DAPR_HTTP_PORT": "3500"}),
+            patch("diagrid.identity.verifier.httpx2.get", return_value=mock_resp),
+            patch("diagrid.identity.verifier.JWKSVerifier") as mock_cls,
+        ):
+            build_verifier(issuer="https://pinned.acme")
+            mock_cls.assert_called_once_with(
+                issuer="https://pinned.acme",
+                jwks_uri="https://pinned.acme/jwks.json",
+                audience="",
+            )
+
     def test_build_verifier_no_config_raises(self):
         with (
             patch.dict("os.environ", {}, clear=True),

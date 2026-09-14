@@ -243,11 +243,21 @@ def build_verifier(
         )
 
     resolved_issuer = issuer or (discovered.issuer if discovered else "")
+    # Explicit beats discovered beats derived. A sidecar that publishes a
+    # jwks_uri away from its issuer means it, and deriving issuer+/jwks.json
+    # ahead of that would point the verifier at an endpoint which need not
+    # exist -- every request would then fail with oauth.verifier_unavailable.
+    #
+    # The discovered jwks_uri is only adopted when the discovered coordinates
+    # describe the issuer actually being verified. An app that pins an issuer
+    # explicitly while the sidecar advertises a different one must not end up
+    # checking that issuer against the other one's keys: a token minted by the
+    # advertised issuer, claiming the pinned one, would verify.
     resolved_jwks_uri = jwks_uri
+    if not resolved_jwks_uri and discovered and discovered.issuer == resolved_issuer:
+        resolved_jwks_uri = discovered.jwks_uri
     if not resolved_jwks_uri and resolved_issuer:
         resolved_jwks_uri = resolved_issuer.rstrip("/") + "/jwks.json"
-    if not resolved_jwks_uri and discovered:
-        resolved_jwks_uri = discovered.jwks_uri
     resolved_audience = audience or (discovered.audience if discovered else "")
 
     if not resolved_issuer or not resolved_jwks_uri:
