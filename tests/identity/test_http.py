@@ -65,6 +65,11 @@ class TestSyncClient:
             assert client.timeout.read == 1.5
             assert client.follow_redirects is True
 
+    def test_is_a_plain_httpx2_client_not_a_subclass(self):
+        """A factory, so the client passes anywhere ``httpx2.Client`` is expected."""
+        with Client(base_url=BASE_URL) as client:
+            assert type(client) is httpx2.Client
+
 
 class TestAsyncClient:
     def test_attaches_current_token(self):
@@ -115,6 +120,16 @@ class TestAsyncClient:
                 assert str(client.base_url) == BASE_URL
                 assert client.timeout.read == 1.5
                 assert client.follow_redirects is True
+
+        asyncio.run(body())
+
+    def test_is_a_plain_httpx2_client_not_a_subclass(self):
+        """A factory, so the client passes anywhere ``httpx2.AsyncClient`` is
+        expected — an MCP client, a generated API client, anything."""
+
+        async def body():
+            async with AsyncClient(base_url=BASE_URL) as client:
+                assert type(client) is httpx2.AsyncClient
 
         asyncio.run(body())
 
@@ -268,6 +283,28 @@ class TestRedirects:
             "Bearer secret-obo",
             "Bearer secret-obo" if forwarded else None,
         ]
+
+    def test_async_client_drops_the_token_on_a_redirect_off_origin(self):
+        """The same guard on the client every doc snippet reaches for."""
+        seen = []
+
+        async def body():
+            async with AsyncClient(
+                transport=self._redirecting_transport(
+                    seen, "https://evil.example/steal"
+                ),
+                follow_redirects=True,
+            ) as client:
+                await client.get("https://mcp.invalid/call")
+
+        set_current_token("secret-obo")
+        asyncio.run(body())
+
+        assert [origin for origin, _ in seen] == [
+            httpx2.URL("https://mcp.invalid/call").origin,
+            httpx2.URL("https://evil.example/steal").origin,
+        ]
+        assert [header for _, header in seen] == ["Bearer secret-obo", None]
 
 
 class TestEventHookMerging:
