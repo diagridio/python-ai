@@ -1,0 +1,11 @@
+[project]
+name = "diagrid-example-identity"
+version = "0.1.0"
+description = "Diagrid verified identity example script"
+requires-python = ">=3.11"
+dependencies = [
+    "diagrid[identity]",
+    # The identity extra ships starlette but no ASGI server, and this example is a
+    # service rather than a script, so it declares its own.
+    "uvicorn>=0.30",
+]

@@ -262,6 +262,7 @@ members = [
     "examples/claude_agents",
     "examples/langchain",
     "examples/smolagents",
+    "examples/identity",
     # HolmesGPT examples deliberately NOT a workspace member — see the note
     # next to the ``holmesgpt`` extra above. The example scripts still run
     # standalone via ``dapr run -- python examples/holmesgpt/...``.

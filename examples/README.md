@@ -50,6 +50,7 @@ Clone this repo and run any of these directly. Each subdirectory has its own REA
 | LangChain | [`langchain/`](langchain/) — [README](langchain/README.md) | Simple agent, crash recovery, retry |
 | Smolagents | [`smolagents/`](smolagents/) — [README](smolagents/README.md) | Simple agent, crash recovery, retry |
 | HolmesGPT | [`holmesgpt/`](holmesgpt/) | CLI runner, SSE server, schedule + park + resume phases, ask test |
+| Verified identity | [`identity/`](identity/) — [README](identity/README.md) | Inbound token verification, typed caller, outbound identity propagation |
 
 ## Shared prerequisites
 
