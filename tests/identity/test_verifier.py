@@ -6,10 +6,15 @@ import jwt as pyjwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from diagrid.identity import (
+    IdentityNotConfiguredError,
+    OAuthErrorCodes,
+    TokenVerifier,
+)
 from diagrid.identity.verifier import (
     JWKSVerifier,
     TokenVerificationError,
-    _IdentityCoordinates,
+    IdentityCoordinates,
     _discover_from_env,
     _discover_from_metadata,
     _discover_from_remote,
@@ -94,7 +99,7 @@ class TestJWKSVerifier:
 
             with pytest.raises(TokenVerificationError) as exc_info:
                 verifier.verify(token)
-            assert exc_info.value.code == "oauth.expired"
+            assert exc_info.value.code == OAuthErrorCodes.EXPIRED
 
     def test_verify_wrong_issuer(self):
         private_key = _generate_rsa_keypair()
@@ -121,7 +126,7 @@ class TestJWKSVerifier:
 
             with pytest.raises(TokenVerificationError) as exc_info:
                 verifier.verify(token)
-            assert exc_info.value.code == "oauth.invalid_issuer"
+            assert exc_info.value.code == OAuthErrorCodes.INVALID_ISSUER
 
     def test_verify_bad_signature(self):
         sign_key = _generate_rsa_keypair()
@@ -148,7 +153,7 @@ class TestJWKSVerifier:
 
             with pytest.raises(TokenVerificationError) as exc_info:
                 verifier.verify(token)
-            assert exc_info.value.code == "oauth.invalid_signature"
+            assert exc_info.value.code == OAuthErrorCodes.INVALID_SIGNATURE
 
     def test_verify_malformed_token(self):
         verifier = JWKSVerifier(
@@ -164,7 +169,7 @@ class TestJWKSVerifier:
 
             with pytest.raises(TokenVerificationError) as exc_info:
                 verifier.verify("not-a-jwt")
-            assert exc_info.value.code == "oauth.decode_error"
+            assert exc_info.value.code == OAuthErrorCodes.DECODE_ERROR
 
 
 class TestDiscovery:
@@ -406,7 +411,7 @@ class TestDiscovery:
                 assert _discover_from_remote() is None
 
     def test_build_verifier_prefers_local_over_remote(self):
-        local = _IdentityCoordinates(
+        local = IdentityCoordinates(
             issuer="https://local.test.com",
             jwks_uri="https://local.test.com/jwks.json",
             audience="",
@@ -425,7 +430,7 @@ class TestDiscovery:
         assert mock_cls.call_args.kwargs["issuer"] == "https://local.test.com"
 
     def test_build_verifier_falls_back_to_remote(self):
-        remote = _IdentityCoordinates(
+        remote = IdentityCoordinates(
             issuer="https://remote.test.com",
             jwks_uri="https://remote.test.com/jwks.json",
             audience="",
@@ -549,4 +554,89 @@ class TestDiscovery:
             ),
         ):
             with pytest.raises(RuntimeError, match="Cannot discover"):
+                build_verifier()
+
+
+class TestTokenVerifierProtocol:
+    def test_jwks_verifier_satisfies_the_protocol(self):
+        """Structural conformance: JWKSVerifier does not inherit the Protocol."""
+        verifier = JWKSVerifier(
+            issuer="https://oidc.example.com", jwks_uri="https://example.com/jwks.json"
+        )
+        assert isinstance(verifier, TokenVerifier)
+        assert TokenVerifier not in JWKSVerifier.__mro__
+
+    def test_an_object_without_verify_does_not_satisfy_it(self):
+        assert not isinstance(object(), TokenVerifier)
+
+
+class TestJWKSTransport:
+    """The key set is the whole root of trust, so plaintext is refused.
+
+    An on-path attacker who can rewrite an http JWKS response mints tokens
+    this verifier accepts.
+    """
+
+    def test_non_loopback_http_jwks_uri_refused(self):
+        with pytest.raises(IdentityNotConfiguredError, match="allow_insecure_jwks"):
+            build_verifier(
+                issuer="http://oidc.example.com",
+                jwks_uri="http://oidc.example.com/jwks.json",
+            )
+
+    def test_http_jwks_uri_discovered_from_env_refused(self):
+        with patch.dict(
+            "os.environ", {"DIAGRID_DP_SENTRY_ISSUER": "http://oidc.example.com"}
+        ):
+            with pytest.raises(IdentityNotConfiguredError, match="allow_insecure_jwks"):
+                build_verifier()
+
+    def test_loopback_http_jwks_uri_allowed(self):
+        """The local sidecar publishes a loopback metadata endpoint."""
+        with patch("diagrid.identity.verifier.JWKSVerifier") as mock_cls:
+            build_verifier(
+                issuer="http://127.0.0.1:9000",
+                jwks_uri="http://127.0.0.1:9000/jwks.json",
+            )
+            mock_cls.assert_called_once_with(
+                issuer="http://127.0.0.1:9000",
+                jwks_uri="http://127.0.0.1:9000/jwks.json",
+                audience="",
+            )
+
+    def test_localhost_http_jwks_uri_allowed(self):
+        with patch("diagrid.identity.verifier.JWKSVerifier") as mock_cls:
+            build_verifier(
+                issuer="http://localhost:9000",
+                jwks_uri="http://localhost:9000/jwks.json",
+            )
+            mock_cls.assert_called_once_with(
+                issuer="http://localhost:9000",
+                jwks_uri="http://localhost:9000/jwks.json",
+                audience="",
+            )
+
+    def test_allow_insecure_jwks_opts_in(self):
+        with patch("diagrid.identity.verifier.JWKSVerifier") as mock_cls:
+            build_verifier(
+                issuer="http://oidc.example.com",
+                jwks_uri="http://oidc.example.com/jwks.json",
+                allow_insecure_jwks=True,
+            )
+            mock_cls.assert_called_once_with(
+                issuer="http://oidc.example.com",
+                jwks_uri="http://oidc.example.com/jwks.json",
+                audience="",
+            )
+
+
+class TestIdentityNotConfigured:
+    def test_build_verifier_raises_the_named_error(self):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
+                "diagrid.identity.verifier._discover_from_metadata", return_value=None
+            ),
+        ):
+            with pytest.raises(IdentityNotConfiguredError, match="Cannot discover"):
                 build_verifier()

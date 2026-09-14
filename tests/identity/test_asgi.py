@@ -10,9 +10,9 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from diagrid.identity import OAuthConfig, VerifiedUser
-from diagrid.identity.asgi import OAuthMiddleware
+from diagrid.identity.asgi import OAuthMiddleware, verified_user
 from diagrid.identity.outbound import current_user_token
-from diagrid.identity.verifier import TokenVerificationError, VerifierNotReady
+from diagrid.identity.verifier import TokenVerificationError, VerifierNotReadyError
 
 
 def _make_app(config=None):
@@ -137,7 +137,7 @@ class TestOAuthMiddleware:
         app = _make_app(config)
         client = TestClient(app, raise_server_exceptions=False)
 
-        verifier = _mock_verifier(side_effect=VerifierNotReady("JWKS loading"))
+        verifier = _mock_verifier(side_effect=VerifierNotReadyError("JWKS loading"))
 
         with patch.object(OAuthMiddleware, "_get_verifier", return_value=verifier):
             resp = client.post(
@@ -320,3 +320,50 @@ class TestOAuthMiddleware:
 
         assert resp.status_code == 200
         assert diagrid_user_set["value"] is False
+
+
+class TestVerifiedUserAccessor:
+    """Reading the caller through a typed accessor, not an untyped bag lookup."""
+
+    def test_returns_the_verified_caller(self):
+        captured = []
+
+        async def handler(request: Request):
+            captured.append(verified_user(request))
+            return JSONResponse({"ok": True})
+
+        app = Starlette(routes=[Route("/test", handler, methods=["POST"])])
+        app.add_middleware(OAuthMiddleware, config=OAuthConfig())
+        client = TestClient(app, raise_server_exceptions=False)
+
+        payload = {
+            "sub": "alice",
+            "scp": ["agent.invoke"],
+            "iss": "x",
+            "exp": int(time.time()) + 3600,
+        }
+        verifier = _mock_verifier(payload)
+
+        with patch.object(OAuthMiddleware, "_get_verifier", return_value=verifier):
+            resp = client.post("/test", headers={"X-Diagrid-User-Token": "Bearer t"})
+
+        assert resp.status_code == 200
+        assert isinstance(captured[0], VerifiedUser)
+        assert captured[0].subject == "alice"
+        assert captured[0].has_scope("agent.invoke")
+
+    def test_returns_none_on_an_unauthenticated_request(self):
+        captured = []
+
+        async def handler(request: Request):
+            captured.append(verified_user(request))
+            return JSONResponse({"ok": True})
+
+        app = Starlette(routes=[Route("/health", handler)])
+        app.add_middleware(OAuthMiddleware, config=OAuthConfig(require_auth=False))
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.get("/health")
+
+        assert resp.status_code == 200
+        assert captured == [None]
