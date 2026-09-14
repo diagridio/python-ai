@@ -11,7 +11,7 @@ from starlette.routing import Route
 
 from diagrid.identity import OAuthConfig, VerifiedUser
 from diagrid.identity.asgi import OAuthMiddleware
-from diagrid.identity.outbound import current_user_token, clear_current_token
+from diagrid.identity.outbound import current_user_token
 from diagrid.identity.verifier import TokenVerificationError, VerifierNotReady
 
 

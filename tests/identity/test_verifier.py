@@ -5,12 +5,10 @@ from unittest.mock import MagicMock, patch
 import jwt as pyjwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
 
 from diagrid.identity.verifier import (
     JWKSVerifier,
     TokenVerificationError,
-    VerifierNotReady,
     _IdentityCoordinates,
     _discover_from_env,
     _discover_from_metadata,
