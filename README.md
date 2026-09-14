@@ -58,6 +58,119 @@ pip install "diagrid[holmesgpt]"
 
 > **Note:** `diagrid[holmesgpt]` is intentionally not part of `diagrid[all]`. HolmesGPT ships strict pins on `fastapi`, `uvicorn`, `cachetools`, `mcp`, and `httpx[socks]` that conflict with the looser constraints used by the other agent extras. Install it in its own environment.
 
+## Verified identity
+
+Catalyst signs the calling user's identity into an `X-Diagrid-User-Token` header on
+every inbound request. `diagrid.identity` verifies it before your handler runs, and
+puts it back on the calls your agent makes on the caller's behalf.
+
+```bash
+pip install "diagrid[identity]"
+```
+
+Two lines wire it up:
+
+```python
+from diagrid.identity import OAuthConfig
+from diagrid.identity.asgi import OAuthMiddleware
+
+app.add_middleware(OAuthMiddleware, config=OAuthConfig(scopes={"agent.invoke"}))
+```
+
+### Reading the verified caller
+
+```python
+from fastapi import Request
+
+from diagrid.identity.asgi import verified_user
+
+
+@app.post("/invoke")
+async def invoke(request: Request):
+    user = verified_user(request)  # VerifiedUser | None
+    return {
+        "subject": user.subject,
+        "tenant": user.tenant,
+        "scopes": list(user.scopes),
+        "admin": user.has_scope("admin.write"),
+    }
+```
+
+`VerifiedUser` carries `subject`, `tenant`, `scopes`, `claims` and `issuer_id`, plus
+`has_scope(scope)`. `scopes` keeps set semantics but iterates in sorted order, so a
+response that echoes it is stable across requests and across SDKs.
+
+`verified_user()` returns `None` only when the request carried no token and
+`require_auth=False` allowed it through. A token that *is* present is always
+verified, and an invalid one never reaches the handler.
+
+### Outbound calls on behalf of the caller
+
+The sidecar mints the token for the *inbound* request, so an outbound call has to
+carry it explicitly. Use the identity-aware client and it rides along:
+
+```python
+from diagrid.identity.http import AsyncClient
+
+client = AsyncClient()  # an httpx2.AsyncClient that sends the caller's token
+```
+
+The token is read from the inbound request context at *send* time, not baked in at
+construction, so one long-lived client is safe to share: concurrent requests each
+carry their own caller's token. The header is cleared before it is set, and it only
+ever travels to the origin the caller addressed — a redirect away from that origin
+drops it.
+
+For a client you cannot replace, install the same behaviour as a request hook:
+
+```python
+import httpx2
+
+from diagrid.identity.http import attach_identity_headers_async
+
+client = httpx2.AsyncClient(event_hooks={"request": [attach_identity_headers_async]})
+```
+
+`attach_identity_headers` is the synchronous counterpart. A call made with no inbound
+user context — a cron, pub/sub or scheduled trigger — proceeds unauthenticated with
+the header omitted rather than raising.
+
+### `OAuthConfig`
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `scopes` | `FrozenSet[str]` | `frozenset()` | Scopes every caller must carry; a token short of one gets 403. |
+| `issuer` | `Optional[str]` | `None` | Expected `iss`. Discovered when unset. |
+| `audience` | `Optional[str]` | `None` | Expected `aud`. Discovered when unset. |
+| `jwks_uri` | `Optional[str]` | `None` | JWKS endpoint. Discovered when unset. |
+| `require_auth` | `bool` | `True` | Reject a request that carries no token. The default is fail-closed, and so is `OAuthConfig()`. |
+| `allow_insecure_jwks` | `bool` | `False` | Opt in to a plaintext JWKS URI on a non-loopback host. The key set is the root of trust, so https is otherwise required; loopback is exempt because that is where the local sidecar serves. |
+
+Coordinates are resolved explicit config first, then the sidecar's `/v1.0/metadata`
+endpoint, then the `DIAGRID_DP_SENTRY_ISSUER` / `DIAGRID_DP_SENTRY_AUDIENCE`
+environment variables.
+
+Tokens are accepted for RS256 and ES256 only, must carry `exp`, `iss` and `sub`, are
+allowed 120s of clock skew, and the key set is cached for 300s.
+
+### Rejections
+
+Every rejection is `{"error": "<code>"}` with `Cache-Control: no-store`. The codes
+are constants on `OAuthErrorCodes`.
+
+| Status | Code | When |
+| --- | --- | --- |
+| 401 | `oauth.missing_token` | No `X-Diagrid-User-Token`, and `require_auth=True`. |
+| 401 | `oauth.expired` | `exp` is in the past, beyond the skew allowance. |
+| 401 | `oauth.invalid_issuer` | `iss` is not the expected issuer. |
+| 401 | `oauth.invalid_audience` | `aud` is not the expected audience. |
+| 401 | `oauth.invalid_signature` | Signature does not verify against the key set. |
+| 401 | `oauth.decode_error` | The token is malformed. |
+| 401 | `oauth.invalid_token` | Any other claim validation failure. |
+| 403 | `oauth.missing_scope` | Verified, but short of `OAuthConfig.scopes`. |
+| 503 | `oauth.not_configured` | No identity coordinates could be resolved. |
+| 503 | `oauth.verifier_unavailable` | Key material has not loaded yet. |
+
 ## Prerequisites
 
 - **Python:** 3.11 or higher
