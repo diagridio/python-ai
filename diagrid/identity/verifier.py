@@ -169,8 +169,13 @@ def _discover_from_metadata() -> Optional[_IdentityCoordinates]:
         resp = httpx2.get(url, timeout=_METADATA_TIMEOUT_SECONDS)
         resp.raise_for_status()
         return _coords_from_identity(resp.json())
-    except Exception:
-        logger.debug("metadata discovery at %s failed", url, exc_info=True)
+    except Exception as exc:
+        logger.warning(
+            "identity discovery via %s failed (%s: %s); trying the next source",
+            url,
+            type(exc).__name__,
+            exc,
+        )
         return None
 
 
@@ -190,15 +195,21 @@ def _discover_from_remote() -> Optional[_IdentityCoordinates]:
         if not endpoint.startswith("https://"):
             # Still sent: a self-hosted sidecar on plain http is a valid setup.
             logger.warning(
-                "sending %s to non-https endpoint %s", _API_TOKEN_HEADER, endpoint
+                "DAPR_API_TOKEN will be sent in clear text to non-https endpoint %s",
+                endpoint,
             )
         headers[_API_TOKEN_HEADER] = token
     try:
         resp = httpx2.get(url, headers=headers, timeout=_METADATA_TIMEOUT_SECONDS)
         resp.raise_for_status()
         return _coords_from_identity(resp.json())
-    except Exception:
-        logger.debug("remote metadata discovery at %s failed", url, exc_info=True)
+    except Exception as exc:
+        logger.warning(
+            "identity discovery via %s failed (%s: %s); trying the next source",
+            url,
+            type(exc).__name__,
+            exc,
+        )
         return None
 
 

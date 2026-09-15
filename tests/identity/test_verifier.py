@@ -302,6 +302,50 @@ class TestDiscovery:
         ):
             assert _discover_from_remote() is None
 
+    def test_discover_from_remote_warns_when_unreachable(self, caplog):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "DAPR_HTTP_ENDPOINT": "https://http-prj1.region:30443",
+                    "DAPR_API_TOKEN": "diagrid://v1/org/prj/token",
+                },
+                clear=True,
+            ),
+            patch(
+                "diagrid.identity.verifier.httpx2.get",
+                side_effect=RuntimeError("connection refused"),
+            ),
+            caplog.at_level(logging.WARNING, logger="diagrid.identity.verifier"),
+        ):
+            assert _discover_from_remote() is None
+
+        assert "https://http-prj1.region:30443/v1.0/metadata" in caplog.text
+        assert "RuntimeError: connection refused" in caplog.text
+        assert "diagrid://v1/org/prj/token" not in caplog.text
+
+    def test_discover_from_metadata_warns_when_unreachable(self, caplog):
+        with (
+            patch.dict("os.environ", {"DAPR_HTTP_PORT": "3500"}, clear=True),
+            patch(
+                "diagrid.identity.verifier.httpx2.get",
+                side_effect=RuntimeError("connection refused"),
+            ),
+            caplog.at_level(logging.WARNING, logger="diagrid.identity.verifier"),
+        ):
+            assert _discover_from_metadata() is None
+
+        assert "http://127.0.0.1:3500/v1.0/metadata" in caplog.text
+
+    def test_discover_from_remote_silent_when_endpoint_unset(self, caplog):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            caplog.at_level(logging.WARNING, logger="diagrid.identity.verifier"),
+        ):
+            assert _discover_from_remote() is None
+
+        assert caplog.text == ""
+
     def test_discover_from_remote_warns_on_plaintext_token(self, caplog):
         mock_resp = _metadata_response({"issuer": "https://oidc.test.com/org/region"})
 
