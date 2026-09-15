@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 _CLOCK_SKEW_SECONDS = 120
 _JWKS_CACHE_LIFETIME = 300  # seconds before a background refresh
+_METADATA_PATH = "/v1.0/metadata"
+_METADATA_TIMEOUT_SECONDS = 5.0
+_API_TOKEN_HEADER = "dapr-api-token"
 
 
 class VerifierNotReady(Exception):
@@ -139,20 +142,12 @@ class JWKSVerifier:
         return payload
 
 
-def _discover_from_metadata() -> Optional[_IdentityCoordinates]:
-    """Try GET http://127.0.0.1:$PORT/v1.0/metadata for the identity block."""
-    port = os.environ.get("CATALYST_DAPR_HTTP_PORT") or os.environ.get("DAPR_HTTP_PORT")
-    if not port:
-        return None
-    url = f"http://127.0.0.1:{port}/v1.0/metadata"
-    try:
-        resp = httpx2.get(url, timeout=5.0)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception:
-        logger.debug("metadata discovery at %s failed", url, exc_info=True)
-        return None
+def _coords_from_identity(data: Any) -> Optional[_IdentityCoordinates]:
+    """Read the identity block out of a /v1.0/metadata response body.
 
+    Shared by local and remote discovery so the two cannot drift. Called inside
+    the callers' try: a malformed body raises and is treated as no discovery.
+    """
     identity = data.get("identity")
     if not identity or not identity.get("issuer"):
         return None
@@ -162,6 +157,60 @@ def _discover_from_metadata() -> Optional[_IdentityCoordinates]:
         jwks_uri=identity.get("jwks_uri", issuer.rstrip("/") + "/jwks.json"),
         audience=identity.get("audience", ""),
     )
+
+
+def _discover_from_metadata() -> Optional[_IdentityCoordinates]:
+    """Try GET http://127.0.0.1:$PORT/v1.0/metadata for the identity block."""
+    port = os.environ.get("CATALYST_DAPR_HTTP_PORT") or os.environ.get("DAPR_HTTP_PORT")
+    if not port:
+        return None
+    url = f"http://127.0.0.1:{port}{_METADATA_PATH}"
+    try:
+        resp = httpx2.get(url, timeout=_METADATA_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        return _coords_from_identity(resp.json())
+    except Exception as exc:
+        logger.warning(
+            "identity discovery via %s failed (%s: %s); trying the next source",
+            url,
+            type(exc).__name__,
+            exc,
+        )
+        return None
+
+
+def _discover_from_remote() -> Optional[_IdentityCoordinates]:
+    """Fall back to the project endpoint when there is no local sidecar port.
+
+    `diagrid dev run` runs the app on the developer's machine against a
+    Catalyst-hosted sidecar, so 127.0.0.1 has nothing listening.
+    """
+    endpoint = os.environ.get("DAPR_HTTP_ENDPOINT", "").rstrip("/")
+    if not endpoint:
+        return None
+    url = f"{endpoint}{_METADATA_PATH}"
+    headers: Dict[str, str] = {}
+    token = os.environ.get("DAPR_API_TOKEN")
+    if token:
+        if not endpoint.startswith("https://"):
+            # Still sent: a self-hosted sidecar on plain http is a valid setup.
+            logger.warning(
+                "DAPR_API_TOKEN will be sent in clear text to non-https endpoint %s",
+                endpoint,
+            )
+        headers[_API_TOKEN_HEADER] = token
+    try:
+        resp = httpx2.get(url, headers=headers, timeout=_METADATA_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        return _coords_from_identity(resp.json())
+    except Exception as exc:
+        logger.warning(
+            "identity discovery via %s failed (%s: %s); trying the next source",
+            url,
+            type(exc).__name__,
+            exc,
+        )
+        return None
 
 
 def _discover_from_env() -> Optional[_IdentityCoordinates]:
@@ -183,11 +232,15 @@ def build_verifier(
 ) -> JWKSVerifier:
     """Build a verifier using explicit config, metadata discovery, or env vars.
 
-    Priority: explicit args > /v1.0/metadata > env vars.
+    Priority: explicit args > local /v1.0/metadata > remote /v1.0/metadata >
+    env vars. Local comes first so a deployed in-cluster app keeps using the
+    loopback call rather than a network round trip.
     """
     discovered: Optional[_IdentityCoordinates] = None
     if not (issuer and jwks_uri):
-        discovered = _discover_from_metadata() or _discover_from_env()
+        discovered = (
+            _discover_from_metadata() or _discover_from_remote() or _discover_from_env()
+        )
 
     resolved_issuer = issuer or (discovered.issuer if discovered else "")
     resolved_jwks_uri = jwks_uri
@@ -200,7 +253,8 @@ def build_verifier(
     if not resolved_issuer or not resolved_jwks_uri:
         raise RuntimeError(
             "Cannot discover identity coordinates: "
-            "set issuer/jwks_uri explicitly, configure the sidecar metadata endpoint, "
+            "set issuer/jwks_uri explicitly, configure the sidecar metadata endpoint "
+            "(DAPR_HTTP_PORT locally or DAPR_HTTP_ENDPOINT for a remote sidecar), "
             "or set DIAGRID_DP_SENTRY_ISSUER"
         )
     coords = _IdentityCoordinates(
