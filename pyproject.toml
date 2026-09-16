@@ -262,7 +262,10 @@ members = [
     "examples/claude_agents",
     "examples/langchain",
     "examples/smolagents",
-    "examples/identity",
+    # examples/identity is deliberately NOT a workspace member. Registering it
+    # forks resolution across every extra, which grows uv.lock by ~6000 lines of
+    # resolution markers. Its dependencies come from the root `identity` extra,
+    # which is what its README tells you to install.
     # HolmesGPT examples deliberately NOT a workspace member — see the note
     # next to the ``holmesgpt`` extra above. The example scripts still run
     # standalone via ``dapr run -- python examples/holmesgpt/...``.

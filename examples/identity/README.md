@@ -38,10 +38,13 @@ Three things follow from those two lines:
 
 ## Run it
 
-Install dependencies from the repo root:
+Install the SDK from the repo root, then the ASGI server this example runs on.
+The `identity` extra ships starlette but no server, and this example is not a uv
+workspace member, so its own dependencies are not resolved by the sync.
 
 ```bash
 uv sync --all-packages --extra identity
+uv pip install uvicorn
 ```
 
 Then run the service:
