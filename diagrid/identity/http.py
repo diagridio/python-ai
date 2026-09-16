@@ -17,18 +17,17 @@ stateless request, so the caller's token has to ride on it explicitly::
         ...
 
 The header is read from the contextvar at *send* time rather than baked in at
-construction.  That is what makes one long-lived client safe: concurrent
-requests each carry their own caller's token, where a constructor header would
-send whichever user was current when the client was built.
+construction, which is what makes one long-lived client safe to share:
+concurrent requests each carry their own caller's token.
 
 The token only ever goes to the origin the caller addressed; a redirect away
 from it drops the header.  Past that the client is as wide as you make it, so
-call third-party APIs with a plain ``httpx2`` client instead.
+call third-party APIs with a plain ``httpx2`` client instead, and note that
+``X-Diagrid-User-Token`` is not a header name log scrubbers and tracing SDKs
+redact by default.
 
-Two limitations.  mcp 1.x annotates ``http_client`` as ``httpx.AsyncClient``
-where 2.x uses ``httpx2``, so a type checker rejects the call on 1.x even
-though the object satisfies it.  And ``X-Diagrid-User-Token`` is not a header
-name log scrubbers and tracing SDKs redact by default.
+On mcp 1.x a type checker rejects ``http_client=``: it is annotated
+``httpx.AsyncClient`` there, where 2.x uses ``httpx2``.
 """
 
 from __future__ import annotations
@@ -38,7 +37,10 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import httpx2
 
-from diagrid.identity.outbound import USER_TOKEN_HEADER, outbound_identity_headers
+from diagrid.identity.outbound import (
+    USER_TOKEN_HEADER,
+    _outbound_identity_headers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ def attach_identity_headers(request: httpx2.Request) -> None:
     if not _is_original_origin(request):
         logger.debug("identity withheld: %s is not the origin called", request.url)
         return
-    headers = outbound_identity_headers()
+    headers = _outbound_identity_headers()
     if not headers:
         logger.debug("no inbound user context; calling %s unauthenticated", request.url)
         return

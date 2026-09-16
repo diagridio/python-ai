@@ -1,7 +1,7 @@
 from diagrid.identity.outbound import (
+    _outbound_identity_headers,
     clear_current_token,
     current_user_token,
-    outbound_identity_headers,
     reset_current_token,
     set_current_token,
 )
@@ -30,14 +30,14 @@ def test_clear_token():
 
 def test_outbound_headers_with_token():
     tok = set_current_token("tok")
-    headers = outbound_identity_headers()
+    headers = _outbound_identity_headers()
     assert headers == {"X-Diagrid-User-Token": "Bearer tok"}
     reset_current_token(tok)
 
 
 def test_outbound_headers_without_token():
     clear_current_token()
-    assert outbound_identity_headers() == {}
+    assert _outbound_identity_headers() == {}
 
 
 def test_default_is_none():
