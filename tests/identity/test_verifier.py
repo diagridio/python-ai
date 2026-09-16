@@ -629,6 +629,50 @@ class TestJWKSTransport:
                 audience="",
             )
 
+    @pytest.mark.parametrize(
+        "jwks_uri",
+        [
+            "file:///etc/diagrid/jwks.json",
+            "ftp://keys.example.com/jwks.json",
+            "keys.example.com/jwks.json",
+        ],
+    )
+    def test_allow_insecure_jwks_relaxes_http_only(self, jwks_uri):
+        """The opt-in widens the rule to plain http and to nothing else.
+
+        Opting into plaintext says nothing about loading signing keys off the
+        local filesystem or over some other transport, so every scheme but
+        http and https stays refused however the flag is set.
+        """
+        for allow_insecure_jwks in (False, True):
+            with pytest.raises(IdentityNotConfiguredError, match="https"):
+                build_verifier(
+                    issuer="https://oidc.example.com",
+                    jwks_uri=jwks_uri,
+                    allow_insecure_jwks=allow_insecure_jwks,
+                )
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "127.0.0.1.attacker.example",
+            "127.evil.example",
+            "localhost.attacker.example",
+        ],
+    )
+    def test_loopback_exemption_is_not_a_prefix_match(self, host):
+        """A hostname that merely starts like loopback is not loopback.
+
+        The exemption is decided by parsing the host, so an attacker-controlled
+        DNS name cannot borrow it to serve a plaintext key set — the key set is
+        the entire root of trust.
+        """
+        with pytest.raises(IdentityNotConfiguredError, match="allow_insecure_jwks"):
+            build_verifier(
+                issuer=f"http://{host}",
+                jwks_uri=f"http://{host}/jwks.json",
+            )
+
 
 class TestIdentityNotConfigured:
     def test_build_verifier_raises_the_named_error(self):
@@ -640,3 +684,191 @@ class TestIdentityNotConfigured:
         ):
             with pytest.raises(IdentityNotConfiguredError, match="Cannot discover"):
                 build_verifier()
+
+
+class TestPublicSurface:
+    def test_coordinates_are_not_public_api(self):
+        """``IdentityCoordinates`` is discovery's internal result type."""
+        from diagrid.identity import verifier as verifier_module
+
+        assert "IdentityCoordinates" not in verifier_module.__all__
+
+
+def _verify_with_mocked_keys(verifier, token, public_key):
+    """Run ``verifier.verify`` with *public_key* standing in for the JWKS."""
+    mock_jwk = MagicMock()
+    mock_jwk.key = public_key
+
+    with patch.object(verifier, "_ensure_client") as mock_client:
+        mock_pyjwk_client = MagicMock()
+        mock_pyjwk_client.get_signing_key_from_jwt.return_value = mock_jwk
+        mock_client.return_value = mock_pyjwk_client
+        return verifier.verify(token)
+
+
+class TestRejectedAlgorithms:
+    """Only RS256 and ES256 are accepted, and a refusal is invalid_token.
+
+    ``oauth.decode_error`` is reserved for a token that is genuinely
+    unparseable; an ``alg`` outside the allowlist parses fine and is refused
+    on its merits.
+    """
+
+    def test_unsecured_alg_none_token_is_invalid_token(self):
+        private_key = _generate_rsa_keypair()
+        token = pyjwt.encode(
+            {
+                "sub": "alice@example.com",
+                "iss": "https://oidc.example.com",
+                "exp": int(time.time()) + 3600,
+            },
+            key=None,
+            algorithm="none",
+        )
+
+        verifier = JWKSVerifier(
+            issuer="https://oidc.example.com", jwks_uri="https://example.com/jwks.json"
+        )
+
+        with pytest.raises(TokenVerificationError) as exc_info:
+            _verify_with_mocked_keys(verifier, token, private_key.public_key())
+        assert exc_info.value.code == OAuthErrorCodes.INVALID_TOKEN
+
+    def test_symmetric_hs256_token_is_invalid_token(self):
+        """An HS256 token signed with the public key as the HMAC secret.
+
+        The classic confusion attack: it is refused for its algorithm, before
+        any signature comparison.
+        """
+        private_key = _generate_rsa_keypair()
+        token = pyjwt.encode(
+            {
+                "sub": "alice@example.com",
+                "iss": "https://oidc.example.com",
+                "exp": int(time.time()) + 3600,
+            },
+            "a-secret-the-attacker-picked-long-enough-for-sha256",
+            algorithm="HS256",
+        )
+
+        verifier = JWKSVerifier(
+            issuer="https://oidc.example.com", jwks_uri="https://example.com/jwks.json"
+        )
+
+        with pytest.raises(TokenVerificationError) as exc_info:
+            _verify_with_mocked_keys(verifier, token, private_key.public_key())
+        assert exc_info.value.code == OAuthErrorCodes.INVALID_TOKEN
+
+
+class TestAudience:
+    def test_wrong_audience_is_rejected(self):
+        private_key = _generate_rsa_keypair()
+        token = _sign_token(
+            private_key,
+            {
+                "sub": "alice@example.com",
+                "iss": "https://oidc.example.com",
+                "aud": "someone-elses-service",
+                "exp": int(time.time()) + 3600,
+            },
+        )
+
+        verifier = JWKSVerifier(
+            issuer="https://oidc.example.com",
+            jwks_uri="https://example.com/jwks.json",
+            audience="this-service",
+        )
+
+        with pytest.raises(TokenVerificationError) as exc_info:
+            _verify_with_mocked_keys(verifier, token, private_key.public_key())
+        assert exc_info.value.code == OAuthErrorCodes.INVALID_AUDIENCE
+
+    def test_audience_is_not_checked_when_none_is_configured(self):
+        """No configured audience means the claim is not asserted on.
+
+        Discovery leaves ``audience`` empty when the sidecar publishes none,
+        and a token carrying an ``aud`` must still verify in that case.
+        """
+        private_key = _generate_rsa_keypair()
+        token = _sign_token(
+            private_key,
+            {
+                "sub": "alice@example.com",
+                "iss": "https://oidc.example.com",
+                "aud": "some-other-service",
+                "exp": int(time.time()) + 3600,
+            },
+        )
+
+        verifier = JWKSVerifier(
+            issuer="https://oidc.example.com", jwks_uri="https://example.com/jwks.json"
+        )
+
+        payload = _verify_with_mocked_keys(verifier, token, private_key.public_key())
+        assert payload["sub"] == "alice@example.com"
+
+
+class TestClaimCheckOrder:
+    """One order of claim checks, so a doubly-defective token has one answer.
+
+    Required claims, then ``exp``, then ``iss``, then ``aud`` — the order
+    documented on :meth:`JWKSVerifier.verify`.
+    """
+
+    _NOW = int(time.time())
+    _ISSUER = "https://oidc.example.com"
+    _AUDIENCE = "this-service"
+
+    @pytest.mark.parametrize(
+        ("name", "overrides", "dropped", "expected"),
+        [
+            (
+                "expired beats a wrong issuer",
+                {"iss": "https://wrong.example.com", "exp": _NOW - 3600},
+                (),
+                OAuthErrorCodes.EXPIRED,
+            ),
+            (
+                "expired beats a wrong audience",
+                {"aud": "someone-else", "exp": _NOW - 3600},
+                (),
+                OAuthErrorCodes.EXPIRED,
+            ),
+            (
+                "a wrong issuer beats a wrong audience",
+                {"iss": "https://wrong.example.com", "aud": "someone-else"},
+                (),
+                OAuthErrorCodes.INVALID_ISSUER,
+            ),
+            (
+                "a missing required claim beats everything",
+                {"exp": _NOW - 3600},
+                ("sub",),
+                OAuthErrorCodes.INVALID_TOKEN,
+            ),
+        ],
+    )
+    def test_the_first_failing_check_names_the_code(
+        self, name, overrides, dropped, expected
+    ):
+        private_key = _generate_rsa_keypair()
+        payload = {
+            "sub": "alice@example.com",
+            "iss": self._ISSUER,
+            "aud": self._AUDIENCE,
+            "exp": self._NOW + 3600,
+            **overrides,
+        }
+        for claim in dropped:
+            payload.pop(claim)
+        token = _sign_token(private_key, payload)
+
+        verifier = JWKSVerifier(
+            issuer=self._ISSUER,
+            jwks_uri="https://example.com/jwks.json",
+            audience=self._AUDIENCE,
+        )
+
+        with pytest.raises(TokenVerificationError) as exc_info:
+            _verify_with_mocked_keys(verifier, token, private_key.public_key())
+        assert exc_info.value.code == expected, name

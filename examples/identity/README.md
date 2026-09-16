@@ -31,7 +31,10 @@ Three things follow from those two lines:
   `diagrid.identity.http.AsyncClient`, which attaches the caller's identity headers
   at send time so the callee verifies the same user. It returns
   `{"downstream": "<the raw body>"}`, or 502 `{"error": "downstream_unreachable"}`
-  if the call fails.
+  if the call fails. The client is built **once**, in the app's `lifespan`, and shared
+  by every request: the token is read from the request context at send time rather
+  than baked in at construction, so concurrent callers each carry their own identity.
+  Building one per request would throw away the connection pool for nothing.
 
 ## Run it
 
@@ -48,12 +51,27 @@ cd examples/identity
 python3 identity_service.py
 ```
 
-It listens on `http://127.0.0.1:8080`. Under Catalyst, run it behind the sidecar so
-inbound requests carry a real token:
+It listens on `http://127.0.0.1:8080`. Run it behind a Catalyst sidecar so inbound
+requests carry a real token and the middleware can discover its coordinates:
 
 ```bash
-dapr run --app-id identity-example --app-port 8080 -- python3 identity_service.py
+diagrid dev run -- python3 identity_service.py
 ```
+
+`diagrid dev run` is what supplies the identity coordinates. A plain `dapr run`
+sidecar will not do: an OSS Dapr sidecar publishes no `identity` block on
+`/v1.0/metadata`, so discovery finds nothing.
+
+Without a sidecar that publishes coordinates, the two failure modes are:
+
+- a request carrying **no** token is 401 `{"error":"oauth.missing_token"}` — the
+  token check happens before any discovery, so this works with no sidecar at all;
+- a request carrying a token is 503 `{"error":"oauth.not_configured"}`, because
+  there is nothing to verify it against.
+
+To run against an issuer you name yourself instead — a local test JWKS server, say —
+set the coordinates explicitly: `OAuthConfig(issuer=..., jwks_uri=...)`, adding
+`allow_insecure_jwks=True` if that endpoint is plain http on a non-loopback host.
 
 ## Try it
 
@@ -99,8 +117,10 @@ curl -s http://127.0.0.1:8080/downstream -H "X-Diagrid-User-Token: Bearer $TOKEN
   readiness endpoints share the app. A token that *is* present is still verified, and
   an invalid one still rejected.
 - **Local development.** `OAuthConfig(allow_insecure_jwks=True)` permits a plaintext
-  JWKS URI on a non-loopback host. It is a local-development escape hatch only — the
-  key set is the entire root of trust, so it must not be set in production.
+  JWKS URI on a non-loopback host. It relaxes the rule to plain http only — a
+  `file://` JWKS URI, or any other scheme, stays refused. It is a local-development
+  escape hatch only: the key set is the entire root of trust, so it must not be set
+  in production.
 - **Where the token comes from.** The Catalyst sidecar signs the calling user's
   identity into the `X-Diagrid-User-Token` header on every inbound request. The
   middleware accepts it with or without the `Bearer ` prefix.

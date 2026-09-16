@@ -11,21 +11,25 @@ it verifies the caller's Catalyst user token before any handler runs, it hands
 the handler a typed `VerifiedUser`, and it puts that same caller's identity
 back on the outbound call the handler makes.
 
-It is deliberately minimal — no agent, no model, no workflow, no state store.
-Two routes and the identity surface, nothing else.
-
 Prerequisites:
     1. Required packages: uv sync --all-packages --extra identity
     2. An ASGI server: uv pip install uvicorn
     3. A Catalyst sidecar, which sets X-Diagrid-User-Token on inbound
        requests and publishes the issuer and JWKS coordinates the
-       middleware discovers.
+       middleware discovers.  An OSS Dapr sidecar publishes no identity
+       block, so `diagrid dev run` is what supplies them.
 
 Run:
-    python3 identity_service.py
+    diagrid dev run -- python3 identity_service.py
+
+Run it bare (python3 identity_service.py) and a tokenless request is still
+401 oauth.missing_token, while a token-carrying one is 503
+oauth.not_configured: there is nothing to verify it against.
 """
 
+import contextlib
 import os
+from typing import AsyncIterator
 
 import httpx2
 import uvicorn
@@ -48,10 +52,9 @@ LISTEN_PORT = 8080
 async def whoami(request: Request) -> JSONResponse:
     """Return the verified caller the middleware put on this request.
 
-    `verified_user` is the typed accessor — a `VerifiedUser`, not a cast out
-    of a string-keyed bag. It cannot be None here: `require_auth` is left at
-    its fail-closed default, so a request carrying no token is rejected with
-    401 before this handler runs.
+    It cannot be None here: `require_auth` is left at its fail-closed
+    default, so a request carrying no token is rejected with 401 before this
+    handler runs.
     """
     user = verified_user(request)
     return JSONResponse(
@@ -67,13 +70,13 @@ async def whoami(request: Request) -> JSONResponse:
 async def downstream(request: Request) -> JSONResponse:
     """Call one downstream service as the caller who reached this route.
 
-    `AsyncClient` is an `httpx2.AsyncClient` that attaches the caller's
-    identity headers at send time, so the callee verifies the same user.
+    One client built at startup is shared by every request: `AsyncClient`
+    reads the caller's token at *send* time rather than at construction.
     """
+    client: httpx2.AsyncClient = request.app.state.downstream_client
     url = os.environ.get("DOWNSTREAM_URL", DEFAULT_DOWNSTREAM_URL)
     try:
-        async with AsyncClient() as client:
-            response = await client.get(url)
+        response = await client.get(url)
     except httpx2.HTTPError:
         return JSONResponse(
             {"error": DOWNSTREAM_UNREACHABLE}, status_code=HTTP_BAD_GATEWAY
@@ -81,17 +84,25 @@ async def downstream(request: Request) -> JSONResponse:
     return JSONResponse({"downstream": response.text})
 
 
+@contextlib.asynccontextmanager
+async def lifespan(app: Starlette) -> AsyncIterator[None]:
+    """Build the outbound client once, and close it on shutdown."""
+    async with AsyncClient() as client:
+        app.state.downstream_client = client
+        yield
+
+
 app = Starlette(
     routes=[
         Route("/whoami", whoami),
         Route("/downstream", downstream),
-    ]
+    ],
+    lifespan=lifespan,
 )
 
-# The whole install. Issuer, audience and JWKS URI are left unset so the
-# sidecar's metadata endpoint supplies them, and no scopes are required of
-# every caller — /whoami demonstrates the scope check with has_scope instead,
-# which keeps the example runnable without any scope setup.
+# Issuer, audience and JWKS URI are left unset so the sidecar's metadata
+# endpoint supplies them.  No scopes are required of every caller, which keeps
+# the example runnable — /whoami shows the per-caller check with has_scope.
 config = OAuthConfig()
 app.add_middleware(OAuthMiddleware, config=config)
 

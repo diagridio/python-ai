@@ -42,8 +42,12 @@ def current_user_token() -> Optional[str]:
     return _current_user_token.get()
 
 
-def outbound_identity_headers() -> Dict[str, str]:
+def _outbound_identity_headers() -> Dict[str, str]:
     """Headers to attach on outbound MCP / sub-agent calls.
+
+    Non-public: the supported outbound path is the client in
+    :mod:`diagrid.identity.http`, which also does the send-time read, the
+    header clearing and the origin pinning.
 
     Returns an empty dict when there is no inbound user context (scheduled,
     pub/sub, cron triggers) so the header is omitted entirely rather than

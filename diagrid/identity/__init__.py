@@ -65,19 +65,17 @@ __all__ = [
 class _SortedScopes(FrozenSet[str]):
     """A frozen set of scopes that always iterates in sorted order.
 
-    Set semantics are untouched — membership, equality and the set operators
-    behave exactly as ``frozenset``, and, as for any ``frozenset`` subclass,
-    those operators return plain ``frozenset``.  Only the iteration order is
-    pinned, so a handler echoing scopes into a JSON response emits the same
-    order on every request and in every Diagrid SDK.
+    Set semantics are untouched; only the iteration order is pinned, so a
+    handler echoing scopes into a JSON response emits the same order on every
+    request and in every Diagrid SDK.
     """
 
     def __iter__(self) -> Iterator[str]:
         return iter(sorted(super().__iter__()))
 
     def __repr__(self) -> str:
-        # Reads as the frozenset it is, rather than leaking this class name
-        # into every ``OAuthConfig`` and ``VerifiedUser`` repr.
+        # Keeps this private class name out of every ``OAuthConfig`` and
+        # ``VerifiedUser`` repr.
         return f"frozenset({sorted(super().__iter__())!r})"
 
 
@@ -106,10 +104,11 @@ class OAuthConfig:
             to share the same app.  A token that *is* present is always
             verified, and an invalid one always rejected, either way.
         allow_insecure_jwks: Opt in to fetching the key set over plaintext
-            HTTP from a non-loopback host.  ``False`` by default, because
-            the key set is the whole root of trust: an on-path attacker who
+            HTTP from a non-loopback host.  ``False`` by default: the key
+            set is the whole root of trust, and an on-path attacker who
             rewrites a plaintext response mints tokens this verifier
-            accepts.
+            accepts.  Relaxes the rule to plain http only — a ``file://``
+            JWKS URI, or any other scheme, stays refused.
     """
 
     scopes: FrozenSet[str] = field(default_factory=frozenset)

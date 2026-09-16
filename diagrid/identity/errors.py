@@ -22,9 +22,7 @@ __all__ = [
 class OAuthErrorCodes:
     """The ``oauth.*`` codes returned as ``{"error": "<code>"}``.
 
-    A frozen wire contract shared with every other Diagrid SDK, and the same
-    strings :attr:`TokenVerificationError.code` carries — so
-    ``exc.code == OAuthErrorCodes.EXPIRED`` is a plain string comparison.
+    A frozen wire contract shared with every other Diagrid SDK.
     """
 
     MISSING_TOKEN: Final[str] = "oauth.missing_token"
@@ -59,6 +57,5 @@ class TokenVerificationError(Exception):
 class IdentityNotConfiguredError(RuntimeError):
     """Identity coordinates could not be resolved, or resolved unusably.
 
-    Subclasses :class:`RuntimeError` because the middleware and app code
-    caught that before this type had a name.
+    Subclasses :class:`RuntimeError`, which is what the middleware catches.
     """

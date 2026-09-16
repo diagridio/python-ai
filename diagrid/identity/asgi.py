@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -60,12 +61,22 @@ class OAuthMiddleware(BaseHTTPMiddleware):
         async def invoke(request: Request):
             user = verified_user(request)
             return {"subject": user.subject}
+
+    Pass *verifier* to supply the verifier yourself — a pre-built
+    :class:`~diagrid.identity.verifier.JWKSVerifier`, or any
+    :class:`~diagrid.identity.TokenVerifier` — instead of letting the
+    middleware discover coordinates and build one on the first request.
     """
 
-    def __init__(self, app, config: Optional[OAuthConfig] = None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(  # type: ignore[no-untyped-def]
+        self,
+        app,
+        config: Optional[OAuthConfig] = None,
+        verifier: Optional[TokenVerifier] = None,
+    ) -> None:
         super().__init__(app)
         self._config = config or OAuthConfig()
-        self._verifier: Optional[TokenVerifier] = None
+        self._verifier: Optional[TokenVerifier] = verifier
 
     def _get_verifier(self) -> TokenVerifier:
         if self._verifier is not None:
@@ -101,6 +112,18 @@ class OAuthMiddleware(BaseHTTPMiddleware):
         except TokenVerificationError as exc:
             status = 403 if exc.code == OAuthErrorCodes.MISSING_SCOPE else 401
             return _error_response(status, exc.code)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Ordered after the specific handlers: first, it would report a
+            # correctly-rejected token as a verifier failure.  No caller can be
+            # adjudicated, so the answer is 503 rather than a framework 500.
+            logger.warning(
+                "unexpected error verifying the user token (%s: %s); rejecting request",
+                type(exc).__name__,
+                exc,
+            )
+            return _error_response(503, OAuthErrorCodes.VERIFIER_UNAVAILABLE)
 
         scopes = _extract_scopes(payload)
         missing = self._config.scopes - scopes

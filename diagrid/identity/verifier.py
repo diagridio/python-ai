@@ -31,11 +31,11 @@ _JWKS_CACHE_LIFETIME = 300  # seconds before a background refresh
 _METADATA_PATH = "/v1.0/metadata"
 _METADATA_TIMEOUT_SECONDS = 5.0
 _API_TOKEN_HEADER = "dapr-api-token"
+_HTTP_SCHEME = "http"
 _HTTPS_SCHEME = "https"
 _LOOPBACK_HOSTNAMES = frozenset({"localhost"})
 
 __all__ = [
-    "IdentityCoordinates",
     "IdentityNotConfiguredError",
     "JWKSVerifier",
     "TokenVerificationError",
@@ -48,8 +48,8 @@ __all__ = [
 class IdentityCoordinates:
     """Where tokens come from and what they must claim.
 
-    Resolved from explicit config, the sidecar metadata endpoint, or the
-    environment — in that order.
+    Discovery's internal result type: resolved from explicit config, the
+    sidecar metadata endpoint, or the environment — in that order.
     """
 
     issuer: str
@@ -103,6 +103,14 @@ class JWKSVerifier:
 
     def verify(self, raw_token: str) -> Dict[str, Any]:
         """Verify signature and claims, returning the decoded payload.
+
+        Claims are checked in one fixed order, so a token with two defects at
+        once always reports the same code: the required claims (``exp``,
+        ``iss``, ``sub``) first, then ``exp``, then ``iss``, then ``aud``.
+
+        An ``alg`` outside the RS256 / ES256 allowlist — ``none`` above all —
+        is ``oauth.invalid_token``, not ``oauth.decode_error``, which is
+        reserved for a token that is genuinely unparseable.
 
         Raises:
             VerifierNotReadyError: key material unavailable.
@@ -165,8 +173,8 @@ class JWKSVerifier:
 def _coords_from_identity(data: Any) -> Optional[IdentityCoordinates]:
     """Read the identity block out of a /v1.0/metadata response body.
 
-    Shared by local and remote discovery so the two cannot drift. Called inside
-    the callers' try: a malformed body raises and is treated as no discovery.
+    Called inside the callers' try: a malformed body raises and is treated as
+    no discovery.
     """
     identity = data.get("identity")
     if not identity or not identity.get("issuer"):
@@ -262,21 +270,29 @@ def _require_secure_jwks_uri(jwks_uri: str, allow_insecure_jwks: bool) -> None:
 
     The key set is the entire root of trust: an on-path attacker who rewrites
     a plaintext JWKS response mints tokens this verifier accepts.  Loopback is
-    exempt because that is where the local sidecar serves, and the flag exists
-    for the rest.
+    exempt because that is where the local sidecar serves, and
+    *allow_insecure_jwks* exists for the rest.
+
+    Both exemptions widen the rule to plain http and to nothing else: a
+    ``file://`` URI, or any other scheme, is refused however the flag is set.
     """
-    if allow_insecure_jwks:
-        return
     parsed = urlsplit(jwks_uri)
     if parsed.scheme == _HTTPS_SCHEME:
         return
-    if _is_loopback_host(parsed.hostname or ""):
+    if parsed.scheme != _HTTP_SCHEME:
+        raise IdentityNotConfiguredError(
+            f"refusing to fetch JWKS over "
+            f"{parsed.scheme or 'an unknown scheme'} from {jwks_uri!r}: the "
+            "key set is the root of trust, so it must be served over https. "
+            "allow_insecure_jwks relaxes that to plain http, never to another "
+            "scheme."
+        )
+    if allow_insecure_jwks or _is_loopback_host(parsed.hostname or ""):
         return
     raise IdentityNotConfiguredError(
-        f"refusing to fetch JWKS over {parsed.scheme or 'an unknown scheme'} "
-        f"from {jwks_uri!r}: the key set is the root of trust, so it must be "
-        "served over https from a non-loopback host. Set "
-        "allow_insecure_jwks=True to opt in."
+        f"refusing to fetch JWKS over http from {jwks_uri!r}: the key set is "
+        "the root of trust, so it must be served over https from a "
+        "non-loopback host. Set allow_insecure_jwks=True to opt in."
     )
 
 
@@ -303,16 +319,13 @@ def build_verifier(
         )
 
     resolved_issuer = issuer or (discovered.issuer if discovered else "")
-    # Explicit beats discovered beats derived. A sidecar that publishes a
+    # Explicit beats discovered beats derived: a sidecar that publishes a
     # jwks_uri away from its issuer means it, and deriving issuer+/jwks.json
     # ahead of that would point the verifier at an endpoint which need not
-    # exist -- every request would then fail with oauth.verifier_unavailable.
-    #
-    # The discovered jwks_uri is only adopted when the discovered coordinates
-    # describe the issuer actually being verified. An app that pins an issuer
-    # explicitly while the sidecar advertises a different one must not end up
-    # checking that issuer against the other one's keys: a token minted by the
-    # advertised issuer, claiming the pinned one, would verify.
+    # exist.  The discovered jwks_uri is adopted only when the discovered
+    # coordinates describe the issuer actually being verified -- otherwise a
+    # token minted by the advertised issuer, claiming the pinned one, would
+    # verify against the advertised issuer's keys.
     resolved_jwks_uri = jwks_uri
     if not resolved_jwks_uri and discovered and discovered.issuer == resolved_issuer:
         resolved_jwks_uri = discovered.jwks_uri

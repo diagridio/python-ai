@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx2
 import pytest
@@ -125,7 +125,7 @@ class TestAsyncClient:
 
     def test_is_a_plain_httpx2_client_not_a_subclass(self):
         """A factory, so the client passes anywhere ``httpx2.AsyncClient`` is
-        expected — an MCP client, a generated API client, anything."""
+        expected."""
 
         async def body():
             async with AsyncClient(base_url=BASE_URL) as client:
@@ -285,7 +285,6 @@ class TestRedirects:
         ]
 
     def test_async_client_drops_the_token_on_a_redirect_off_origin(self):
-        """The same guard on the client every doc snippet reaches for."""
         seen = []
 
         async def body():
@@ -415,11 +414,11 @@ def test_middleware_verified_token_reaches_concurrent_outbound_calls():
         await outbound.get(f"/{user.subject}")
         return JSONResponse({"subject": user.subject})
 
-    app = Starlette(routes=[Route("/invoke", endpoint)])
-    app.add_middleware(OAuthMiddleware, config=OAuthConfig())
-
     verifier = MagicMock()
     verifier.verify.side_effect = lambda token: {"sub": token.split(".")[0]}
+
+    app = Starlette(routes=[Route("/invoke", endpoint)])
+    app.add_middleware(OAuthMiddleware, config=OAuthConfig(), verifier=verifier)
 
     async def body():
         transport = httpx2.ASGITransport(app=app)
@@ -439,8 +438,7 @@ def test_middleware_verified_token_reaches_concurrent_outbound_calls():
                 timeout=BARRIER_TIMEOUT,
             )
 
-    with patch.object(OAuthMiddleware, "_get_verifier", return_value=verifier):
-        asyncio.run(body())
+    asyncio.run(body())
 
     assert seen == {
         "/alice": "Bearer alice.raw.token",

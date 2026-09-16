@@ -144,14 +144,46 @@ the header omitted rather than raising.
 | `audience` | `Optional[str]` | `None` | Expected `aud`. Discovered when unset. |
 | `jwks_uri` | `Optional[str]` | `None` | JWKS endpoint. Discovered when unset. |
 | `require_auth` | `bool` | `True` | Reject a request that carries no token. The default is fail-closed, and so is `OAuthConfig()`. |
-| `allow_insecure_jwks` | `bool` | `False` | Opt in to a plaintext JWKS URI on a non-loopback host. The key set is the root of trust, so https is otherwise required; loopback is exempt because that is where the local sidecar serves. |
+| `allow_insecure_jwks` | `bool` | `False` | Opt in to a plaintext JWKS URI on a non-loopback host. The key set is the root of trust, so https is otherwise required; loopback is exempt because that is where the local sidecar serves. It relaxes the rule to plain **http only** — a `file://` JWKS URI, or any other scheme, stays refused. |
 
-Coordinates are resolved explicit config first, then the sidecar's `/v1.0/metadata`
-endpoint, then the `DIAGRID_DP_SENTRY_ISSUER` / `DIAGRID_DP_SENTRY_AUDIENCE`
-environment variables.
+#### Discovery precedence
+
+Coordinates come from four sources, in this order:
+
+1. **Explicit config** — whatever of `issuer`, `audience` and `jwks_uri` you set on
+   `OAuthConfig`.
+2. **The local sidecar** — `GET http://127.0.0.1:$DAPR_HTTP_PORT/v1.0/metadata`
+   (`CATALYST_DAPR_HTTP_PORT` wins if both are set). Local is tried before remote so a
+   deployed in-cluster app keeps using the loopback call rather than a network round
+   trip.
+3. **The remote sidecar** — `GET $DAPR_HTTP_ENDPOINT/v1.0/metadata`, which is the
+   `diagrid dev run` shape: the app runs on your machine against a Catalyst-hosted
+   sidecar, so nothing is listening on 127.0.0.1. `DAPR_API_TOKEN` is sent as the
+   `dapr-api-token` header when it is set.
+4. **Environment variables** — `DIAGRID_DP_SENTRY_ISSUER` and
+   `DIAGRID_DP_SENTRY_AUDIENCE`.
+
+`jwks_uri` resolves explicit first, then the value the sidecar advertises — adopted
+only when the discovered issuer *is* the issuer being verified, so a pinned issuer is
+never checked against a foreign issuer's keys — and otherwise `issuer` + `/jwks.json`.
+If nothing resolves, a token-carrying request is answered 503
+`oauth.not_configured` rather than let through.
 
 Tokens are accepted for RS256 and ES256 only, must carry `exp`, `iss` and `sub`, are
 allowed 120s of clock skew, and the key set is cached for 300s.
+
+### Supplying the verifier yourself
+
+`OAuthMiddleware` builds its own verifier from the coordinates above. Pass one
+instead — a pre-built `JWKSVerifier`, or any object satisfying the `TokenVerifier`
+protocol — when the app resolves coordinates its own way, or to stand a double in
+during a test:
+
+```python
+app.add_middleware(OAuthMiddleware, config=OAuthConfig(), verifier=my_verifier)
+```
+
+The seam is on the middleware, not on `OAuthConfig`, which stays pure policy.
 
 ### Rejections
 
