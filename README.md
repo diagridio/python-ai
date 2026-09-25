@@ -58,6 +58,24 @@ pip install "diagrid[holmesgpt]"
 
 > **Note:** `diagrid[holmesgpt]` is intentionally not part of `diagrid[all]`. HolmesGPT ships strict pins on `fastapi`, `uvicorn`, `cachetools`, `mcp`, and `httpx[socks]` that conflict with the looser constraints used by the other agent extras. Install it in its own environment.
 
+## Usage analytics
+
+The `diagrid` agent runners and the `diagridpy` CLI report one anonymous usage event per process. PyPI publishes aggregate download counts only, so this is how Diagrid sees which package versions run on which platforms.
+
+**What is sent:** the package name and version, operating system, architecture, and Python version. Nothing else: no application data, configuration, app IDs, prompts, or hostnames. The receiving service ([Scarf](https://scarf.sh)) uses the request IP to derive coarse company and location information and does not retain the raw IP.
+
+**It never gets in the way:** the request runs on a background daemon thread with a one second timeout, and every failure is swallowed. Blocked egress and air-gapped clusters behave normally, and nothing is logged to your application's output.
+
+To opt out, set any of these environment variables before starting your application:
+
+```bash
+export DO_NOT_TRACK=1
+# or
+export SCARF_NO_ANALYTICS=1
+# or
+export DIAGRID_NO_ANALYTICS=1
+```
+
 ## Verified identity
 
 Catalyst signs the calling user's identity into an `X-Diagrid-User-Token` header on

@@ -321,3 +321,17 @@ class TestWorkflowNameProperty(TestCase):
         self.assertEqual(
             runner.workflow_name, "dapr.langgraph.CateringCoordinator.workflow"
         )
+
+
+@mock.patch("diagrid.agent.core.workflow.runner.DaprWorkflowClient")
+@mock.patch("diagrid.agent.core.workflow.runner.WorkflowRuntime")
+class TestBaseWorkflowRunnerUsageReporting(TestCase):
+    """Constructing a runner reports one anonymous usage event."""
+
+    def test_reports_usage_for_the_diagrid_package(
+        self, mock_runtime_cls, mock_client_cls
+    ):
+        with mock.patch("diagrid.agent.core.workflow.runner.report_usage") as report:
+            ConcreteRunner()
+
+        report.assert_called_once_with("diagrid")
