@@ -12,8 +12,7 @@ The call never blocks and never raises: it runs on a daemon thread with a short
 timeout and swallows every failure. Blocked egress and air-gapped clusters are
 normal conditions, not faults.
 
-``USAGE_ENDPOINT`` is empty until the Scarf event-collection package exists.
-While it is empty, this module does nothing at all.
+Set ``USAGE_ENDPOINT`` to an empty string to turn the module into a no-op.
 """
 
 from __future__ import annotations
@@ -25,10 +24,10 @@ import urllib.parse
 import urllib.request
 from importlib import metadata
 
-# TODO(scarf): set to the Scarf event-collection URL for python-ai, for example
-# "https://diagrid.gateway.scarf.sh/python-ai". An empty string disables
+# Scarf event-collection route for python-ai (package c9dadc82, owner Diagrid).
+# The route records the request and redirects nowhere. An empty string disables
 # reporting entirely.
-USAGE_ENDPOINT = ""
+USAGE_ENDPOINT = "https://diagrid.gateway.scarf.sh/python-ai"
 USAGE_TIMEOUT_SECONDS = 1.0
 
 # The cross-ecosystem DO_NOT_TRACK convention, Scarf's own variable, and a
