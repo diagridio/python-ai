@@ -4,9 +4,6 @@
 """Tests for CLI main entry point — env/api flag handling."""
 
 from __future__ import annotations
-
-from unittest.mock import patch
-
 import click
 from click.testing import CliRunner
 
@@ -57,11 +54,3 @@ def test_cli_no_env_sets_none() -> None:
     result = _invoke_noop()
     assert result.exit_code == 0, result.output
     assert "api_url=None" in result.output
-
-
-def test_cli_reports_usage_for_the_cli_package() -> None:
-    """Invoking any command reports one usage event for ``diagrid-cli``."""
-    with patch("diagrid.cli.main.report_usage") as report:
-        result = _invoke_noop("--env", "prod")
-    assert result.exit_code == 0, result.output
-    report.assert_called_once_with("diagrid-cli")

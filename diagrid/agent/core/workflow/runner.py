@@ -20,14 +20,13 @@ from diagrid.agent.core.observability import resolve_observability_config
 from diagrid.agent.core.workflow.naming import build_workflow_name
 
 # ``diagrid-core`` ships the reporter. This distribution only pins
-# ``diagrid-core>=0.1.0`` (directly or through ``diagrid-cli``), so an
-# application holding an older ``diagrid-core`` must keep working: fall back
-# to a no-op.
+# ``diagrid-core>=0.1.0`` (through ``diagrid-cli``), so an application holding
+# an older ``diagrid-core`` must keep working: fall back to a no-op.
 try:
     from diagrid.core.analytics import report_usage
 except ImportError:  # pragma: no cover - older diagrid-core
 
-    def report_usage(package: str) -> None:
+    def report_usage(package: str, **dimensions: object) -> None:
         return None
 
 
@@ -68,7 +67,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         super().__init__()
         # One anonymous usage event per process, never blocking. See
         # ``diagrid.core.analytics`` and the README "Usage analytics" section.
-        report_usage("diagrid")
+        report_usage("diagrid", kind="agent", framework=framework)
         self._name = name
         self._framework = framework
         self._host = host

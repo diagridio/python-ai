@@ -60,11 +60,11 @@ pip install "diagrid[holmesgpt]"
 
 ## Usage analytics
 
-The `diagrid` agent runners and the `diagridpy` CLI report one anonymous usage event per process. PyPI publishes aggregate download counts only, so this is how Diagrid sees which package versions run on which platforms.
+Every agent runner reports one anonymous usage event when it is constructed, once per package per process. PyPI publishes aggregate download counts only, so this is how Diagrid sees which package versions run on which platforms. Because it is one event per process, a Kubernetes deployment produces one event per replica per restart: the numbers count process starts, not deployments or users.
 
-**What is sent:** the package name and version, operating system, architecture, and Python version. Nothing else: no application data, configuration, app IDs, prompts, or hostnames. The receiving service ([Scarf](https://scarf.sh)) uses the request IP to derive coarse company and location information and does not retain the raw IP.
+**What is sent:** the package name and version, the `diagrid-core` version, operating system, architecture, Python version, the agent framework, `kind=agent`, whether the process points at Catalyst or at a plain Dapr sidecar (`target`), and whether it runs under a CI variable (`ci`). Nothing else: no application data, configuration, app IDs, prompts, or hostnames. The receiving service is [Scarf](https://scarf.sh). It derives coarse company and location information from the request IP. How Scarf handles that data is described in [Scarf's privacy policy](https://about.scarf.sh/privacy-policy).
 
-**It never gets in the way:** the request runs on a background daemon thread with a one second timeout, and every failure is swallowed. Blocked egress and air-gapped clusters behave normally, and nothing is logged to your application's output.
+**It never gets in the way:** the request runs on a background daemon thread with a one second socket timeout, every failure is swallowed, and the calling thread never waits. Blocked egress and air-gapped clusters behave normally. Nothing is written to your application's output; a `DEBUG` line on the `diagrid.core.analytics` logger records whether the event was sent or skipped, for operators who want to confirm an opt-out.
 
 To opt out, set any of these environment variables before starting your application:
 

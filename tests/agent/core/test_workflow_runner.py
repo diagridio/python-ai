@@ -334,4 +334,4 @@ class TestBaseWorkflowRunnerUsageReporting(TestCase):
         with mock.patch("diagrid.agent.core.workflow.runner.report_usage") as report:
             ConcreteRunner()
 
-        report.assert_called_once_with("diagrid")
+        report.assert_called_once_with("diagrid", kind="agent", framework="test")

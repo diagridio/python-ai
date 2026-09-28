@@ -13,17 +13,6 @@ from diagrid.cli.commands.init import init
 from diagrid.cli.utils.process import set_verbose
 from diagrid.core.config.constants import PROD_API_URL, STAGING_API_URL
 
-# ``diagrid-core`` ships the reporter. This distribution only pins
-# ``diagrid-core>=0.1.0`` (directly or through ``diagrid-cli``), so an
-# application holding an older ``diagrid-core`` must keep working: fall back
-# to a no-op.
-try:
-    from diagrid.core.analytics import report_usage
-except ImportError:  # pragma: no cover - older diagrid-core
-
-    def report_usage(package: str) -> None:
-        return None
-
 
 @click.group()
 # Read the version from the installed ``diagrid-cli`` distribution rather than
@@ -41,9 +30,6 @@ except ImportError:  # pragma: no cover - older diagrid-core
 @click.pass_context
 def cli(ctx: click.Context, verbose: bool, env: str | None, api: str | None) -> None:
     """Diagrid CLI for Catalyst agent development."""
-    # One anonymous usage event per process, never blocking. See
-    # ``diagrid.core.analytics`` and the README "Usage analytics" section.
-    report_usage("diagrid-cli")
     set_verbose(verbose)
     ctx.ensure_object(dict)
     if api:
