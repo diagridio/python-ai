@@ -45,17 +45,17 @@ OPT_OUT_ENV_VARS = ("DO_NOT_TRACK", "SCARF_NO_ANALYTICS", "DIAGRID_NO_ANALYTICS"
 _TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 
 # ``CI`` is the convention most vendors follow. The rest cover vendors that set
-# their own flag but not ``CI``. Presence is enough for the last two.
-_CI_ENV_VARS = (
+# their own flag but not ``CI``.
+_CI_TRUTHY_ENV_VARS = (
     "CI",
     "GITHUB_ACTIONS",
     "GITLAB_CI",
     "CIRCLECI",
     "TRAVIS",
     "TF_BUILD",
-    "BUILDKITE",
-    "JENKINS_URL",
 )
+# Vendors that set a value rather than a flag. Presence is enough.
+_CI_PRESENCE_ENV_VARS = ("BUILDKITE", "JENKINS_URL")
 
 # The Dapr SDK variables that point a process at Catalyst.
 _DAPR_ENDPOINT_ENV_VARS = ("DAPR_GRPC_ENDPOINT", "DAPR_HTTP_ENDPOINT")
@@ -82,9 +82,9 @@ def running_in_ci() -> bool:
     Reported as the ``ci`` dimension so pipeline runs can be separated from
     real usage on the dashboard.
     """
-    return any(
-        _is_truthy(os.environ.get(name, "")) for name in _CI_ENV_VARS[:6]
-    ) or any(os.environ.get(name, "").strip() for name in _CI_ENV_VARS[6:])
+    if any(_is_truthy(os.environ.get(name, "")) for name in _CI_TRUTHY_ENV_VARS):
+        return True
+    return any(os.environ.get(name, "").strip() for name in _CI_PRESENCE_ENV_VARS)
 
 
 def detect_target() -> str:

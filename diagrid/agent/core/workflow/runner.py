@@ -9,6 +9,7 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
+from importlib import metadata
 from typing import Any, AsyncIterator, Optional
 
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
@@ -31,6 +32,36 @@ except ImportError:  # pragma: no cover - older diagrid-core
 
 
 logger = logging.getLogger(__name__)
+
+# The distribution that carries each framework, keyed by the lower-cased
+# framework label. First installed match wins. Used only for the
+# ``framework_version`` usage dimension, so a miss costs nothing.
+_FRAMEWORK_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
+    "langgraph": ("langgraph",),
+    "strands": ("strands-agents",),
+    "crewai": ("crewai",),
+    "adk": ("google-adk",),
+    "openai": ("openai-agents",),
+    "pydanticai": ("pydantic-ai-slim", "pydantic-ai"),
+    "claudeagents": ("claude-agent-sdk",),
+    "deepagents": ("deepagents",),
+    "langchain": ("langchain-core", "langchain"),
+    "smolagents": ("smolagents",),
+    "dapr agents": ("dapr-agents",),
+    "holmesgpt": ("holmesgpt",),
+}
+
+
+def _framework_version(framework: str) -> Optional[str]:
+    """Return the installed version of the library behind ``framework``, or None."""
+    for distribution in _FRAMEWORK_DISTRIBUTIONS.get(
+        str(framework).strip().lower(), ()
+    ):
+        try:
+            return metadata.version(distribution)
+        except metadata.PackageNotFoundError:
+            continue
+    return None
 
 
 class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
@@ -67,7 +98,12 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         super().__init__()
         # One anonymous usage event per process, never blocking. See
         # ``diagrid.core.analytics`` and the README "Usage analytics" section.
-        report_usage("diagrid", kind="agent", framework=framework)
+        report_usage(
+            "diagrid",
+            kind="agent",
+            framework=framework,
+            framework_version=_framework_version(framework),
+        )
         self._name = name
         self._framework = framework
         self._host = host

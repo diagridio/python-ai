@@ -15,7 +15,8 @@ ENDPOINT = "https://example.invalid/python-ai"
 
 _ENV_TO_CLEAR = (
     *analytics.OPT_OUT_ENV_VARS,
-    *analytics._CI_ENV_VARS,
+    *analytics._CI_TRUTHY_ENV_VARS,
+    *analytics._CI_PRESENCE_ENV_VARS,
     *analytics._DAPR_ENDPOINT_ENV_VARS,
     "DAPR_API_TOKEN",
 )
