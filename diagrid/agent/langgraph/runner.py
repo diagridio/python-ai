@@ -234,11 +234,21 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                         condition_name = f"{source}_{branch_name}_condition"
                         register_condition(condition_name, path_func)
 
+                        # ``ends`` is the edge's path_map ({return value: node}),
+                        # either given to add_conditional_edges or inferred from
+                        # the condition's Literal return type. Keys are stringified
+                        # because the map crosses JSON to reach the activity.
+                        ends = getattr(branch_spec, "ends", None)
                         edges.append(
                             EdgeConfig(
                                 source=source if source != "__start__" else START,
                                 target="",  # Determined at runtime
                                 condition=condition_name,
+                                path_map=(
+                                    {str(k): v for k, v in ends.items()}
+                                    if ends
+                                    else None
+                                ),
                             )
                         )
 
@@ -279,24 +289,20 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             if node_name in (START, END, "__start__", "__end__"):
                 continue
 
+            # Register the Runnable wrapper (RunnableCallable, ToolNode, ...),
+            # not its raw ``func``: execute_node_activity calls ``.invoke()`` on
+            # it, which injects ``config``/``runtime``/``store`` into nodes that
+            # declare them. ``async def`` nodes have no ``func`` at all.
             node_func = None
 
             if hasattr(node_spec, "bound"):
-                bound = node_spec.bound
-                if hasattr(bound, "func"):
-                    node_func = bound.func
-                elif callable(bound):
-                    node_func = bound
+                node_func = node_spec.bound
             elif hasattr(node_spec, "runnable"):
-                runnable = node_spec.runnable
-                if hasattr(runnable, "func"):
-                    node_func = runnable.func
-                elif callable(runnable):
-                    node_func = runnable
+                node_func = node_spec.runnable
             elif callable(node_spec):
                 node_func = node_spec
 
-            if node_func:
+            if node_func is not None:
                 register_node(node_name, node_func)
                 logger.info(f"Registered node: {node_name}")
             else:

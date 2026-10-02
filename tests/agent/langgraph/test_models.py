@@ -64,6 +64,29 @@ class TestNodeConfig(unittest.TestCase):
         self.assertEqual(original.triggers, roundtrip.triggers)
 
 
+class TestEdgeConfig(unittest.TestCase):
+    """Tests for EdgeConfig."""
+
+    def test_path_map_roundtrip(self):
+        original = EdgeConfig(
+            source="router",
+            target="",
+            condition="router_cond",
+            path_map={"continue": "tools", "done": "__end__"},
+        )
+        roundtrip = EdgeConfig.from_dict(json.loads(json.dumps(original.to_dict())))
+
+        self.assertEqual(roundtrip, original)
+
+    def test_from_dict_without_path_map(self):
+        # Edges serialized before path_map existed (e.g. in-flight workflows).
+        edge = EdgeConfig.from_dict(
+            {"source": "a", "target": "", "condition": "a_cond"}
+        )
+
+        self.assertIsNone(edge.path_map)
+
+
 class TestChannelState(unittest.TestCase):
     """Tests for ChannelState."""
 
@@ -160,6 +183,35 @@ class TestExecuteNodeInput(unittest.TestCase):
             original.channel_state.values,
             restored.channel_state.values,
         )
+
+
+class TestEvaluateConditionInput(unittest.TestCase):
+    """Tests for EvaluateConditionInput."""
+
+    def test_path_map_roundtrip(self):
+        original = EvaluateConditionInput(
+            source_node="router",
+            condition_name="router_cond",
+            channel_state=ChannelState(values={"count": 1}),
+            path_map={"continue": "tools"},
+        )
+        data = json.loads(json.dumps(original.to_dict()))
+
+        self.assertEqual(
+            EvaluateConditionInput.from_dict(data).path_map, {"continue": "tools"}
+        )
+
+    def test_from_dict_without_path_map(self):
+        # Inputs scheduled before path_map existed (e.g. in-flight workflows).
+        restored = EvaluateConditionInput.from_dict(
+            {
+                "source_node": "router",
+                "condition_name": "router_cond",
+                "channel_state": ChannelState().to_dict(),
+            }
+        )
+
+        self.assertIsNone(restored.path_map)
 
 
 class TestExecuteNodeOutput(unittest.TestCase):

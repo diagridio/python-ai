@@ -60,17 +60,21 @@ class EdgeConfig:
         source: Source node name
         target: Target node name (or list for conditional)
         condition: Optional condition function name for conditional edges
+        path_map: Optional mapping from the condition's return values to node
+            names (the ``path_map`` given to ``add_conditional_edges``)
     """
 
     source: str
     target: str
     condition: Optional[str] = None
+    path_map: Optional[Dict[str, str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "source": self.source,
             "target": self.target,
             "condition": self.condition,
+            "path_map": self.path_map,
         }
 
     @classmethod
@@ -79,6 +83,7 @@ class EdgeConfig:
             source=data["source"],
             target=data["target"],
             condition=data.get("condition"),
+            path_map=data.get("path_map"),
         )
 
 
@@ -261,6 +266,8 @@ class EvaluateConditionInput:
         config: Optional LangGraph config dict (used to inject a ``Runtime``
             when the condition is a ``RunnableCallable``)
         thread_id: Thread identifier for the execution
+        path_map: Optional mapping from the condition's return values to node
+            names (see ``EdgeConfig.path_map``)
     """
 
     source_node: str
@@ -268,6 +275,7 @@ class EvaluateConditionInput:
     channel_state: ChannelState
     config: Optional[Dict[str, Any]] = None
     thread_id: Optional[str] = None
+    path_map: Optional[Dict[str, str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -276,6 +284,7 @@ class EvaluateConditionInput:
             "channel_state": self.channel_state.to_dict(),
             "config": self.config,
             "thread_id": self.thread_id,
+            "path_map": self.path_map,
         }
 
     @classmethod
@@ -286,6 +295,7 @@ class EvaluateConditionInput:
             channel_state=ChannelState.from_dict(data["channel_state"]),
             config=data.get("config"),
             thread_id=data.get("thread_id"),
+            path_map=data.get("path_map"),
         )
 
 
