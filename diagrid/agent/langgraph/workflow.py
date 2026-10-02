@@ -311,6 +311,7 @@ def agent_workflow(
                             channel_state=channel_state,
                             config=config,
                             thread_id=thread_id,
+                            path_map=edge.path_map,
                         )
                         cond_result = yield ctx.call_activity(
                             evaluate_condition_activity,
@@ -388,6 +389,18 @@ def _build_node_runtime(
         return Runtime(execution_info=execution_info)
     except Exception:  # pragma: no cover - signature drift / partial ctx
         return Runtime()
+
+
+def _is_async_only(runnable: Any) -> bool:
+    """Whether ``runnable`` wraps only an ``async def`` (no sync ``func``).
+
+    ``RunnableCallable.invoke()`` raises for these, so they must be run through
+    ``ainvoke()`` instead.
+    """
+    return (
+        getattr(runnable, "func", None) is None
+        and getattr(runnable, "afunc", None) is not None
+    )
 
 
 def execute_node_activity(
@@ -501,7 +514,11 @@ def execute_node_activity(
             except ImportError:
                 pass
 
-            r = node_func.invoke(state, config=_config)
+            if _is_async_only(node_func):
+                # A coroutine; run to completion below.
+                r = node_func.ainvoke(state, config=_config)  # type: ignore[attr-defined]
+            else:
+                r = node_func.invoke(state, config=_config)
         else:
             sig = inspect.signature(node_func)
             params = list(sig.parameters.keys())
@@ -616,7 +633,11 @@ def evaluate_condition_activity(
             _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
                 thread_id, ctx, cond_input.condition_name
             )
-        result = cond_func.invoke(state, config=_config)
+        if _is_async_only(cond_func):
+            # A coroutine; run to completion below.
+            result = cond_func.ainvoke(state, config=_config)  # type: ignore[attr-defined]
+        else:
+            result = cond_func.invoke(state, config=_config)
     else:
         result = cond_func(state)
 
@@ -633,22 +654,26 @@ def evaluate_condition_activity(
 
     # Result should be a node name, list of node names, or Send objects.
     # LangGraph Send objects have a .node attribute with the target node name.
-    def _extract_node_name(item: Any) -> str:
-        if isinstance(item, str):
-            return item
-        if hasattr(item, "node"):
-            return item.node
-        return str(item)
+    # Any other value goes through the edge's path_map when it has one, as in
+    # LangGraph: a router may return labels ("continue") rather than node names.
+    path_map = cond_input.path_map
+    items = list(result) if isinstance(result, (list, tuple)) else [result]
 
-    if isinstance(result, str):
-        next_nodes = [result]
-    elif isinstance(result, (list, tuple)):
-        next_nodes = [_extract_node_name(r) for r in result]
-    elif hasattr(result, "node"):
-        # Single Send object
-        next_nodes = [result.node]
-    else:
-        next_nodes = [str(result)]
+    next_nodes = []
+    for item in items:
+        if hasattr(item, "node"):
+            next_nodes.append(item.node)
+        elif path_map is None:
+            next_nodes.append(item if isinstance(item, str) else str(item))
+        elif str(item) in path_map:
+            next_nodes.append(path_map[str(item)])
+        else:
+            return EvaluateConditionOutput(
+                error=(
+                    f"Condition '{cond_input.condition_name}' returned {item!r}, "
+                    f"which is not in its path_map {sorted(path_map)}"
+                ),
+            ).to_dict()
 
     return EvaluateConditionOutput(
         next_nodes=next_nodes,
