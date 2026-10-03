@@ -188,6 +188,38 @@ class TestNodeRegistration(_RunnerTestCase):
         self.assertIsNotNone(get_registered_node("node"))
 
 
+class TestRegistryHints(_RunnerTestCase):
+    """Runner arguments reach the registry mapper as hints on the graph."""
+
+    def test_instructions_hint(self):
+        graph = StateGraph(_Value)
+        graph.add_node("node", lambda state: state)
+        graph.add_edge(START, "node")
+        runner = DaprWorkflowGraphRunner(
+            graph=graph.compile(), name="hint-instructions", instructions="Be brief."
+        )
+
+        self.assertEqual(runner._graph._diagrid_instructions, "Be brief.")
+
+    def test_no_instructions_hint_by_default(self):
+        graph = StateGraph(_Value)
+        graph.add_node("node", lambda state: state)
+        graph.add_edge(START, "node")
+        runner = DaprWorkflowGraphRunner(graph=graph.compile(), name="hint-none")
+
+        self.assertFalse(hasattr(runner._graph, "_diagrid_instructions"))
+
+    def test_empty_instructions_set_no_hint(self):
+        graph = StateGraph(_Value)
+        graph.add_node("node", lambda state: state)
+        graph.add_edge(START, "node")
+        runner = DaprWorkflowGraphRunner(
+            graph=graph.compile(), name="hint-empty", instructions=""
+        )
+
+        self.assertFalse(hasattr(runner._graph, "_diagrid_instructions"))
+
+
 class TestConditionalEdgePathMap(_RunnerTestCase):
     """The conditional edge's path_map is carried into the graph config."""
 
