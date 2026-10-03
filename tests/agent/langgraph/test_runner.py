@@ -56,18 +56,59 @@ class _ActivityCtx:
     task_id = 1
 
 
+def _activity_registry(runner: DaprWorkflowGraphRunner) -> Any:
+    """The durabletask registry behind the runner's ``WorkflowRuntime``.
+
+    dapr-ext-workflow exposes no public lookup, so this reads a private
+    attribute and fails loudly if a dapr upgrade moves it.
+    """
+    worker = getattr(runner._workflow_runtime, "_WorkflowRuntime__worker", None)
+    registry = getattr(worker, "_registry", None)
+    if registry is None or not hasattr(registry, "get_activity"):
+        raise AssertionError(
+            "WorkflowRuntime internals changed: cannot find its activity registry"
+        )
+    return registry
+
+
 class _InlineWorkflowContext:
-    """Runs activities inline, crossing JSON both ways like the Dapr engine."""
+    """Runs activities inline, crossing JSON both ways like the Dapr engine.
+
+    An activity scheduled by name is looked up in the runner's workflow runtime,
+    so a name the runner never registered fails the run. ``scheduled`` records
+    the name of every activity in order. ``patched`` is what ``is_patched``
+    answers: ``False`` stands in for replaying an instance started before a patch.
+    """
 
     is_replaying = False
     instance_id = "wf-test"
 
+    def __init__(self, runner: DaprWorkflowGraphRunner, patched: bool = True):
+        self._registry = _activity_registry(runner)
+        self._patched = patched
+        self.scheduled: List[str] = []
+
+    def is_patched(self, patch_name: str) -> bool:
+        return self._patched
+
     def call_activity(self, activity: Any, *, input: Any, retry_policy: Any = None):
-        result = activity(_ActivityCtx(), json.loads(json.dumps(input)))
+        if isinstance(activity, str):
+            registered = self._registry.get_activity(activity)
+            if registered is None:
+                raise AssertionError(f"activity {activity!r} is not registered")
+            self.scheduled.append(activity)
+            result = registered(_ActivityCtx(), json.loads(json.dumps(input)))
+        else:
+            self.scheduled.append(activity.__name__)
+            result = activity(_ActivityCtx(), json.loads(json.dumps(input)))
         return json.loads(json.dumps(result))
 
 
-def _run(runner: DaprWorkflowGraphRunner, graph_input: Dict[str, Any]):
+def _run(
+    runner: DaprWorkflowGraphRunner,
+    graph_input: Dict[str, Any],
+    ctx: Optional[_InlineWorkflowContext] = None,
+):
     """Run the graph through ``agent_workflow`` and return its output."""
     workflow_input = GraphWorkflowInput(
         graph_config=runner.graph_config,
@@ -82,7 +123,8 @@ def _run(runner: DaprWorkflowGraphRunner, graph_input: Dict[str, Any]):
     )
     with mock.patch("diagrid.agent.langgraph.workflow.when_all", side_effect=list):
         workflow = agent_workflow(
-            _InlineWorkflowContext(), json.loads(json.dumps(workflow_input.to_dict()))
+            ctx or _InlineWorkflowContext(runner),
+            json.loads(json.dumps(workflow_input.to_dict())),
         )
         result = None
         try:
@@ -313,6 +355,75 @@ class TestRunGraph(_RunnerTestCase):
         messages = out.output["messages"]
         self.assertEqual([m["content"] for m in messages if m["type"] == "tool"], ["5"])
         self.assertEqual(messages[-1]["content"], "done")
+
+
+def _booking_graph() -> StateGraph:
+    """Three nodes in a line, named like the try-agent sample's steps."""
+    graph = StateGraph(_Value)
+    graph.add_node("check_venues", lambda state: {"value": state["value"] + 1})
+    graph.add_node("compare_options", lambda state: {"value": state["value"] * 2})
+    graph.add_node("confirm_booking", lambda state: {"path": "booked"})
+    graph.add_edge(START, "check_venues")
+    graph.add_edge("check_venues", "compare_options")
+    graph.add_edge("compare_options", "confirm_booking")
+    graph.add_edge("confirm_booking", END)
+    return graph
+
+
+class TestNodeActivityNames(_RunnerTestCase):
+    """Each node runs as an activity named after it, so the workflow UI shows it."""
+
+    def test_nodes_scheduled_under_their_own_names(self):
+        runner = DaprWorkflowGraphRunner(
+            graph=_booking_graph().compile(), name="names-new"
+        )
+        ctx = _InlineWorkflowContext(runner)
+
+        out = _run(runner, {"value": 1}, ctx)
+
+        self.assertEqual(out.status, "completed", out.error)
+        self.assertEqual(out.output["value"], 4)
+        self.assertEqual(
+            ctx.scheduled, ["check_venues", "compare_options", "confirm_booking"]
+        )
+
+    def test_instance_started_before_the_patch_keeps_the_generic_activity(self):
+        runner = DaprWorkflowGraphRunner(
+            graph=_booking_graph().compile(), name="names-old"
+        )
+        ctx = _InlineWorkflowContext(runner, patched=False)
+
+        out = _run(runner, {"value": 1}, ctx)
+
+        self.assertEqual(out.status, "completed", out.error)
+        self.assertEqual(ctx.scheduled, ["execute_node_activity"] * 3)
+
+    def test_node_name_with_spaces_and_unicode(self):
+        graph = StateGraph(_Value)
+        graph.add_node("Check Venues ✓", lambda state: {"value": 3})
+        graph.add_edge(START, "Check Venues ✓")
+        graph.add_edge("Check Venues ✓", END)
+        runner = DaprWorkflowGraphRunner(graph=graph.compile(), name="names-unicode")
+        ctx = _InlineWorkflowContext(runner)
+
+        out = _run(runner, {"value": 1}, ctx)
+
+        self.assertEqual(out.status, "completed", out.error)
+        self.assertEqual(ctx.scheduled, ["Check Venues ✓"])
+
+    def test_node_named_like_a_generic_activity_runs_through_it(self):
+        graph = StateGraph(_Value)
+        graph.add_node("execute_node_activity", lambda state: {"value": 7})
+        graph.add_edge(START, "execute_node_activity")
+        graph.add_edge("execute_node_activity", END)
+        runner = DaprWorkflowGraphRunner(graph=graph.compile(), name="names-clash")
+        ctx = _InlineWorkflowContext(runner)
+
+        out = _run(runner, {"value": 1}, ctx)
+
+        self.assertEqual(out.status, "completed", out.error)
+        self.assertEqual(out.output["value"], 7)
+        self.assertEqual(ctx.scheduled, ["execute_node_activity"])
 
 
 if __name__ == "__main__":
