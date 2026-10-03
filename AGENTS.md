@@ -183,6 +183,10 @@ OLLAMA_ENDPOINT=http://localhost:11434/v1 OLLAMA_MODEL=qwen3:0.6b \
   `DaprAgentWorkflow` in `diagrid/agent/strands/durable_agent.py` is the one that
   builds them from the agent name — `dapr.strands.<TitleCaseName>.call_model` and
   `.execute_tool` — so **there, renaming the agent moves the activities too.**
+  LangGraph registers one activity per graph node, named after the node
+  (`node_activity_name` in `diagrid/agent/langgraph/workflow.py`), so **renaming
+  a node renames its activity.** Instances started before the
+  `langgraph-node-activity-names` patch still schedule `execute_node_activity`.
 - **Every workflow↔activity hop crosses JSON.** The `workflow.py` in each
   framework package passes `.to_dict()` into `ctx.call_activity` and calls
   `.from_dict()` on the result; Dapr serialises in between. Channel values must

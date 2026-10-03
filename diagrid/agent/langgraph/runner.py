@@ -25,6 +25,9 @@ from .workflow import (
     agent_workflow,
     execute_node_activity,
     evaluate_condition_activity,
+    GENERIC_NODE_ACTIVITY,
+    make_node_activity,
+    node_activity_name,
     register_node,
     register_condition,
     register_channel_reducer,
@@ -157,6 +160,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         # Then extract graph config, which also registers conditions.
         # Must run AFTER _register_graph_components so conditions are not wiped.
         self._graph_config = self._extract_graph_config()
+        self._register_node_activities()
 
     def _register_workflow_components(self) -> None:
         """Register workflow and activities on the workflow runtime."""
@@ -169,6 +173,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self._workflow_runtime.register_activity(
             evaluate_condition_activity, name="evaluate_condition_activity"
         )
+
+    def _register_node_activities(self) -> None:
+        """Register one activity per graph node, named after the node."""
+        for node in self._graph_config.nodes:
+            name = node_activity_name(node.name)
+            if name == GENERIC_NODE_ACTIVITY:
+                continue
+            self._workflow_runtime.register_activity(
+                make_node_activity(node.name), name=name
+            )
 
     def _extract_graph_config(self) -> GraphConfig:
         """Extract configuration from the compiled graph."""
