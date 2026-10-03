@@ -104,6 +104,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         max_steps: int = 100,
         role: Optional[str] = None,
         goal: Optional[str] = None,
+        instructions: Optional[str] = None,
         registry_config: Optional[Any] = None,
     ):
         """Initialize the runner.
@@ -116,6 +117,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             max_steps: Maximum number of steps before stopping (default: 100)
             role: Optional role description for registry (e.g. "Schedule Planner")
             goal: Optional goal description for registry
+            instructions: Optional system prompt for registry, also used as the
+                goal when ``goal`` is not given. Without it, the registry looks
+                for a module-level ``SystemMessage`` in node globals.
             registry_config: Optional registry configuration for metadata extraction
         """
         self._graph = graph
@@ -136,6 +140,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             self._graph._diagrid_role = role  # type: ignore[attr-defined]
         if goal:
             self._graph._diagrid_goal = goal  # type: ignore[attr-defined]
+        if instructions:
+            self._graph._diagrid_instructions = instructions  # type: ignore[attr-defined]
         # Surface the runner's step budget so the registry reflects the actual
         # max_iterations instead of a hardcoded default (read by DeepAgentsMapper).
         self._graph._diagrid_max_steps = max_steps  # type: ignore[attr-defined]
