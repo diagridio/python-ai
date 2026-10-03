@@ -17,8 +17,8 @@ from diagrid.agent.core.metadata.mapping.langgraph import LangGraphMapper  # noq
 class MockCheckpointer:
     """Mock DaprCheckpointer for testing."""
 
-    def __init__(self, state_store_name="test-store"):
-        self.state_store_name = state_store_name
+    def __init__(self, store_name="test-store"):
+        self.store_name = store_name
 
 
 class MockTool:
@@ -73,7 +73,7 @@ class LangGraphMapperTest(unittest.TestCase):
     @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_basic_metadata_extraction(self, mock_pregel_node):
         """Test basic metadata extraction from a mock graph."""
-        checkpointer = MockCheckpointer(state_store_name="my-store")
+        checkpointer = MockCheckpointer(store_name="my-store")
         graph = MockCompiledStateGraph(
             name="my-graph",
             checkpointer=checkpointer,
@@ -85,7 +85,7 @@ class LangGraphMapperTest(unittest.TestCase):
 
         self.assertEqual(metadata.version, "1.0.0")
         self.assertEqual(metadata.agent.type, "MockCompiledStateGraph")
-        self.assertEqual(metadata.name, "my-graph")
+        self.assertEqual(metadata.name, "langgraph-my-graph")
         assert metadata.memory is not None
         assert metadata.memory.short_term is not None
         self.assertEqual(metadata.memory.short_term.type, "DaprCheckpointer")
