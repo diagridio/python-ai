@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph'",
@@ -6242,12 +6242,13 @@ wheels = [
 
 [[package]]
 name = "strands-agents"
-version = "1.45.0"
+version = "1.57.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
     { name = "docstring-parser" },
+    { name = "httpx" },
     { name = "jsonschema", version = "4.23.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
     { name = "jsonschema", version = "4.26.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
     { name = "mcp" },
@@ -6259,9 +6260,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1a/ca/42bedf73ca6d47939e20ad58e90f649e78d53a38f40b5d31ca8078458a61/strands_agents-1.45.0.tar.gz", hash = "sha256:c7e65978d319a5de74b52e7511099951f473c9ccc10368c1ebe13d87f8625d06", size = 1101805, upload-time = "2026-06-25T20:40:23.06Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6d/2c/061ba1354b8586e8bd6edb42b2f8de3c6a4db83488b6b28d82cbc88a9185/strands_agents-1.57.1.tar.gz", hash = "sha256:109ea0a0f7da82a3b32e4c02cef12f53d46637d3e1e0fb8a285c5fa7116eb1d8", size = 1709312, upload-time = "2026-09-25T20:12:35.457Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/81/b189a0944d95465de4b97f8b3fb351df458cfe594572a6dfe7068363a515/strands_agents-1.45.0-py3-none-any.whl", hash = "sha256:9a38363a255f9fd89dbdbd766fdf240524ee4af403865412ed139dc904fbb5ad", size = 579326, upload-time = "2026-06-25T20:40:21.121Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/1b/2b7e12fafee0e6ab6ce9fa16a0ad850bb570d8e2bd6326f5cca7c2cd75a7/strands_agents-1.57.1-py3-none-any.whl", hash = "sha256:797ea3de2ba4a66aaf7e804cba8308e3d582e2412c59978433d3216973d02a9d", size = 858212, upload-time = "2026-09-25T20:12:33.361Z" },
 ]
 
 [[package]]
