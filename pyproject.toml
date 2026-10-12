@@ -186,9 +186,9 @@ override-dependencies = [
     # at ``>=6.1.0``.
     "cachetools>=6.1.0,<8.0.0",
     # holmesgpt pins ``mcp==1.25.0`` while dapr-agents==1.0.1 requires
-    # ``mcp>=1.26.0``. mcp 1.26 adds APIs over 1.25 and is wire-compatible
+    # ``mcp>=1.26.0``. mcp 1.28 adds APIs over 1.25 and is wire-compatible
     # for the surfaces both libraries use.
-    "mcp==1.26.0",
+    "mcp==1.28.1",
     # Cap numpy below the 2.5.x line — 2.5.0rc1's stubs use PEP 695
     # ``type X = ...`` syntax (Python 3.12+), which trips mypy's
     # ``python_version = 3.11`` target with ``Type statement is only
