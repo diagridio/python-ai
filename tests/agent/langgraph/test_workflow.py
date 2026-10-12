@@ -27,6 +27,8 @@ from diagrid.agent.langgraph.workflow import (
     _serialize_value,
     _apply_write,
     execute_node_activity,
+    make_node_activity,
+    node_activity_name,
     evaluate_condition_activity,
 )
 from langgraph.types import Send
@@ -600,6 +602,34 @@ class TestBuildNodeRuntime(unittest.TestCase):
         rt = _build_node_runtime(None, _FakeActivityCtx(), "model")
         self.assertIsNotNone(rt.execution_info)
         self.assertIsNone(rt.execution_info.thread_id)
+
+
+class TestNodeActivityName(unittest.TestCase):
+    def test_node_named_after_itself(self):
+        self.assertEqual(node_activity_name("check_venues"), "check_venues")
+
+    def test_generic_names_fall_back_to_execute_node_activity(self):
+        for name in ("execute_node_activity", "evaluate_condition_activity"):
+            self.assertEqual(node_activity_name(name), "execute_node_activity")
+
+    def test_each_node_gets_its_own_activity_function(self):
+        first = make_node_activity("check_venues")
+        second = make_node_activity("compare_options")
+
+        self.assertIsNot(first, second)
+
+    def test_node_activity_runs_the_node(self):
+        clear_registries()
+        register_node("check_venues", lambda state: {"value": 2})
+        input_data = ExecuteNodeInput(
+            node_name="check_venues",
+            channel_state=ChannelState(values={"value": 1}),
+        ).to_dict()
+
+        result = make_node_activity("check_venues")(_FakeActivityCtx(), input_data)
+
+        self.assertEqual(result, execute_node_activity(_FakeActivityCtx(), input_data))
+        clear_registries()
 
 
 if __name__ == "__main__":

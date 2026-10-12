@@ -58,6 +58,43 @@ _default_max_steps: int = 100
 START = "__start__"
 END = "__end__"
 
+# Each node runs as an activity named after the node, so the workflow UI shows
+# the graph's own step names. Instances started before this change scheduled
+# every node as ``execute_node_activity``; the patch keeps them replaying.
+NODE_ACTIVITY_NAMES_PATCH = "langgraph-node-activity-names"
+GENERIC_NODE_ACTIVITY = "execute_node_activity"
+_GENERIC_ACTIVITY_NAMES = frozenset(
+    {GENERIC_NODE_ACTIVITY, "evaluate_condition_activity"}
+)
+
+
+def node_activity_name(node_name: str) -> str:
+    """Return the activity name a node is scheduled under.
+
+    A node named like one of the generic activities keeps running through
+    ``execute_node_activity`` rather than shadowing it.
+    """
+    if node_name in _GENERIC_ACTIVITY_NAMES:
+        return GENERIC_NODE_ACTIVITY
+    return node_name
+
+
+def make_node_activity(
+    node_name: str,
+) -> Callable[[WorkflowActivityContext, Dict[str, Any]], Dict[str, Any]]:
+    """Build the activity registered for one node.
+
+    Dapr registers each function object once, so every node gets its own
+    wrapper around ``execute_node_activity``.
+    """
+
+    def node_activity(
+        ctx: WorkflowActivityContext, input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return execute_node_activity(ctx, input_data)
+
+    return node_activity
+
 
 def register_node(name: str, func: Callable) -> None:
     """Register a node function for use by the execute_node activity."""
@@ -204,6 +241,10 @@ def agent_workflow(
             thread_id=str(ctx.instance_id),
         )
 
+    # Ask before the first yield: a replay of an older instance must see the
+    # patch as absent, and the answer is fixed for the rest of the execution.
+    node_activities_by_name = ctx.is_patched(NODE_ACTIVITY_NAMES_PATCH)
+
     graph_config = workflow_input.graph_config
     channel_state = workflow_input.channel_state
     max_steps = workflow_input.max_steps
@@ -262,8 +303,11 @@ def agent_workflow(
                 config=config,
                 thread_id=thread_id,
             )
+            activity: Any = execute_node_activity
+            if node_activities_by_name:
+                activity = node_activity_name(node_name)
             task = ctx.call_activity(
-                execute_node_activity,
+                activity,
                 input=node_input.to_dict(),
                 retry_policy=retry_policy,
             )
