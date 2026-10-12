@@ -170,6 +170,11 @@ prerelease = "if-necessary-or-explicit"
 # 1.36-1.41.1. Restore the wider ranges when the dependency returns to a
 # released pin.
 override-dependencies = [
+    # holmesgpt<=0.34 pins ``litellm==1.83.7`` (vulnerable; fixed in 1.84.0) and
+    # holmesgpt>=0.35 pins ``litellm==1.89.0``, which dapr-agents' ``<1.87``
+    # cap rejects. Lock the holmesgpt fork onto the patched line dapr-agents
+    # already resolves to. Lock-only: published wheels keep holmesgpt's pin.
+    "litellm>=1.84.0,<1.87",
     "opentelemetry-api==1.39.1",
     "opentelemetry-sdk==1.39.1",
     "opentelemetry-semantic-conventions==0.60b1",
