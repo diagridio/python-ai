@@ -6266,12 +6266,13 @@ wheels = [
 
 [[package]]
 name = "strands-agents"
-version = "1.45.0"
+version = "1.57.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
     { name = "docstring-parser" },
+    { name = "httpx" },
     { name = "jsonschema", version = "4.23.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
     { name = "jsonschema", version = "4.26.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
     { name = "mcp" },
@@ -6283,9 +6284,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1a/ca/42bedf73ca6d47939e20ad58e90f649e78d53a38f40b5d31ca8078458a61/strands_agents-1.45.0.tar.gz", hash = "sha256:c7e65978d319a5de74b52e7511099951f473c9ccc10368c1ebe13d87f8625d06", size = 1101805, upload-time = "2026-06-25T20:40:23.06Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/91/87/050fa17fb5d9115e96b7332bea61a4a46ed9eb6c788b9486e807789640e6/strands_agents-1.57.2.tar.gz", hash = "sha256:6df1e6617b81c07d258631ef6dcf5e4388a93b561729d3696cd44113f2c530d7", size = 1726882, upload-time = "2026-10-01T18:55:51.078Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/81/b189a0944d95465de4b97f8b3fb351df458cfe594572a6dfe7068363a515/strands_agents-1.45.0-py3-none-any.whl", hash = "sha256:9a38363a255f9fd89dbdbd766fdf240524ee4af403865412ed139dc904fbb5ad", size = 579326, upload-time = "2026-06-25T20:40:21.121Z" },
+    { url = "https://files.pythonhosted.org/packages/df/40/1df02c89427ab165a95cda83149159e09b655846c1d44589cda8ba79ccbd/strands_agents-1.57.2-py3-none-any.whl", hash = "sha256:c0d4726e63cfbb75cbe381c40d76029aaefb7f29555476e8080f626376c9fe00", size = 866480, upload-time = "2026-10-01T18:55:49.154Z" },
 ]
 
 [[package]]
