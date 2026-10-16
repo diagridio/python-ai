@@ -6,6 +6,8 @@ Runs, against a real Dapr sidecar, graph shapes the runner used to break:
 - a node declaring a ``runtime`` parameter
 - a conditional edge whose router returns ``path_map`` labels, not node names
 - ``async def`` nodes and routers
+- a router traced to LangSmith, which landed as its own trace instead of
+  nesting under the workflow's
 
 Deterministic, no LLM required (marked ``integration``, not ``ollama``).
 """
@@ -134,3 +136,45 @@ def test_async_node_and_router() -> None:
 
     assert result["value"] == 120
     assert result["path"] == "high"
+
+
+@pytest.mark.integration
+def test_traced_router_nests_under_workflow_trace() -> None:
+    import os
+    from unittest import mock
+
+    from langgraph.graph import END, START, StateGraph
+    from langsmith import Client
+    from langsmith.run_trees import RunTree
+
+    def route(state: _State) -> str:
+        return "high" if state["value"] > 100 else "low"
+
+    graph = StateGraph(_State)
+    graph.add_node("classify", lambda state: {"path": ""})
+    graph.add_node("high", lambda state: {"path": "high"})
+    graph.add_node("low", lambda state: {"path": "low"})
+    graph.add_edge(START, "classify")
+    graph.add_conditional_edges("classify", route)
+    graph.add_edge("high", END)
+    graph.add_edge("low", END)
+
+    # Capture what would go to LangSmith instead of sending it.
+    env = {"LANGSMITH_TRACING": "true", "LANGSMITH_API_KEY": "test-not-a-key"}
+    with (
+        mock.patch.dict(os.environ, env),
+        mock.patch.object(Client, "create_run") as create_run,
+        mock.patch.object(Client, "update_run"),
+        mock.patch.object(Client, "flush"),
+        mock.patch.object(RunTree, "post", autospec=True) as post,
+        mock.patch.object(RunTree, "patch", autospec=True),
+    ):
+        result = _invoke(graph.compile(), {"value": 150}, "e2e-traced-router")
+
+    assert result["path"] == "high"
+    workflow_trace_id = create_run.call_args.kwargs["id"]
+    routes = [c.args[0] for c in post.call_args_list if c.args[0].name == "route"]
+    assert routes, "the router was never traced"
+    for run in routes:
+        assert str(run.trace_id) == workflow_trace_id
+        assert str(run.parent_run_id) == workflow_trace_id
