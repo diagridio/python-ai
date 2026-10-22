@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import email.parser
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -128,6 +131,41 @@ def test_license_declares_busl_file(name: str) -> None:
 def test_readme_has_no_relative_links(name: str) -> None:
     readme = PACKAGE_DIRS[name] / _project(name)["readme"]
     assert RELATIVE_LINK.findall(readme.read_text()) == []
+
+
+_PREPARE_METADATA = (
+    "import sys\n"
+    "from setuptools import build_meta\n"
+    "print(build_meta.prepare_metadata_for_build_wheel(sys.argv[1]))\n"
+)
+
+
+@pytest.mark.parametrize("name", sorted(PACKAGE_DIRS))
+def test_built_wheel_metadata(name: str, tmp_path: Path) -> None:
+    """Run the setuptools backend and check the METADATA a wheel would carry."""
+    pytest.importorskip("setuptools")
+    result = subprocess.run(
+        [sys.executable, "-c", _PREPARE_METADATA, str(tmp_path)],
+        cwd=PACKAGE_DIRS[name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    dist_info = result.stdout.strip().splitlines()[-1]
+    raw = (tmp_path / dist_info / "METADATA").read_text(encoding="utf-8")
+    metadata = email.parser.Parser().parsestr(raw)
+
+    assert metadata["Name"] == name
+    assert metadata["Summary"] == DESCRIPTIONS[name]
+    assert metadata["Keywords"] == ",".join(_project(name)["keywords"])
+    assert set(metadata.get_all("Classifier", [])) == CLASSIFIERS
+    assert metadata.get_all("Project-URL") == [
+        f"{label}, {url}" for label, url in URLS.items()
+    ]
+    assert metadata["License-File"] == "LICENSE.md"
+    assert "Business Source License 1.1" in metadata["License"]
+    assert metadata["Description-Content-Type"] == "text/markdown"
 
 
 def test_root_readme_opening_line() -> None:
