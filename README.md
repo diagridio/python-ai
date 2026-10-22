@@ -1,10 +1,12 @@
 # Durable Workflows for AI agents
 
+Durable execution for AI agents and workflows.
+
 **Make your AI agents resilient to failure and outages**
 
 The `diagrid` package is an extension SDK for the open-source [Dapr](https://github.com/dapr/dapr) project to build durable, fault-tolerant AI agents. It integrates seamlessly with popular agent frameworks, wrapping them in Dapr Workflows to ensure agents can recover from failures, persist state across restarts, and scale effectively.
 
-Get started with [Diagrid Catalyst for free](https://diagrid.ws/get-catalyst).
+Get started with [Diagrid Catalyst for free](https://diagrid.ws/get-catalyst). Catalyst has a permanent free tier, with Cloud Plus for higher limits.
 
 ## Community
 
@@ -230,7 +232,7 @@ are constants on `OAuthErrorCodes`.
 Two paths to your first running agent:
 
 - **Managed quickstart templates** — `diagridpy init my-project --framework langgraph` bootstraps a Catalyst project, local kind cluster, Helm chart, and framework template in one command. Templates are cloned from [`diagridio/catalyst-quickstarts`](https://github.com/diagridio/catalyst-quickstarts).
-- **In-repo code samples** — clone this repo and run any framework's example directly. See [`examples/`](examples/) for the index, or jump straight to a framework: [`langgraph`](examples/langgraph/), [`crewai`](examples/crewai/), [`adk`](examples/adk/), [`strands`](examples/strands/), [`openai_agents`](examples/openai_agents/), [`claude_agents`](examples/claude_agents/), [`pydantic_ai`](examples/pydantic_ai/), [`deepagents`](examples/deepagents/), [`langchain`](examples/langchain/), [`smolagents`](examples/smolagents/), [`holmesgpt`](examples/holmesgpt/).
+- **In-repo code samples** — clone this repo and run any framework's example directly. See [`examples/`](https://github.com/diagridio/python-ai/tree/main/examples) for the index, or jump straight to a framework: [`langgraph`](https://github.com/diagridio/python-ai/tree/main/examples/langgraph), [`crewai`](https://github.com/diagridio/python-ai/tree/main/examples/crewai), [`adk`](https://github.com/diagridio/python-ai/tree/main/examples/adk), [`strands`](https://github.com/diagridio/python-ai/tree/main/examples/strands), [`openai_agents`](https://github.com/diagridio/python-ai/tree/main/examples/openai_agents), [`claude_agents`](https://github.com/diagridio/python-ai/tree/main/examples/claude_agents), [`pydantic_ai`](https://github.com/diagridio/python-ai/tree/main/examples/pydantic_ai), [`deepagents`](https://github.com/diagridio/python-ai/tree/main/examples/deepagents), [`langchain`](https://github.com/diagridio/python-ai/tree/main/examples/langchain), [`smolagents`](https://github.com/diagridio/python-ai/tree/main/examples/smolagents), [`holmesgpt`](https://github.com/diagridio/python-ai/tree/main/examples/holmesgpt).
 
 ## Getting Started with Diagrid Catalyst
 
