@@ -3,8 +3,12 @@
 
 """Tests for workflow functions."""
 
+import os
 import unittest
 from unittest import mock
+
+from langsmith.run_helpers import get_current_run_tree
+from langsmith.run_trees import RunTree
 
 from diagrid.agent.langgraph.models import (
     ChannelState,
@@ -494,6 +498,71 @@ class TestEvaluateConditionActivity(unittest.TestCase):
 
     def test_async_only_runnable_condition(self):
         output = self._evaluate(_AsyncOnlyRunnable("next_node"))
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
+
+
+class TestEvaluateConditionLangSmithParent(unittest.TestCase):
+    """A traced condition must nest under the workflow's "LangGraph" trace,
+    not land in LangSmith as a top-level trace of its own."""
+
+    ROOT_RUN_ID = "00000000-0000-4000-8000-000000000001"
+
+    def setUp(self):
+        clear_registries()
+
+    def tearDown(self):
+        clear_registries()
+
+    def _evaluate_traced(self, config):
+        # A private LangGraph module; importing it here keeps a move from
+        # breaking every test in this file.
+        from langgraph._internal._runnable import RunnableCallable
+
+        seen = {}
+
+        def route(state):
+            run = get_current_run_tree()
+            seen["trace_id"] = str(run.trace_id) if run else None
+            seen["parent_run_id"] = str(run.parent_run_id) if run else None
+            return "next_node"
+
+        # add_conditional_edges wraps every path in a RunnableCallable, which
+        # traces itself when LANGSMITH_TRACING is on.
+        register_condition("cond", RunnableCallable(route))
+        input_data = EvaluateConditionInput(
+            source_node="node_a",
+            condition_name="cond",
+            channel_state=ChannelState(),
+            config=config,
+        ).to_dict()
+        env = {"LANGSMITH_TRACING": "true", "LANGSMITH_API_KEY": "test-not-a-key"}
+        with (
+            mock.patch.dict(os.environ, env),
+            mock.patch.object(RunTree, "post"),
+            mock.patch.object(RunTree, "patch"),
+        ):
+            output = EvaluateConditionOutput.from_dict(
+                evaluate_condition_activity(mock.Mock(), input_data)
+            )
+        return output, seen
+
+    def test_condition_nests_under_parent_trace(self):
+        output, seen = self._evaluate_traced(
+            {
+                "langsmith_dotted_order": f"20261016T000000000000Z{self.ROOT_RUN_ID}",
+                "langsmith_run_id": self.ROOT_RUN_ID,
+            }
+        )
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
+        self.assertEqual(seen["trace_id"], self.ROOT_RUN_ID)
+        self.assertEqual(seen["parent_run_id"], self.ROOT_RUN_ID)
+
+    def test_condition_without_parent_trace_still_evaluates(self):
+        output, _ = self._evaluate_traced({})
 
         self.assertIsNone(output.error)
         self.assertEqual(output.next_nodes, ["next_node"])
