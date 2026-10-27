@@ -7,7 +7,6 @@ import os
 import unittest
 from unittest import mock
 
-from langgraph._internal._runnable import RunnableCallable
 from langsmith.run_helpers import get_current_run_tree
 from langsmith.run_trees import RunTree
 
@@ -517,6 +516,10 @@ class TestEvaluateConditionLangSmithParent(unittest.TestCase):
         clear_registries()
 
     def _evaluate_traced(self, config):
+        # A private LangGraph module; importing it here keeps a move from
+        # breaking every test in this file.
+        from langgraph._internal._runnable import RunnableCallable
+
         seen = {}
 
         def route(state):
