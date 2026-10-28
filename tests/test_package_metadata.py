@@ -124,13 +124,13 @@ def test_license_declares_busl_file(name: str) -> None:
     # The sub-packages carry a copy because setuptools only reads license files
     # from inside the project directory. The copy must not drift from the root.
     assert license_file.read_bytes() == (ROOT / "LICENSE.md").read_bytes()
-    assert "Business Source License 1.1" in license_file.read_text()
+    assert "Business Source License 1.1" in license_file.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", sorted(PACKAGE_DIRS))
 def test_readme_has_no_relative_links(name: str) -> None:
     readme = PACKAGE_DIRS[name] / _project(name)["readme"]
-    assert RELATIVE_LINK.findall(readme.read_text()) == []
+    assert RELATIVE_LINK.findall(readme.read_text(encoding="utf-8")) == []
 
 
 _PREPARE_METADATA = (
@@ -171,7 +171,7 @@ def test_built_wheel_metadata(name: str, tmp_path: Path) -> None:
 def test_root_readme_opening_line() -> None:
     lines = [
         line
-        for line in (ROOT / "README.md").read_text().splitlines()
+        for line in (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     ]
     assert lines[0] == "Durable execution for AI agents and workflows."
