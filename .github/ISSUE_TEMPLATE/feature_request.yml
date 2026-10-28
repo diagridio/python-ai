@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a new capability or an improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: The behaviour or API you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - diagrid (framework integration)
+        - diagrid-core
+        - diagrid-cli (diagridpy)
+        - Helm chart (catalyst-agents)
+        - Examples / docs
+        - Not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to open a pull request for this.
