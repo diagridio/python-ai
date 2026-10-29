@@ -12,16 +12,8 @@ convenience API matching the Deep Agents harness conventions.
 import logging
 from typing import Any, Optional, TYPE_CHECKING
 
-from langgraph.constants import START, END
-
 from diagrid.agent.core.types import SupportedFrameworks
 from diagrid.agent.langgraph.runner import DaprWorkflowGraphRunner
-from diagrid.agent.langgraph.workflow import (
-    register_node,
-    register_channel_reducer,
-    set_serializer,
-    clear_registries,
-)
 
 if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
@@ -96,60 +88,6 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
             goal=goal,
             registry_config=registry_config,
         )
-
-    # ------------------------------------------------------------------
-    # Override: register RunnableCallable wrappers, not raw functions
-    # ------------------------------------------------------------------
-    def _register_graph_components(self) -> None:
-        """Register graph nodes, keeping RunnableCallable wrappers intact.
-
-        Deep Agent middleware nodes (e.g. PatchToolCallsMiddleware) require
-        a ``runtime`` argument that is injected by ``RunnableCallable.invoke()``.
-        The base class extracts ``bound.func`` (the raw function), which
-        bypasses that injection.  Here we register ``bound`` itself so that
-        ``execute_node_activity`` can call ``.invoke()`` on it.
-        """
-        clear_registries()
-
-        graph_nodes = getattr(self._graph, "nodes", {})
-        for node_name, node_spec in graph_nodes.items():
-            if node_name in (START, END, "__start__", "__end__"):
-                continue
-
-            node_obj = None
-
-            if hasattr(node_spec, "bound"):
-                # Register the RunnableCallable wrapper, NOT bound.func
-                node_obj = node_spec.bound
-            elif hasattr(node_spec, "runnable"):
-                node_obj = node_spec.runnable
-            elif callable(node_spec):
-                node_obj = node_spec
-
-            if node_obj:
-                register_node(node_name, node_obj)
-                logger.info(f"Registered node (deep agent): {node_name}")
-            else:
-                logger.warning(f"Could not extract callable for node: {node_name}")
-
-        channels = getattr(self._graph, "channels", {})
-        for channel_name, channel in channels.items():
-            # BinaryOperatorAggregate uses "operator" not "reducer"
-            reducer = getattr(channel, "reducer", None) or getattr(
-                channel, "operator", None
-            )
-            if reducer:
-                register_channel_reducer(channel_name, reducer)
-                logger.info(f"Registered reducer for channel: {channel_name}")
-
-        try:
-            from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-
-            set_serializer(JsonPlusSerializer())
-        except ImportError:
-            logger.warning(
-                "JsonPlusSerializer not available, using basic serialization"
-            )
 
     @property
     def agent(self) -> "CompiledStateGraph":

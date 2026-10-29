@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid"
-version = "0.5.0"
+version = "0.5.3"
 description = "Diagrid namespace package"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -159,6 +159,11 @@ exclude-newer = "1 days"
 # without this setting uv refuses to resolve the workspace lock.
 prerelease = "if-necessary-or-explicit"
 override-dependencies = [
+    # holmesgpt<=0.34 pins ``litellm==1.83.7`` (vulnerable; fixed in 1.84.0) and
+    # holmesgpt>=0.35 pins ``litellm==1.89.0``, which dapr-agents' ``<1.87``
+    # cap rejects. Lock the holmesgpt fork onto the patched line dapr-agents
+    # already resolves to. Lock-only: published wheels keep holmesgpt's pin.
+    "litellm>=1.84.0,<1.87",
     # holmesgpt pins fastapi ``^0.121.1`` and uvicorn ``^0.40`` which collide
     # with diagrid[agent-core]'s ``>=0.129.0`` and ``>=0.41.0`` floors. Both
     # deltas are backwards-compatible for the surface holmesgpt uses (only

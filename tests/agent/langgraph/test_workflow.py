@@ -3,8 +3,12 @@
 
 """Tests for workflow functions."""
 
+import os
 import unittest
 from unittest import mock
+
+from langsmith.run_helpers import get_current_run_tree
+from langsmith.run_trees import RunTree
 
 from diagrid.agent.langgraph.models import (
     ChannelState,
@@ -29,6 +33,26 @@ from diagrid.agent.langgraph.workflow import (
     execute_node_activity,
     evaluate_condition_activity,
 )
+from langgraph.types import Send
+
+
+class _AsyncOnlyRunnable:
+    """Like a RunnableCallable built from an ``async def``: no sync ``func``,
+    and ``invoke()`` refuses to run it."""
+
+    func = None
+
+    def __init__(self, result):
+        self._result = result
+
+    async def afunc(self, state):
+        return self._result
+
+    def invoke(self, state, config=None):
+        raise TypeError("No synchronous function provided")
+
+    async def ainvoke(self, state, config=None):
+        return self._result
 
 
 class _FakeActivityCtx:
@@ -292,6 +316,21 @@ class TestExecuteNodeActivity(unittest.TestCase):
             execute_node_activity(ctx, input_data)
         self.assertIn("Test error", str(cm.exception))
 
+    def test_async_only_runnable_node(self):
+        register_node("async_node", _AsyncOnlyRunnable({"result": "from async"}))
+
+        input_data = ExecuteNodeInput(
+            node_name="async_node",
+            channel_state=ChannelState(),
+        ).to_dict()
+        output = ExecuteNodeOutput.from_dict(
+            execute_node_activity(_FakeActivityCtx(), input_data)
+        )
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.writes[0].channel, "result")
+        self.assertEqual(output.writes[0].value, "from async")
+
 
 class TestEvaluateConditionActivity(unittest.TestCase):
     """Tests for evaluate_condition_activity."""
@@ -417,6 +456,116 @@ class TestEvaluateConditionActivity(unittest.TestCase):
         self.assertIsNotNone(cond.captured_runtime)
         self.assertIsNotNone(cond.captured_runtime.execution_info)
         self.assertEqual(cond.captured_runtime.execution_info.thread_id, "thread-c")
+
+    def _evaluate(self, condition, path_map=None):
+        register_condition("cond", condition)
+        input_data = EvaluateConditionInput(
+            source_node="node_a",
+            condition_name="cond",
+            channel_state=ChannelState(),
+            path_map=path_map,
+        ).to_dict()
+        return EvaluateConditionOutput.from_dict(
+            evaluate_condition_activity(mock.Mock(), input_data)
+        )
+
+    def test_path_map_maps_label_to_node(self):
+        output = self._evaluate(lambda state: "continue", {"continue": "tools"})
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["tools"])
+
+    def test_path_map_maps_each_label_in_list(self):
+        output = self._evaluate(
+            lambda state: ["left", "right"], {"left": "node_b", "right": "node_c"}
+        )
+
+        self.assertEqual(output.next_nodes, ["node_b", "node_c"])
+
+    def test_label_missing_from_path_map_is_an_error(self):
+        output = self._evaluate(lambda state: "stop", {"continue": "tools"})
+
+        self.assertEqual(output.next_nodes, [])
+        self.assertIn("returned 'stop', which is not in its path_map", output.error)
+
+    def test_send_bypasses_path_map(self):
+        output = self._evaluate(
+            lambda state: [Send("worker", {"item": 1})], {"continue": "tools"}
+        )
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["worker"])
+
+    def test_async_only_runnable_condition(self):
+        output = self._evaluate(_AsyncOnlyRunnable("next_node"))
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
+
+
+class TestEvaluateConditionLangSmithParent(unittest.TestCase):
+    """A traced condition must nest under the workflow's "LangGraph" trace,
+    not land in LangSmith as a top-level trace of its own."""
+
+    ROOT_RUN_ID = "00000000-0000-4000-8000-000000000001"
+
+    def setUp(self):
+        clear_registries()
+
+    def tearDown(self):
+        clear_registries()
+
+    def _evaluate_traced(self, config):
+        # A private LangGraph module; importing it here keeps a move from
+        # breaking every test in this file.
+        from langgraph._internal._runnable import RunnableCallable
+
+        seen = {}
+
+        def route(state):
+            run = get_current_run_tree()
+            seen["trace_id"] = str(run.trace_id) if run else None
+            seen["parent_run_id"] = str(run.parent_run_id) if run else None
+            return "next_node"
+
+        # add_conditional_edges wraps every path in a RunnableCallable, which
+        # traces itself when LANGSMITH_TRACING is on.
+        register_condition("cond", RunnableCallable(route))
+        input_data = EvaluateConditionInput(
+            source_node="node_a",
+            condition_name="cond",
+            channel_state=ChannelState(),
+            config=config,
+        ).to_dict()
+        env = {"LANGSMITH_TRACING": "true", "LANGSMITH_API_KEY": "test-not-a-key"}
+        with (
+            mock.patch.dict(os.environ, env),
+            mock.patch.object(RunTree, "post"),
+            mock.patch.object(RunTree, "patch"),
+        ):
+            output = EvaluateConditionOutput.from_dict(
+                evaluate_condition_activity(mock.Mock(), input_data)
+            )
+        return output, seen
+
+    def test_condition_nests_under_parent_trace(self):
+        output, seen = self._evaluate_traced(
+            {
+                "langsmith_dotted_order": f"20261016T000000000000Z{self.ROOT_RUN_ID}",
+                "langsmith_run_id": self.ROOT_RUN_ID,
+            }
+        )
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
+        self.assertEqual(seen["trace_id"], self.ROOT_RUN_ID)
+        self.assertEqual(seen["parent_run_id"], self.ROOT_RUN_ID)
+
+    def test_condition_without_parent_trace_still_evaluates(self):
+        output, _ = self._evaluate_traced({})
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
 
 
 class TestExecuteNodeRuntimeInjection(unittest.TestCase):

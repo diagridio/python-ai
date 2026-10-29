@@ -9,6 +9,7 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
+from importlib import metadata
 from typing import Any, AsyncIterator, Optional
 
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
@@ -19,7 +20,48 @@ from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
 from diagrid.agent.core.observability import resolve_observability_config
 from diagrid.agent.core.workflow.naming import build_workflow_name
 
+# ``diagrid-core`` ships the reporter. This distribution only pins
+# ``diagrid-core>=0.1.0`` (through ``diagrid-cli``), so an application holding
+# an older ``diagrid-core`` must keep working: fall back to a no-op.
+try:
+    from diagrid.core.analytics import report_usage
+except ImportError:  # pragma: no cover - older diagrid-core
+
+    def report_usage(package: str, **dimensions: object) -> None:
+        return None
+
+
 logger = logging.getLogger(__name__)
+
+# The distribution that carries each framework, keyed by the lower-cased
+# framework label. First installed match wins. Used only for the
+# ``framework_version`` usage dimension, so a miss costs nothing.
+_FRAMEWORK_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
+    "langgraph": ("langgraph",),
+    "strands": ("strands-agents",),
+    "crewai": ("crewai",),
+    "adk": ("google-adk",),
+    "openai": ("openai-agents",),
+    "pydanticai": ("pydantic-ai-slim", "pydantic-ai"),
+    "claudeagents": ("claude-agent-sdk",),
+    "deepagents": ("deepagents",),
+    "langchain": ("langchain-core", "langchain"),
+    "smolagents": ("smolagents",),
+    "dapr agents": ("dapr-agents",),
+    "holmesgpt": ("holmesgpt",),
+}
+
+
+def _framework_version(framework: str) -> Optional[str]:
+    """Return the installed version of the library behind ``framework``, or None."""
+    for distribution in _FRAMEWORK_DISTRIBUTIONS.get(
+        str(framework).strip().lower(), ()
+    ):
+        try:
+            return metadata.version(distribution)
+        except metadata.PackageNotFoundError:
+            continue
+    return None
 
 
 class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
@@ -54,6 +96,14 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         # Initialize SignalMixin state (shutdown event, captured loop, etc.)
         # so graceful shutdown on SIGINT/SIGTERM is available.
         super().__init__()
+        # One anonymous usage event per process, never blocking. See
+        # ``diagrid.core.analytics`` and the README "Usage analytics" section.
+        report_usage(
+            "diagrid",
+            kind="agent",
+            framework=framework,
+            framework_version=_framework_version(framework),
+        )
         self._name = name
         self._framework = framework
         self._host = host

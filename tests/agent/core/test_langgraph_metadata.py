@@ -17,8 +17,8 @@ from diagrid.agent.core.metadata.mapping.langgraph import LangGraphMapper  # noq
 class MockCheckpointer:
     """Mock DaprCheckpointer for testing."""
 
-    def __init__(self, state_store_name="test-store"):
-        self.state_store_name = state_store_name
+    def __init__(self, store_name="test-store"):
+        self.store_name = store_name
 
 
 class MockTool:
@@ -73,7 +73,7 @@ class LangGraphMapperTest(unittest.TestCase):
     @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_basic_metadata_extraction(self, mock_pregel_node):
         """Test basic metadata extraction from a mock graph."""
-        checkpointer = MockCheckpointer(state_store_name="my-store")
+        checkpointer = MockCheckpointer(store_name="my-store")
         graph = MockCompiledStateGraph(
             name="my-graph",
             checkpointer=checkpointer,
@@ -85,7 +85,7 @@ class LangGraphMapperTest(unittest.TestCase):
 
         self.assertEqual(metadata.version, "1.0.0")
         self.assertEqual(metadata.agent.type, "MockCompiledStateGraph")
-        self.assertEqual(metadata.name, "my-graph")
+        self.assertEqual(metadata.name, "langgraph-my-graph")
         assert metadata.memory is not None
         assert metadata.memory.short_term is not None
         self.assertEqual(metadata.memory.short_term.type, "DaprCheckpointer")
@@ -179,6 +179,60 @@ class LangGraphMapperTest(unittest.TestCase):
 
         self.assertEqual(metadata.agent.role, "Banker worker")
         self.assertEqual(metadata.agent.goal, "Process credit tasks")
+
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
+    def test_runner_hint_instructions(self, mock_pregel_node):
+        """Test that the _diagrid_instructions hint populates instructions."""
+        graph = MockCompiledStateGraph(name="test")
+        graph._diagrid_instructions = "You plan schedules."
+
+        mapper = LangGraphMapper()
+        metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
+
+        self.assertEqual(metadata.agent.instructions, ["You plan schedules."])
+        self.assertEqual(metadata.agent.system_prompt, "You plan schedules.")
+        self.assertEqual(metadata.agent.goal, "You plan schedules.")
+
+    @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
+    def test_runner_hint_instructions_keeps_explicit_goal(self, mock_pregel_node):
+        """Test that explicit instructions do not override an explicit goal."""
+        graph = MockCompiledStateGraph(name="test")
+        graph._diagrid_instructions = "You plan schedules."
+        graph._diagrid_goal = "Book meetings"
+
+        mapper = LangGraphMapper()
+        metadata = mapper.map_agent_metadata(graph, schema_version="1.0.0")
+
+        self.assertEqual(metadata.agent.instructions, ["You plan schedules."])
+        self.assertEqual(metadata.agent.goal, "Book meetings")
+
+    def test_runner_hint_instructions_wins_over_discovered_prompt(self):
+        """Test that explicit instructions win over a SystemMessage found in node globals."""
+        from langchain_core.messages import SystemMessage
+        from langgraph.graph import END, START, StateGraph
+        from typing_extensions import TypedDict
+
+        class State(TypedDict):
+            value: int
+
+        node_globals = {"PROMPT": SystemMessage(content="Discovered prompt.")}
+        exec("def node(state):\n    return state", node_globals)
+
+        graph = StateGraph(State)
+        graph.add_node("node", node_globals["node"])
+        graph.add_edge(START, "node")
+        graph.add_edge("node", END)
+        compiled = graph.compile()
+
+        mapper = LangGraphMapper()
+        discovered = mapper.map_agent_metadata(compiled, schema_version="1.0.0")
+        self.assertEqual(discovered.agent.system_prompt, "Discovered prompt.")
+
+        compiled._diagrid_instructions = "Explicit prompt."
+        metadata = mapper.map_agent_metadata(compiled, schema_version="1.0.0")
+
+        self.assertEqual(metadata.agent.instructions, ["Explicit prompt."])
+        self.assertEqual(metadata.agent.system_prompt, "Explicit prompt.")
 
     @mock.patch("diagrid.agent.core.metadata.mapping.langgraph.PregelNode")
     def test_max_iterations_from_hint(self, mock_pregel_node):

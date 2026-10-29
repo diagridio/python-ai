@@ -19,12 +19,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v6.3.0
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.11"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.0
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Install dependencies
         run: uv sync --all-packages --extra all --group test
@@ -59,7 +59,7 @@ jobs:
           echo "Ollama ready with qwen3:0.6b"
 
       - name: Set up Docker
-        uses: docker/setup-docker-action@v5.4.0
+        uses: docker/setup-docker-action@v5.5.0
 
       - name: Install Dapr CLI
         run: |

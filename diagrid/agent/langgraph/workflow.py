@@ -3,6 +3,7 @@
 
 """Dapr Workflow definitions for durable LangGraph execution."""
 
+import contextlib
 import logging
 from datetime import timedelta
 from typing import Any, Callable, Dict, Generator, List, Optional
@@ -139,6 +140,37 @@ def _close_langsmith_parent_trace_async(config: Optional[Dict[str, Any]]) -> Non
             logger.debug(f"Failed to close parent LangSmith trace: {e}")
 
     threading.Thread(target=_do_close, daemon=True).start()
+
+
+def _langsmith_parent(config: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Return the parent "LangGraph" trace's dotted order when tracing is on.
+
+    Activities run on Dapr's thread pool, so this also clears any run tree a
+    previous activity left in the thread's context.
+    """
+    import os
+
+    dotted_order = (config or {}).get("langsmith_dotted_order")
+    if not dotted_order or os.environ.get("LANGSMITH_TRACING", "").lower() not in (
+        "true",
+        "1",
+    ):
+        return None
+
+    # The parent run-tree ContextVar is a private symbol that langsmith
+    # has renamed across versions (_PARENT_RUN_TREE -> _PARENT_RUN_TREE_REF
+    # in 0.7.31); look it up dynamically and degrade gracefully if it moves.
+    try:
+        from langsmith import run_helpers as _ls_run_helpers
+
+        _parent_run_tree = getattr(
+            _ls_run_helpers, "_PARENT_RUN_TREE_REF", None
+        ) or getattr(_ls_run_helpers, "_PARENT_RUN_TREE", None)
+        if _parent_run_tree is not None:
+            _parent_run_tree.set(None)
+    except (ImportError, AttributeError):
+        pass
+    return str(dotted_order)
 
 
 def clear_registries() -> None:
@@ -311,6 +343,7 @@ def agent_workflow(
                             channel_state=channel_state,
                             config=config,
                             thread_id=thread_id,
+                            path_map=edge.path_map,
                         )
                         cond_result = yield ctx.call_activity(
                             evaluate_condition_activity,
@@ -388,6 +421,18 @@ def _build_node_runtime(
         return Runtime(execution_info=execution_info)
     except Exception:  # pragma: no cover - signature drift / partial ctx
         return Runtime()
+
+
+def _is_async_only(runnable: Any) -> bool:
+    """Whether ``runnable`` wraps only an ``async def`` (no sync ``func``).
+
+    ``RunnableCallable.invoke()`` raises for these, so they must be run through
+    ``ainvoke()`` instead.
+    """
+    return (
+        getattr(runnable, "func", None) is None
+        and getattr(runnable, "afunc", None) is not None
+    )
 
 
 def execute_node_activity(
@@ -501,7 +546,11 @@ def execute_node_activity(
             except ImportError:
                 pass
 
-            r = node_func.invoke(state, config=_config)
+            if _is_async_only(node_func):
+                # A coroutine; run to completion below.
+                r = node_func.ainvoke(state, config=_config)  # type: ignore[attr-defined]
+            else:
+                r = node_func.invoke(state, config=_config)
         else:
             sig = inspect.signature(node_func)
             params = list(sig.parameters.keys())
@@ -524,36 +573,14 @@ def execute_node_activity(
 
     # Set up LangSmith child trace so LLM calls nest under the parent
     # "LangGraph" trace created by runner.invoke().
-    import os
-
-    dotted_order = config.get("langsmith_dotted_order")
-    _use_tracing = dotted_order and os.environ.get("LANGSMITH_TRACING", "").lower() in (
-        "true",
-        "1",
-    )
-
-    if _use_tracing:
+    parent = _langsmith_parent(config)
+    if parent:
         import langsmith as ls
-
-        # Clear any stale context from Dapr's thread pool.
-        # The parent run-tree ContextVar is a private symbol that langsmith
-        # has renamed across versions (_PARENT_RUN_TREE -> _PARENT_RUN_TREE_REF
-        # in 0.7.31); look it up dynamically and degrade gracefully if it moves.
-        try:
-            from langsmith import run_helpers as _ls_run_helpers
-
-            _parent_run_tree = getattr(
-                _ls_run_helpers, "_PARENT_RUN_TREE_REF", None
-            ) or getattr(_ls_run_helpers, "_PARENT_RUN_TREE", None)
-            if _parent_run_tree is not None:
-                _parent_run_tree.set(None)
-        except (ImportError, AttributeError):
-            pass
 
         with ls.trace(
             name=node_name,
             run_type="chain",
-            parent=dotted_order,
+            parent=parent,
             inputs={"step": node_name},
         ):
             result = _run_node()
@@ -598,57 +625,77 @@ def evaluate_condition_activity(
     # Reconstruct state from channel values
     state = _reconstruct_state(cond_input.channel_state)
 
-    # Evaluate the condition.
-    # If the condition is a LangChain Runnable (e.g. RunnableCallable from
-    # Deep Agents branches), call .invoke() so runtime injection works.
-    if hasattr(cond_func, "invoke") and callable(getattr(cond_func, "invoke")):
-        # Copy before mutating; populate the Runtime so a Runnable condition
-        # can resolve workflow ownership the same way node activities do.
-        _config = dict(cond_input.config or {})
-        _config[CONF] = dict(_config.get(CONF) or {})
-        thread_id = (
-            cond_input.thread_id
-            or _config.get("thread_id")
-            or getattr(ctx, "workflow_id", None)
-        )
-        _config[CONF].setdefault("thread_id", thread_id)
-        if CONFIG_KEY_RUNTIME not in _config[CONF]:
-            _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
-                thread_id, ctx, cond_input.condition_name
-            )
-        result = cond_func.invoke(state, config=_config)
+    # Evaluate under the parent "LangGraph" trace. A Runnable condition (every
+    # add_conditional_edges path is one) traces itself, so without a parent
+    # each evaluation lands in LangSmith as a separate top-level trace.
+    parent = _langsmith_parent(cond_input.config)
+    if parent:
+        import langsmith as ls
+
+        trace_ctx: Any = ls.tracing_context(parent=parent)
     else:
-        result = cond_func(state)
+        trace_ctx = contextlib.nullcontext()
 
-    # Handle async functions
-    import asyncio
+    with trace_ctx:
+        # Evaluate the condition.
+        # If the condition is a LangChain Runnable (e.g. RunnableCallable from
+        # Deep Agents branches), call .invoke() so runtime injection works.
+        if hasattr(cond_func, "invoke") and callable(getattr(cond_func, "invoke")):
+            # Copy before mutating; populate the Runtime so a Runnable condition
+            # can resolve workflow ownership the same way node activities do.
+            _config = dict(cond_input.config or {})
+            _config[CONF] = dict(_config.get(CONF) or {})
+            thread_id = (
+                cond_input.thread_id
+                or _config.get("thread_id")
+                or getattr(ctx, "workflow_id", None)
+            )
+            _config[CONF].setdefault("thread_id", thread_id)
+            if CONFIG_KEY_RUNTIME not in _config[CONF]:
+                _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
+                    thread_id, ctx, cond_input.condition_name
+                )
+            if _is_async_only(cond_func):
+                # A coroutine; run to completion below.
+                result = cond_func.ainvoke(state, config=_config)  # type: ignore[attr-defined]
+            else:
+                result = cond_func.invoke(state, config=_config)
+        else:
+            result = cond_func(state)
 
-    if asyncio.iscoroutine(result):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(result)
-        finally:
-            loop.close()
+        # Handle async functions
+        import asyncio
+
+        if asyncio.iscoroutine(result):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(result)
+            finally:
+                loop.close()
 
     # Result should be a node name, list of node names, or Send objects.
     # LangGraph Send objects have a .node attribute with the target node name.
-    def _extract_node_name(item: Any) -> str:
-        if isinstance(item, str):
-            return item
-        if hasattr(item, "node"):
-            return item.node
-        return str(item)
+    # Any other value goes through the edge's path_map when it has one, as in
+    # LangGraph: a router may return labels ("continue") rather than node names.
+    path_map = cond_input.path_map
+    items = list(result) if isinstance(result, (list, tuple)) else [result]
 
-    if isinstance(result, str):
-        next_nodes = [result]
-    elif isinstance(result, (list, tuple)):
-        next_nodes = [_extract_node_name(r) for r in result]
-    elif hasattr(result, "node"):
-        # Single Send object
-        next_nodes = [result.node]
-    else:
-        next_nodes = [str(result)]
+    next_nodes = []
+    for item in items:
+        if hasattr(item, "node"):
+            next_nodes.append(item.node)
+        elif path_map is None:
+            next_nodes.append(item if isinstance(item, str) else str(item))
+        elif str(item) in path_map:
+            next_nodes.append(path_map[str(item)])
+        else:
+            return EvaluateConditionOutput(
+                error=(
+                    f"Condition '{cond_input.condition_name}' returned {item!r}, "
+                    f"which is not in its path_map {sorted(path_map)}"
+                ),
+            ).to_dict()
 
     return EvaluateConditionOutput(
         next_nodes=next_nodes,

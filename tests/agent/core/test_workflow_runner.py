@@ -321,3 +321,46 @@ class TestWorkflowNameProperty(TestCase):
         self.assertEqual(
             runner.workflow_name, "dapr.langgraph.CateringCoordinator.workflow"
         )
+
+
+@mock.patch("diagrid.agent.core.workflow.runner.DaprWorkflowClient")
+@mock.patch("diagrid.agent.core.workflow.runner.WorkflowRuntime")
+class TestBaseWorkflowRunnerUsageReporting(TestCase):
+    """Constructing a runner reports one anonymous usage event."""
+
+    def test_reports_usage_for_the_diagrid_package(
+        self, mock_runtime_cls, mock_client_cls
+    ):
+        with mock.patch("diagrid.agent.core.workflow.runner.report_usage") as report:
+            ConcreteRunner()
+
+        report.assert_called_once_with(
+            "diagrid", kind="agent", framework="test", framework_version=None
+        )
+
+
+class TestFrameworkVersion(TestCase):
+    """The ``framework_version`` dimension comes from the installed distribution."""
+
+    def test_known_framework_reports_the_installed_distribution(self):
+        from importlib import metadata
+
+        from diagrid.agent.core.workflow.runner import _framework_version
+
+        self.assertEqual(_framework_version("LangGraph"), metadata.version("langgraph"))
+
+    def test_unknown_framework_is_none(self):
+        from diagrid.agent.core.workflow.runner import _framework_version
+
+        self.assertIsNone(_framework_version("test"))
+
+    def test_missing_distribution_is_none(self):
+        from importlib import metadata
+
+        from diagrid.agent.core.workflow.runner import _framework_version
+
+        with mock.patch(
+            "diagrid.agent.core.workflow.runner.metadata.version",
+            side_effect=metadata.PackageNotFoundError("crewai"),
+        ):
+            self.assertIsNone(_framework_version("CrewAI"))

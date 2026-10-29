@@ -115,6 +115,7 @@ class LangGraphMapper(BaseAgentMapper):
         custom_name = getattr(agent, "_diagrid_name", None)
         custom_role = getattr(agent, "_diagrid_role", None)
         custom_goal = getattr(agent, "_diagrid_goal", None)
+        system_prompt = getattr(agent, "_diagrid_instructions", None) or system_prompt
 
         if name:
             full_name = name
