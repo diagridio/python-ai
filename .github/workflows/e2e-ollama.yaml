@@ -66,6 +66,9 @@ jobs:
           wget -q https://raw.githubusercontent.com/dapr/cli/master/install/install.sh -O - | /bin/bash
 
       - name: Initialize Dapr
+        env:
+          # Pull Dapr, Redis and Zipkin from GHCR; Docker Hub pulls fail at random on runners.
+          DAPR_DEFAULT_IMAGE_REGISTRY: ghcr
         run: dapr init
 
       - name: Run E2E tests
