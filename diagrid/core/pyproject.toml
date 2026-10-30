@@ -5,14 +5,42 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "diagrid-core"
 version = "0.5.3"
-description = "Diagrid Core - Shared auth and Catalyst API client"
+description = "Shared auth, configuration and Catalyst API client for the Diagrid durable AI agent integrations"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {file = "LICENSE.md"}
+keywords = [
+    "durable-execution",
+    "ai-agents",
+    "dapr",
+    "diagrid",
+    "catalyst",
+    "api-client",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "pyjwt[crypto]>=2.8.0",
 ]
+
+[project.urls]
+Homepage = "https://www.diagrid.io/catalyst"
+Documentation = "https://docs.diagrid.io"
+Source = "https://github.com/diagridio/python-ai"
+Issues = "https://github.com/diagridio/python-ai/issues"
+Examples = "https://github.com/diagridio/python-ai/tree/main/examples"
 
 [tool.setuptools]
 packages = [
