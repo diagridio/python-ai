@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in diagrid, diagrid-core, diagrid-cli or the Helm chart does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. **Security problems go through private
+        reporting, not here:** see [SECURITY.md](https://github.com/diagridio/python-ai/blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, including the full error or traceback.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest code or set of commands that shows the problem.
+      placeholder: |
+        1. pip install "diagrid[langgraph]"
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - diagrid (framework integration)
+        - diagrid-core
+        - diagrid-cli (diagridpy)
+        - Helm chart (catalyst-agents)
+        - Examples
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: framework
+    attributes:
+      label: Agent framework and version
+      placeholder: e.g. langgraph 1.0.3
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of `pip show diagrid`, your Python version, OS, and Dapr runtime version (`dapr --version`).
+      render: text
+    validations:
+      required: true
