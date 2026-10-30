@@ -54,8 +54,8 @@ normalises the underscores, so `diagrid[openai-agents]` and
   `--all-packages` (the example members drag in conflicting extras):
   `uv sync --extra holmesgpt --group test`.
 - Every pin and every entry in `override-dependencies` carries a comment saying
-  which resolution failure it exists for — the whole OTel stack held at
-  1.39.1/0.60b1, `numpy<2.5`, `crewai<1.16`, `mcp==1.26.0`. Read the comment
+  which resolution failure it exists for — `numpy<2.5`, `crewai<1.15.4`,
+  `mcp==1.26.0`. Read the comment
   before "tidying" one; these are not style choices.
 - **`dapr-agents` is a git dependency tracking `main`**, marked TEMPORARY in
   `[tool.uv.sources]`. It is unpinned, so `uv lock --upgrade` moves it to
