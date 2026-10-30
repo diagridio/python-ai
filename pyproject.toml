@@ -105,7 +105,7 @@ openai_agents = [
     "diagrid[agent-core]",
 ]
 claude_agents = [
-    "claude-agent-sdk>=0.1.45",
+    "claude-agent-sdk>=0.2.121",
     "anthropic>=0.40.0",
     "diagrid[agent-core]",
 ]
