@@ -199,20 +199,20 @@ prerelease = "if-necessary-or-explicit"
 # `>=1.35.0`. OpenTelemetry 1.x is backwards compatible, so override
 # crewai's tight pin so both resolve against the same line.
 #
-# TEMPORARY: while dapr-agents tracks the lifecycle-dispatcher fork branch
-# (see the dependency note above), its mistralai dep forces
-# opentelemetry-semantic-conventions to 0.60b1 — the 1.39.x core line. With
-# the wider ranges below, uv pinned the sdk down to 1.39.1 but left the api
-# and OTLP exporters at 1.42.1, an inconsistent stack whose gRPC exporter
-# imports a symbol the 1.39.1 sdk lacks. Pin the whole OTEL stack to the
-# 1.39.x / 0.60b1 line so every piece agrees; google-adk accepts sdk
-# 1.36-1.41.1. Restore the wider ranges when the dependency returns to a
-# released pin.
+# The OTEL stack is pinned to the 1.39.x / 0.60b1 line so every piece agrees.
+# Left to resolve freely, uv once mixed a 1.39.1 sdk with 1.42.1 api and OTLP
+# exporters, whose gRPC exporter imports a symbol that sdk lacks.
+# google-adk accepts sdk 1.36-1.41.1.
+# The pin was forced by mistralai 2.x, which required semconv 0.60b1.
+# dapr-agents 1.1.1 now pulls mistralai 3.x, which declares semconv>=0.61b0,
+# so this override holds it below its own floor.
+# Revisit moving the stack to the 1.40.x / 0.61b0 line.
 override-dependencies = [
     # holmesgpt<=0.34 pins ``litellm==1.83.7`` (vulnerable; fixed in 1.84.0) and
-    # holmesgpt>=0.35 pins ``litellm==1.89.0``, which dapr-agents' ``<1.87``
-    # cap rejects. Lock the holmesgpt fork onto the patched line dapr-agents
-    # already resolves to. Lock-only: published wheels keep holmesgpt's pin.
+    # holmesgpt>=0.35 pins ``litellm==1.89.0``. Lock the holmesgpt fork onto
+    # the patched line dapr-agents already resolves to.
+    # dapr-agents 1.1.1 raised its cap to ``<1.104``, so this range could widen.
+    # Lock-only: published wheels keep holmesgpt's pin.
     "litellm>=1.84.0,<1.87",
     "opentelemetry-api==1.39.1",
     "opentelemetry-sdk==1.39.1",
@@ -229,7 +229,7 @@ override-dependencies = [
     # holmesgpt pins cachetools ``^5.5.0`` while diagrid's dev group floors
     # at ``>=6.1.0``.
     "cachetools>=6.1.0,<8.0.0",
-    # holmesgpt pins ``mcp==1.25.0`` while dapr-agents==1.0.1 requires
+    # holmesgpt pins ``mcp==1.25.0`` while dapr-agents requires
     # ``mcp>=1.26.0``. mcp 1.26 adds APIs over 1.25 and is wire-compatible
     # for the surfaces both libraries use.
     "mcp==1.26.0",
