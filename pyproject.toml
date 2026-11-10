@@ -44,8 +44,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "dapr>=1.17.3",
-    "dapr-ext-workflow>=1.17.3",
+    "dapr[workflow]>=1.19.0",
     "diagrid-cli>=0.1.0",
 ]
 
@@ -64,8 +63,7 @@ agent-core = [
     # 1.1.1 or later: with 1.1.0, observability headers come back as None
     # when OTEL_EXPORTER_OTLP_HEADERS is unset, and agent startup crashes.
     "dapr-agents>=1.1.1",
-    "dapr-ext-langgraph>=1.17.3",
-    "dapr-ext-strands>=1.17.3",
+    "dapr[langgraph,strands]>=1.19.0",
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "pydantic>=2.12.5,<2.14",

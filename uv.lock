@@ -1260,6 +1260,17 @@ fastapi = [
     { name = "fastapi" },
     { name = "uvicorn" },
 ]
+langgraph = [
+    { name = "langchain" },
+    { name = "langgraph" },
+    { name = "msgpack" },
+    { name = "python-ulid" },
+]
+strands = [
+    { name = "msgpack" },
+    { name = "python-ulid" },
+    { name = "strands-agents" },
+]
 
 [[package]]
 name = "dapr-agents"
@@ -1311,46 +1322,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9f/f3/56ac9327e29add21d54f9853e158aaa0db4ae92440063945afa69b3b4d6a/dapr_agents-1.1.1.tar.gz", hash = "sha256:85312e687eb4b2209414b0fda5e9a1d55f92d30a41496d525d20bf49e9bb3545", size = 3151936, upload-time = "2026-11-10T20:12:23.422Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/dd/51048041c1e79adb00f8b5be2c832c7097d5afc0b2487bb49356bd33a212/dapr_agents-1.1.1-py3-none-any.whl", hash = "sha256:acb481b05631158fc54943c30b8e99eec224073d857622ca639f7b8a1d18a028", size = 633590, upload-time = "2026-11-10T20:12:21.52Z" },
-]
-
-[[package]]
-name = "dapr-ext-langgraph"
-version = "1.18.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dapr" },
-    { name = "langchain" },
-    { name = "langgraph" },
-    { name = "msgpack-python" },
-    { name = "python-ulid" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/ee/8831a1509665c0c2099f3de68f023a6a99a37900b6fce2b3f8c5be1a71c2/dapr_ext_langgraph-1.18.0-py3-none-any.whl", hash = "sha256:673097719aacc7a25cd2b9d5b62799fa47c15398f976b130a43d4867a930483e", size = 10168, upload-time = "2026-06-10T21:43:32.75Z" },
-]
-
-[[package]]
-name = "dapr-ext-strands"
-version = "1.18.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dapr" },
-    { name = "msgpack-python" },
-    { name = "python-ulid" },
-    { name = "strands-agents" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/2c/e2b9d8423839afcaa2ed1a7f89ac0394d10952d028d1b033df5bfb1d69b1/dapr_ext_strands-1.18.0-py3-none-any.whl", hash = "sha256:795b5e49f097294d5ebb0aae639567730f1da2a7cd16809560b67b47b5aa151b", size = 10170, upload-time = "2026-06-10T21:43:35.185Z" },
-]
-
-[[package]]
-name = "dapr-ext-workflow"
-version = "1.18.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dapr" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/d8/785393983d8ac4a4bde8c9a2aa3e001d778881de99d4c662988d29125f13/dapr_ext_workflow-1.18.3-py3-none-any.whl", hash = "sha256:99616f2c9eb9a705ba3a0afed872c8a609229389c54e24ecd68008a3a6b21d37", size = 157477, upload-time = "2026-07-15T14:35:12.666Z" },
 ]
 
 [[package]]
@@ -1415,15 +1386,13 @@ version = "0.5.3"
 source = { editable = "." }
 dependencies = [
     { name = "dapr" },
-    { name = "dapr-ext-workflow" },
     { name = "diagrid-cli" },
 ]
 
 [package.optional-dependencies]
 adk = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "google-adk" },
     { name = "langgraph" },
@@ -1431,9 +1400,8 @@ adk = [
     { name = "uvicorn" },
 ]
 agent-core = [
+    { name = "dapr", extra = ["langgraph", "strands"] },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1443,9 +1411,8 @@ all = [
     { name = "anthropic" },
     { name = "claude-agent-sdk" },
     { name = "crewai" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "deepagents" },
     { name = "fastapi" },
     { name = "google-adk" },
@@ -1467,9 +1434,8 @@ all = [
 claude-agents = [
     { name = "anthropic" },
     { name = "claude-agent-sdk" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1477,9 +1443,8 @@ claude-agents = [
 ]
 crewai = [
     { name = "crewai" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "litellm" },
@@ -1487,9 +1452,8 @@ crewai = [
     { name = "uvicorn" },
 ]
 deepagents = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
     { name = "dapr-agents", marker = "extra == 'extra-7-diagrid-langgraph'" },
-    { name = "dapr-ext-langgraph", marker = "extra == 'extra-7-diagrid-langgraph'" },
-    { name = "dapr-ext-strands", marker = "extra == 'extra-7-diagrid-langgraph'" },
     { name = "deepagents" },
     { name = "fastapi", marker = "extra == 'extra-7-diagrid-langgraph'" },
     { name = "langchain-core" },
@@ -1499,9 +1463,8 @@ deepagents = [
     { name = "uvicorn", marker = "extra == 'extra-7-diagrid-langgraph'" },
 ]
 holmesgpt = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-holmesgpt'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "holmesgpt" },
     { name = "httpx2" },
@@ -1517,9 +1480,8 @@ identity = [
     { name = "starlette" },
 ]
 langchain = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
@@ -1528,9 +1490,8 @@ langchain = [
     { name = "uvicorn" },
 ]
 langgraph = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langchain-core" },
     { name = "langgraph" },
@@ -1538,9 +1499,8 @@ langgraph = [
     { name = "uvicorn" },
 ]
 openai-agents = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "openai" },
@@ -1549,9 +1509,8 @@ openai-agents = [
     { name = "uvicorn" },
 ]
 pydantic-ai = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1559,9 +1518,8 @@ pydantic-ai = [
     { name = "uvicorn" },
 ]
 smolagents = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1569,9 +1527,8 @@ smolagents = [
     { name = "uvicorn" },
 ]
 strands = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "openai" },
@@ -1599,11 +1556,9 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'claude-agents'", specifier = ">=0.40.0" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-agents'", specifier = ">=0.1.45" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.6.1,<1.16" },
-    { name = "dapr", specifier = ">=1.17.3" },
+    { name = "dapr", extras = ["langgraph", "strands"], marker = "extra == 'agent-core'", specifier = ">=1.19.0" },
+    { name = "dapr", extras = ["workflow"], specifier = ">=1.19.0" },
     { name = "dapr-agents", marker = "extra == 'agent-core'", specifier = ">=1.1.1" },
-    { name = "dapr-ext-langgraph", marker = "extra == 'agent-core'", specifier = ">=1.17.3" },
-    { name = "dapr-ext-strands", marker = "extra == 'agent-core'", specifier = ">=1.17.3" },
-    { name = "dapr-ext-workflow", specifier = ">=1.17.3" },
     { name = "deepagents", marker = "extra == 'deepagents'", specifier = ">=0.5.6" },
     { name = "diagrid", extras = ["agent-core"], marker = "extra == 'adk'", editable = "." },
     { name = "diagrid", extras = ["agent-core"], marker = "extra == 'claude-agents'", editable = "." },
@@ -3704,10 +3659,46 @@ wheels = [
 ]
 
 [[package]]
-name = "msgpack-python"
-version = "0.5.6"
+name = "msgpack"
+version = "1.2.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8a/20/6eca772d1a5830336f84aca1d8198e5a3f4715cd1c7fc36d3cc7f7185091/msgpack-python-0.5.6.tar.gz", hash = "sha256:378cc8a6d3545b532dfd149da715abae4fda2a3adb6d74e525d0d5e51f46909b", size = 138996, upload-time = "2018-03-10T09:22:56.493Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/52/1ec7ead2c7528bf3d1db73e886fa4df10f9e6f0eb7854a448b7090cfcef7/msgpack-1.2.4.tar.gz", hash = "sha256:475c44e12f2a5de766a8448783f149c9b33f3f49b88953c6cd739a77d93c732c", size = 197764, upload-time = "2026-10-26T17:55:48.593Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/cb/a3bd4d234c0f2f7e646b9be259b801c5d6a35c97f93dded4f722e6b80acd/msgpack-1.2.4-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:1095b1ebcc8c9d3e70c51240b7160d8e9da66044e0a45c3ef8403d3a9ef0c5ad", size = 90935, upload-time = "2026-10-26T17:53:46.588Z" },
+    { url = "https://files.pythonhosted.org/packages/56/3c/fc87d06bdfc99b302f4379f0eb34bb8695b6ecd90b965652d0a3195d1acd/msgpack-1.2.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:a4b47ec7422bef149223786a87df80067ac65bfc7c0565e5cf1dfbdc40acee50", size = 90187, upload-time = "2026-10-26T17:53:48.151Z" },
+    { url = "https://files.pythonhosted.org/packages/05/a3/abebe12c1b589b7eeab60cb87dd5eb398fcf549bdafca8c30d8d73e48493/msgpack-1.2.4-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0c75cfda0d3ccb1f6abc20e0608ad6b226e11f317b5ac297721504d2509e2bd9", size = 466911, upload-time = "2026-10-26T17:53:49.536Z" },
+    { url = "https://files.pythonhosted.org/packages/03/41/ed5517a107628f6f7f3a1f46f19de3aca979bd1fc95861cb56ce0e4bcc02/msgpack-1.2.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a45ceb5f199d5e388f28b550ba881096a3740d4bda10e661d77f59d9a2e8187a", size = 480247, upload-time = "2026-10-26T17:53:51.211Z" },
+    { url = "https://files.pythonhosted.org/packages/31/71/14c39858380e11408fcf75aeab1cda0afb253cd8f62a01fbe4ae1838b66f/msgpack-1.2.4-cp311-cp311-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:7ca62b31a873c70b73f367bb2c1efec1d143016642c5191405549578184ff6ff", size = 438298, upload-time = "2026-10-26T17:53:52.919Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/73/ba40b91632e011851e1a397d53e0bd031848751902424a5b37c33f7de412/msgpack-1.2.4-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:f641971d3eec89ffca57fa36d151ad1cf1b6a214b47faca16cb165c7d45ef8be", size = 461600, upload-time = "2026-10-26T17:53:54.8Z" },
+    { url = "https://files.pythonhosted.org/packages/51/f0/c13ce7e7a7d8dabc1a48eecf61eb789084dbcc64374a7f19770eaf96f2c3/msgpack-1.2.4-cp311-cp311-musllinux_1_2_riscv64.whl", hash = "sha256:b9eff629190a4b118549b654df32a56ed535351819f690d0c935d185500cc90b", size = 435020, upload-time = "2026-10-26T17:53:56.433Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/d2/2a4e254f8ee5d5dd5019bd9f99164d79704788dbe16d9d6de77fda4e6727/msgpack-1.2.4-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:4e22c6571ab6ac9036da87d8a6fddb4baf86981844b480c0c60a4a4be417ee48", size = 479138, upload-time = "2026-10-26T17:53:57.918Z" },
+    { url = "https://files.pythonhosted.org/packages/70/b6/28f7eb3f38e3b6ea1f87f36c44cc25ab0eeb451147b5ff61637ce3d0b839/msgpack-1.2.4-cp311-cp311-win32.whl", hash = "sha256:5d7d4d2a5fc6a604f20c546ee1e8327bed1e9329be2417cef9af1f799f3e55e0", size = 67926, upload-time = "2026-10-26T17:53:59.172Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/9e/67a97d5caa41bcbdbb4fae7bf5009b60222c72d0748364ac9e32de334a4e/msgpack-1.2.4-cp311-cp311-win_amd64.whl", hash = "sha256:9db832747bd05834530189e564a3fe31e2617547dc1f3a005f835eafc2b8e048", size = 76117, upload-time = "2026-10-26T17:54:00.403Z" },
+    { url = "https://files.pythonhosted.org/packages/32/43/890b028b2cdb6b75fd56bd9388466c9fea9f10a31ebb685c489c5cb32fa9/msgpack-1.2.4-cp311-cp311-win_arm64.whl", hash = "sha256:deb1730c4c0c1a8c975be2f43efea6ee4834d35031a39075f78917d0ba8b3c04", size = 72632, upload-time = "2026-10-26T17:54:01.798Z" },
+    { url = "https://files.pythonhosted.org/packages/27/fd/45f6cd13cefbb659a8e0128ea64d51b349571163fec3c9c20f99792dc42a/msgpack-1.2.4-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:90cba4996b18ec1201fcaabd01ec48ff4b9755416bcd52105ded2f89fe145c49", size = 91903, upload-time = "2026-10-26T17:54:03.097Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/89/169c2a0b1ffeafe68a4f13d8d96b6ed1cd8d40d8262b3a6690851da7eda1/msgpack-1.2.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:112933726919f4239646cca9572e2c2fa5626358c670da8440aac09403100a48", size = 90573, upload-time = "2026-10-26T17:54:04.383Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/8e/272a384f2a001cfced1baab0a8abdd912d6281432670f4609d1aab718d7b/msgpack-1.2.4-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9ca1e78106675f2aed07dc37b842ce19be70010ab22c5c5c04688f0840d48539", size = 461057, upload-time = "2026-10-26T17:54:05.821Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/d9/f59bd841fc2fd2b74dc50ce85860a6a25f58e588dd48946aeaf2862cf990/msgpack-1.2.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c4d5bbdbea8f5669b3a734d6c226772804fb120848f99cbe63a0ddee63b049c9", size = 475652, upload-time = "2026-10-26T17:54:07.414Z" },
+    { url = "https://files.pythonhosted.org/packages/00/03/afd000e1b1e28fd535dc8c7bc21ebb88923bc1964a2429fe660fb313ace3/msgpack-1.2.4-cp312-cp312-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:0d9ff7f3aaffd84010f1c501b05406a497584f5cab2f732eb9d89bf960e12f6f", size = 427082, upload-time = "2026-10-26T17:54:09.1Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/7a/e2890b272883c496faad777324ddb70e9cc4a6c63731962a4a39a6a40f44/msgpack-1.2.4-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:aa10dc04c03408f31948ac1896a942141fd8d7a954b3612edac79f19663e4076", size = 451956, upload-time = "2026-10-26T17:54:10.476Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/46/0c1b240b8a580af3e72139c33b018025440a1a42c2579e82e39b1195ee36/msgpack-1.2.4-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:472a25463678f2795143a7cb42e88a1b59cc2375e9881917e69a9323bde42114", size = 423833, upload-time = "2026-10-26T17:54:12.195Z" },
+    { url = "https://files.pythonhosted.org/packages/80/8e/851415b1a9264e6abf64d8a9617d856769d59e247fb9470106f133aedbae/msgpack-1.2.4-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:cbb8a677da3e845713925e9a203b8a120b1e9da9989836890ba4a4a187902701", size = 470951, upload-time = "2026-10-26T17:54:13.764Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/74/d75bf61aab9cb88b84f7d3a8eca8dd92e19a742b77ded300a1177e88d031/msgpack-1.2.4-cp312-cp312-win32.whl", hash = "sha256:2b0b7dff5beddc10f16ecea6b28c6b98014d1135d7015bd83adff5037f35848d", size = 68786, upload-time = "2026-10-26T17:54:15.049Z" },
+    { url = "https://files.pythonhosted.org/packages/81/c5/dd0e78eb04f9a0773a810d25ef2cd8f16bb941487567d0c63f814881133c/msgpack-1.2.4-cp312-cp312-win_amd64.whl", hash = "sha256:6e38b123681df22373d545520f54bbeddc4706d9235a1161061f12bd6648497d", size = 77272, upload-time = "2026-10-26T17:54:16.491Z" },
+    { url = "https://files.pythonhosted.org/packages/65/e7/b38f63ae82777c0077daa56c4b09af39d29dcb8927ab2ff59268094069c5/msgpack-1.2.4-cp312-cp312-win_arm64.whl", hash = "sha256:6795c588b210b2f13d62c8fcc23bf779b509b839ec5c197a7ab4f5191459e126", size = 71884, upload-time = "2026-10-26T17:54:17.995Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/26/16eaad5fe6e199334fa5bd66070778665717c86e9a273525dc706ddb06a7/msgpack-1.2.4-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:fb811ac3d463a75013b234d2aae56b9f0bdb0105caf4dd2ee65305b6a8a6078d", size = 92057, upload-time = "2026-10-26T17:54:19.616Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/b8/9660be6d120820bc05106f291e824c73d35f4ab77d927788ae67ea80889c/msgpack-1.2.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:36258fd0909e1bf26e94604439108846432abe4ffa9a23c9dc2f6f1c60f94b60", size = 90542, upload-time = "2026-10-26T17:54:20.965Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/10/cd55a69fec29df26884b178dc4b1803442ec82abf929604aac619881917a/msgpack-1.2.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e9c5ba0f053a7e98f013f083c9d1b2dffb26cad8c897c533d8286e44ed24c669", size = 455798, upload-time = "2026-10-26T17:54:22.434Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/94/562e0733593a780c70b0b18994f30c205149f7f9f4efbe3e9b00b88612c5/msgpack-1.2.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7fabd415c41e62006c6641fcdf5b3e866f581c4e11c58328c0d0f69584b9577d", size = 469262, upload-time = "2026-10-26T17:54:24.043Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/92/76d1a5c597e04e1d360b05573d150bdb4502f5a014e6e9cf089c9537c156/msgpack-1.2.4-cp313-cp313-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:7433d340de45003db3ed909a642c9469b598d175530f7a707cbaba64287d27ce", size = 420789, upload-time = "2026-10-26T17:54:25.587Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/c6/b72b8d8022718380db459ced8ffbabc7570ad2d22c7f2fa659c872cb6734/msgpack-1.2.4-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:ccd6e4af5347eb9828147320449bcd30e3321f6397d4583ff16047485dd8be3d", size = 447068, upload-time = "2026-10-26T17:54:27.721Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/dc/f378ef1def4aa135e70325c09e22457f3203ae2a390a192e892267906f33/msgpack-1.2.4-cp313-cp313-musllinux_1_2_riscv64.whl", hash = "sha256:23d1459a1d0b4c9f6629df072d592eb74424b3ed3656b69af507bc9023cc027f", size = 418896, upload-time = "2026-10-26T17:54:29.325Z" },
+    { url = "https://files.pythonhosted.org/packages/62/93/a7e507378f43e91415cb6fda47e0ded0c9de1618a1f4ac4f2887912a92dd/msgpack-1.2.4-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:9e73761fe9fc55a4e9d2df8e8f59b0979231af4dbf80b8bf90cd64c74173d779", size = 465764, upload-time = "2026-10-26T17:54:30.719Z" },
+    { url = "https://files.pythonhosted.org/packages/60/76/7f39f49cbcdaa4aafe64b4941b2640772dbdc1cac3a9332f4c9ba6994da9/msgpack-1.2.4-cp313-cp313-pyemscripten_2025_0_wasm32.whl", hash = "sha256:d088d1f552e129859db830692268747aba0a1ee3e6e0fe6344dbb3aab1df9f6c", size = 53615, upload-time = "2026-10-26T17:54:32.213Z" },
+    { url = "https://files.pythonhosted.org/packages/67/9b/85b93350dbd7b52b358882f7f17a88a03664a7a59a359406e6315c162634/msgpack-1.2.4-cp313-cp313-win32.whl", hash = "sha256:892d4f17d7962bfd2c2928b0a47542bf2948f074a7c04721b73d4138b70481e4", size = 68724, upload-time = "2026-10-26T17:54:33.484Z" },
+    { url = "https://files.pythonhosted.org/packages/02/4a/a7e2778ce09a943c17b6f91c7acb2f9488357657c01f2cccb278297621c4/msgpack-1.2.4-cp313-cp313-win_amd64.whl", hash = "sha256:318d4e634d2b320be10decd9968ad1ae0be1d80cba23b5528c37b429eeb0e3e0", size = 77039, upload-time = "2026-10-26T17:54:35.016Z" },
+    { url = "https://files.pythonhosted.org/packages/64/16/9ff7495a9853e9d7de74965fdadce15017e7213ce564bb5dafc5403c9108/msgpack-1.2.4-cp313-cp313-win_arm64.whl", hash = "sha256:bec3e34749b90cfcf116149aad11295c720ff4a74a7d0a35abdb968a396c1524", size = 71873, upload-time = "2026-10-26T17:54:36.19Z" },
+]
 
 [[package]]
 name = "multidict"
