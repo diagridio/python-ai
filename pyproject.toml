@@ -61,15 +61,9 @@ diagridpy = "diagrid.cli.main:cli"
 
 [project.optional-dependencies]
 agent-core = [
-    # Pinned to 1.0.1: 1.0.2 added `mistralai>=2.2.0` as a direct dep,
-    # which pins `opentelemetry-semantic-conventions>=0.60b1,<0.61` — that
-    # range overlaps with no opentelemetry-sdk version google-adk accepts
-    # (sdk 1.36–1.41.1 each pin semconv to a different exact version,
-    # none of which is 0.60b1). 1.0.1 has no mistralai and resolves cleanly.
-    # TEMPORARY: tracking dapr-agents main for the lifecycle-dispatcher and
-    # hooks modules until it cuts a release that includes them. Revert to a
-    # pinned release (see note above re: 1.0.1) before merge.
-    "dapr-agents",
+    # 1.1.1 or later: with 1.1.0, observability headers come back as None
+    # when OTEL_EXPORTER_OTLP_HEADERS is unset, and agent startup crashes.
+    "dapr-agents>=1.1.1",
     "dapr-ext-langgraph>=1.17.3",
     "dapr-ext-strands>=1.17.3",
     "fastapi>=0.129.0",
@@ -194,6 +188,9 @@ diagrid = ["py.typed"]
 
 [tool.uv]
 exclude-newer = "1 days"
+# dapr-agents is released by the same team, so its fixes are taken the day
+# they ship rather than after the one-day cooldown.
+exclude-newer-package = { dapr-agents = "0 days" }
 # Allow pre-release packages when required by a dependency. HolmesGPT pulls
 # in ``azure-mgmt-sql>=4.0.0b21`` (the 4.x line is still in beta on PyPI);
 # without this setting uv refuses to resolve the workspace lock.
@@ -322,5 +319,3 @@ members = [
 diagrid = { workspace = true }
 diagrid-core = { workspace = true }
 diagrid-cli = { workspace = true }
-# TEMPORARY: see note next to the dapr-agents dependency above.
-dapr-agents = { git = "https://github.com/dapr/dapr-agents", branch = "main" }
