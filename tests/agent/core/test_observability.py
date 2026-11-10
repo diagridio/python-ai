@@ -174,3 +174,38 @@ class TestMerge(TestCase):
         override = AgentObservabilityConfig(headers={"Auth": "override-token"})
         merged = _merge(base, override)
         self.assertEqual(merged.headers["Auth"], "override-token")
+
+    def test_none_headers_on_override_treated_as_empty(self):
+        base = AgentObservabilityConfig(headers={"X-Base": "b"})
+        override = AgentObservabilityConfig(headers=None)  # type: ignore[arg-type]
+        merged = _merge(base, override)
+        self.assertEqual(merged.headers, {"X-Base": "b"})
+
+    def test_none_headers_on_base_treated_as_empty(self):
+        base = AgentObservabilityConfig(headers=None)  # type: ignore[arg-type]
+        override = AgentObservabilityConfig(headers={"X-Override": "o"})
+        merged = _merge(base, override)
+        self.assertEqual(merged.headers, {"X-Override": "o"})
+
+    def test_none_headers_on_both_sides_gives_empty_dict(self):
+        base = AgentObservabilityConfig(headers=None)  # type: ignore[arg-type]
+        override = AgentObservabilityConfig(headers=None)  # type: ignore[arg-type]
+        merged = _merge(base, override)
+        self.assertEqual(merged.headers, {})
+
+
+class TestResolveWithNoneHeadersFromEnv(TestCase):
+    """dapr-agents releases where ``from_env()`` leaves ``headers`` as None."""
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_resolve_does_not_raise(self):
+        with mock.patch.object(
+            AgentObservabilityConfig,
+            "from_env",
+            return_value=AgentObservabilityConfig(headers=None),  # type: ignore[arg-type]
+        ):
+            config = resolve_observability_config(
+                runtime_conf={"OTEL_SERVICE_NAME": "runtime-svc"}
+            )
+        self.assertEqual(config.headers, {})
+        self.assertEqual(config.service_name, "runtime-svc")
