@@ -5,31 +5,69 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "diagrid"
 version = "0.5.3"
-description = "Diagrid namespace package"
+description = "Durable execution for AI agents: LangGraph, CrewAI, Pydantic AI, OpenAI Agents SDK, Google ADK, Strands and more, on Dapr Workflow"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
+license = {file = "LICENSE.md"}
+keywords = [
+    "durable-execution",
+    "durable-workflows",
+    "ai-agents",
+    "agents",
+    "dapr",
+    "dapr-workflow",
+    "workflow",
+    "diagrid",
+    "catalyst",
+    "langgraph",
+    "crewai",
+    "pydantic-ai",
+    "openai-agents",
+    "google-adk",
+    "strands-agents",
+    "langchain",
+    "smolagents",
+    "deepagents",
+    "claude-agent-sdk",
+    "fault-tolerance",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
-    "dapr>=1.17.3",
-    "dapr-ext-workflow>=1.17.3",
+    "dapr[workflow]>=1.19.0",
     "diagrid-cli>=0.1.0",
 ]
+
+[project.urls]
+Homepage = "https://www.diagrid.io/catalyst"
+Documentation = "https://docs.diagrid.io"
+Source = "https://github.com/diagridio/python-ai"
+Issues = "https://github.com/diagridio/python-ai/issues"
+Examples = "https://github.com/diagridio/python-ai/tree/main/examples"
 
 [project.scripts]
 diagridpy = "diagrid.cli.main:cli"
 
 [project.optional-dependencies]
 agent-core = [
-    # Releases 1.0.2–1.0.5 cap `opentelemetry-semantic-conventions<0.61`
-    # (directly, and via `mistralai>=2.2.0`), which holds the whole OTel
-    # stack on the 1.39.x line. dapr-agents main lifted that cap
-    # (dapr/dapr-agents#780, `mistralai>=2.9.2`); 1.0.1 predates the cap.
-    # TEMPORARY: tracking dapr-agents main for the lifecycle-dispatcher and
-    # hooks modules until it cuts a release that includes them. Revert to a
-    # pinned release that includes dapr/dapr-agents#780 (not 1.0.2–1.0.5)
-    # before merge.
-    "dapr-agents",
-    "dapr-ext-langgraph>=1.17.3",
-    "dapr-ext-strands>=1.17.3",
+    # 1.1.1 or later: with 1.1.0, observability headers come back as None
+    # when OTEL_EXPORTER_OTLP_HEADERS is unset, and agent startup crashes.
+    # Releases 1.0.2–1.0.5 also capped `opentelemetry-semantic-conventions<0.61`
+    # (directly, and via `mistralai>=2.2.0`), which held the whole OTel stack
+    # on the 1.39.x line; 1.1.1 includes dapr/dapr-agents#780
+    # (`mistralai>=2.9.2`), which lifts that cap.
+    "dapr-agents>=1.1.1",
+    "dapr[langgraph,strands]>=1.19.0",
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "pydantic>=2.12.5,<2.14",
@@ -154,15 +192,19 @@ diagrid = ["py.typed"]
 
 [tool.uv]
 exclude-newer = "1 days"
+# dapr-agents is released by the same team, so its fixes are taken the day
+# they ship rather than after the one-day cooldown.
+exclude-newer-package = { dapr-agents = "0 days" }
 # Allow pre-release packages when required by a dependency. HolmesGPT pulls
 # in ``azure-mgmt-sql>=4.0.0b21`` (the 4.x line is still in beta on PyPI);
 # without this setting uv refuses to resolve the workspace lock.
 prerelease = "if-necessary-or-explicit"
 override-dependencies = [
     # holmesgpt<=0.34 pins ``litellm==1.83.7`` (vulnerable; fixed in 1.84.0) and
-    # holmesgpt>=0.35 pins ``litellm==1.89.0``, which dapr-agents' ``<1.87``
-    # cap rejects. Lock the holmesgpt fork onto the patched line dapr-agents
-    # already resolves to. Lock-only: published wheels keep holmesgpt's pin.
+    # holmesgpt>=0.35 pins ``litellm==1.89.0``. Lock the holmesgpt fork onto
+    # the patched line dapr-agents already resolves to.
+    # dapr-agents 1.1.1 raised its cap to ``<1.104``, so this range could widen.
+    # Lock-only: published wheels keep holmesgpt's pin.
     "litellm>=1.84.0,<1.87",
     # holmesgpt pins fastapi ``^0.121.1`` and uvicorn ``^0.40`` which collide
     # with diagrid[agent-core]'s ``>=0.129.0`` and ``>=0.41.0`` floors. Both
@@ -173,7 +215,7 @@ override-dependencies = [
     # holmesgpt pins cachetools ``^5.5.0`` while diagrid's dev group floors
     # at ``>=6.1.0``.
     "cachetools>=6.1.0,<8.0.0",
-    # holmesgpt pins ``mcp==1.25.0`` while dapr-agents==1.0.1 requires
+    # holmesgpt pins ``mcp==1.25.0`` while dapr-agents requires
     # ``mcp>=1.26.0``. mcp 1.26 adds APIs over 1.25 and is wire-compatible
     # for the surfaces both libraries use.
     "mcp==1.26.0",
@@ -263,5 +305,3 @@ members = [
 diagrid = { workspace = true }
 diagrid-core = { workspace = true }
 diagrid-cli = { workspace = true }
-# TEMPORARY: see note next to the dapr-agents dependency above.
-dapr-agents = { git = "https://github.com/dapr/dapr-agents", branch = "main" }

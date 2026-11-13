@@ -1,0 +1,3 @@
+# Every path in this repository is owned by the Diagrid AI engineering team.
+# A later, more specific pattern overrides this one, so add any new rule below.
+* @diagridio/diagrid-engineering-ai

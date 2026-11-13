@@ -5,14 +5,43 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "diagrid-cli"
 version = "0.5.3"
-description = "Diagrid CLI - Command-line interface for Diagrid Catalyst agents"
+description = "diagridpy CLI: scaffold, deploy and chaos-test durable AI agents on Dapr and Diagrid Catalyst"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {file = "LICENSE.md"}
+keywords = [
+    "durable-execution",
+    "ai-agents",
+    "dapr",
+    "diagrid",
+    "catalyst",
+    "cli",
+    "chaos-engineering",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "diagrid-core>=0.1.0",
     "click>=8.1.0",
     "rich>=13.0.0",
 ]
+
+[project.urls]
+Homepage = "https://www.diagrid.io/catalyst"
+Documentation = "https://docs.diagrid.io"
+Source = "https://github.com/diagridio/python-ai"
+Issues = "https://github.com/diagridio/python-ai/issues"
+Examples = "https://github.com/diagridio/python-ai/tree/main/examples"
 
 [tool.setuptools]
 packages = [

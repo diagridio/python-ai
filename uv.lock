@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph'",
@@ -8,9 +8,9 @@ resolution-markers = [
     "python_full_version == '3.12.*' and extra != 'extra-7-diagrid-adk' and extra != 'extra-7-diagrid-all' and extra != 'extra-7-diagrid-claude-agents' and extra != 'extra-7-diagrid-crewai' and extra != 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langchain' and extra != 'extra-7-diagrid-langgraph' and extra != 'extra-7-diagrid-openai-agents' and extra != 'extra-7-diagrid-pydantic-ai' and extra != 'extra-7-diagrid-smolagents' and extra != 'extra-7-diagrid-strands'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (python_full_version < '3.12' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph')",
+    "(python_full_version == '3.12.*' and sys_platform != 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (python_full_version < '3.12' and extra != 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph')",
     "python_full_version < '3.12' and extra != 'extra-7-diagrid-adk' and extra != 'extra-7-diagrid-all' and extra != 'extra-7-diagrid-claude-agents' and extra != 'extra-7-diagrid-crewai' and extra != 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langchain' and extra != 'extra-7-diagrid-langgraph' and extra != 'extra-7-diagrid-openai-agents' and extra != 'extra-7-diagrid-pydantic-ai' and extra != 'extra-7-diagrid-smolagents' and extra != 'extra-7-diagrid-strands'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph') or (python_full_version < '3.12' and sys_platform == 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph')",
+    "(python_full_version == '3.12.*' and sys_platform != 'emscripten' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph') or (python_full_version < '3.12' and extra != 'extra-7-diagrid-holmesgpt' and extra != 'extra-7-diagrid-langgraph')",
 ]
 conflicts = [[
     { package = "diagrid", extra = "holmesgpt" },
@@ -50,6 +50,9 @@ conflicts = [[
 [options]
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P1D"
+
+[options.exclude-newer-package]
+dapr-agents = { timestamp = "0001-01-01T00:00:00Z", span = "PT0S" }
 
 [manifest]
 members = [
@@ -117,7 +120,7 @@ dependencies = [
     { name = "frozenlist" },
     { name = "multidict" },
     { name = "propcache" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
     { name = "yarl" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/82/78/8ea7308cac6934de8c74a14f3d5f65d1c89287426688be79538d0e5c013d/aiohttp-3.14.1.tar.gz", hash = "sha256:307f2cff90a764d329e77040603fa032db89c5c24fdad50c4c15334cba744035", size = 7955794, upload-time = "2026-06-07T21:09:35.529Z" }
@@ -189,7 +192,7 @@ version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "frozenlist" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/61/62/06741b579156360248d1ec624842ad0edf697050bbaf7c3e46394e106ad1/aiosignal-1.4.0.tar.gz", hash = "sha256:f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7", size = 25007, upload-time = "2025-07-03T22:54:43.528Z" }
 wheels = [
@@ -251,7 +254,7 @@ version = "4.14.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "idna" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/61/cc/a381afa6efea9f496eff839d4a6a1aed3bfafc7b3ab4b0d1b243a12573dd/anyio-4.14.2.tar.gz", hash = "sha256:cfa139f3ed1a23ee8f88a145ddb5ac7605b8bbfd8592baacd7ce3d8bb4313c7f", size = 260176, upload-time = "2026-07-12T20:29:07.082Z" }
 wheels = [
@@ -635,7 +638,7 @@ name = "build"
 version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "os_name == 'nt' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "colorama", marker = "os_name == 'nt'" },
     { name = "packaging" },
     { name = "pyproject-hooks" },
 ]
@@ -690,7 +693,7 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.12' or (python_full_version == '3.12.*' and sys_platform != 'emscripten')",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f3/ce/ee2ecad540810a79593028e88299baeae54d346cc7a0d94b6199988b89b1/certifi-2026.5.20.tar.gz", hash = "sha256:69dea482ab64caa7b9f6aba1c6bf48bb6a5448d1c0f1b17ab42ad8c763a5344d", size = 135422, upload-time = "2026-05-20T11:46:50.073Z" }
 wheels = [
@@ -702,7 +705,7 @@ name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
 wheels = [
@@ -910,7 +913,7 @@ name = "click"
 version = "8.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9b/98/518d8e5081007684232226f475082b30087d0f585e8457db087298259f49/click-8.4.1.tar.gz", hash = "sha256:918b5633eddf6b41c32d4f454bf0de810065c74e3f7dbf8ee5452f8be88d3e96", size = 353007, upload-time = "2026-05-22T04:08:37.769Z" }
 wheels = [
@@ -1109,7 +1112,7 @@ wheels = [
 
 [package.optional-dependencies]
 toml = [
-    { name = "tomli", marker = "python_full_version <= '3.11' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "tomli", marker = "python_full_version <= '3.11'" },
 ]
 
 [[package]]
@@ -1209,7 +1212,7 @@ name = "cryptography"
 version = "50.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/de/41/6cbdcf9142d00fe82836fbb51e503e58088575cf7a0fe1dbff6695bf0840/cryptography-50.0.0.tar.gz", hash = "sha256:eeac2acb5a20ed25e0ad6d1df9891a520b78b404266b6d11778f25d5d691a6c9", size = 880201, upload-time = "2026-07-31T14:25:10.11Z" }
 wheels = [
@@ -1249,7 +1252,7 @@ wheels = [
 
 [[package]]
 name = "dapr"
-version = "1.18.3"
+version = "1.19.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1260,13 +1263,30 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d2/cf/0e558760eca8db826a95b4ff101cd5b7c24dbd552afc5ac899f1c82f9b3e/dapr-1.18.3-py3-none-any.whl", hash = "sha256:32bd139df4f2ac1824819d41abf3ba66bacca2cd01063b55b5464e3a651a985b", size = 271624, upload-time = "2026-07-15T14:35:09.283Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/c0/b525aa3a4dc8c5031bf80d913b076aab4b5ed808bbd10c1683f20b00c0f5/dapr-1.19.0-py3-none-any.whl", hash = "sha256:255664d362aa6e3fe7ce238d33a61508a16fcb24b4e53cacdf21436d41718241", size = 624708, upload-time = "2026-10-22T16:32:22.49Z" },
+]
+
+[package.optional-dependencies]
+fastapi = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
+]
+langgraph = [
+    { name = "langchain" },
+    { name = "langgraph" },
+    { name = "msgpack" },
+    { name = "python-ulid" },
+]
+strands = [
+    { name = "msgpack" },
+    { name = "python-ulid" },
+    { name = "strands-agents" },
 ]
 
 [[package]]
 name = "dapr-agents"
-version = "1.0.7.dev167+gc9cae9143"
-source = { git = "https://github.com/dapr/dapr-agents?branch=main#c9cae9143a13f2642d18cb83d2b8adc3a2841aa2" }
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anthropic" },
@@ -1274,11 +1294,10 @@ dependencies = [
     { name = "cachetools" },
     { name = "cloudevents" },
     { name = "colorama" },
-    { name = "dapr" },
-    { name = "dapr-ext-fastapi" },
-    { name = "dapr-ext-workflow" },
+    { name = "dapr", extra = ["fastapi"] },
     { name = "docker" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "jinja2" },
     { name = "litellm" },
@@ -1295,6 +1314,7 @@ dependencies = [
     { name = "opentelemetry-instrumentation-grpc" },
     { name = "opentelemetry-instrumentation-httpx" },
     { name = "opentelemetry-proto" },
+    { name = "opentelemetry-sdk" },
     { name = "opentelemetry-semantic-conventions" },
     { name = "posthog" },
     { name = "protobuf" },
@@ -1303,65 +1323,16 @@ dependencies = [
     { name = "regex" },
     { name = "requests" },
     { name = "rich", version = "13.9.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "rich", version = "14.3.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "rich", version = "14.3.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "tiktoken" },
     { name = "toolbox-core" },
     { name = "uvicorn" },
     { name = "websockets" },
     { name = "wrapt" },
 ]
-
-[[package]]
-name = "dapr-ext-fastapi"
-version = "1.18.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dapr" },
-    { name = "fastapi" },
-    { name = "uvicorn" },
-]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/f3/56ac9327e29add21d54f9853e158aaa0db4ae92440063945afa69b3b4d6a/dapr_agents-1.1.1.tar.gz", hash = "sha256:85312e687eb4b2209414b0fda5e9a1d55f92d30a41496d525d20bf49e9bb3545", size = 3151936, upload-time = "2026-11-10T20:12:23.422Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/91/26f965593366ad4475e5541e35635db40e9e3cb04288e5f3550e9e5adee8/dapr_ext_fastapi-1.18.3-py3-none-any.whl", hash = "sha256:e67fb18cf6ebef646f5f30c23377700150b21be56fd8da51688a9d28b700548e", size = 9728, upload-time = "2026-07-15T14:35:21.365Z" },
-]
-
-[[package]]
-name = "dapr-ext-langgraph"
-version = "1.18.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dapr" },
-    { name = "langchain" },
-    { name = "langgraph" },
-    { name = "msgpack-python" },
-    { name = "python-ulid" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/ee/8831a1509665c0c2099f3de68f023a6a99a37900b6fce2b3f8c5be1a71c2/dapr_ext_langgraph-1.18.0-py3-none-any.whl", hash = "sha256:673097719aacc7a25cd2b9d5b62799fa47c15398f976b130a43d4867a930483e", size = 10168, upload-time = "2026-06-10T21:43:32.75Z" },
-]
-
-[[package]]
-name = "dapr-ext-strands"
-version = "1.18.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dapr" },
-    { name = "msgpack-python" },
-    { name = "python-ulid" },
-    { name = "strands-agents" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/2c/e2b9d8423839afcaa2ed1a7f89ac0394d10952d028d1b033df5bfb1d69b1/dapr_ext_strands-1.18.0-py3-none-any.whl", hash = "sha256:795b5e49f097294d5ebb0aae639567730f1da2a7cd16809560b67b47b5aa151b", size = 10170, upload-time = "2026-06-10T21:43:35.185Z" },
-]
-
-[[package]]
-name = "dapr-ext-workflow"
-version = "1.18.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dapr" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/d8/785393983d8ac4a4bde8c9a2aa3e001d778881de99d4c662988d29125f13/dapr_ext_workflow-1.18.3-py3-none-any.whl", hash = "sha256:99616f2c9eb9a705ba3a0afed872c8a609229389c54e24ecd68008a3a6b21d37", size = 157477, upload-time = "2026-07-15T14:35:12.666Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/dd/51048041c1e79adb00f8b5be2c832c7097d5afc0b2487bb49356bd33a212/dapr_agents-1.1.1-py3-none-any.whl", hash = "sha256:acb481b05631158fc54943c30b8e99eec224073d857622ca639f7b8a1d18a028", size = 633590, upload-time = "2026-11-10T20:12:21.52Z" },
 ]
 
 [[package]]
@@ -1426,15 +1397,13 @@ version = "0.5.3"
 source = { editable = "." }
 dependencies = [
     { name = "dapr" },
-    { name = "dapr-ext-workflow" },
     { name = "diagrid-cli" },
 ]
 
 [package.optional-dependencies]
 adk = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "google-adk" },
     { name = "langgraph" },
@@ -1442,9 +1411,8 @@ adk = [
     { name = "uvicorn" },
 ]
 agent-core = [
+    { name = "dapr", extra = ["langgraph", "strands"] },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1454,9 +1422,8 @@ all = [
     { name = "anthropic" },
     { name = "claude-agent-sdk" },
     { name = "crewai" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "deepagents" },
     { name = "fastapi" },
     { name = "google-adk" },
@@ -1468,8 +1435,8 @@ all = [
     { name = "openai" },
     { name = "openai-agents" },
     { name = "pydantic" },
-    { name = "pydantic-ai-slim", extra = ["openai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "pydantic-ai-slim", extra = ["openai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
+    { name = "pyjwt", extra = ["crypto"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "smolagents" },
     { name = "starlette" },
     { name = "strands-agents" },
@@ -1478,9 +1445,8 @@ all = [
 claude-agents = [
     { name = "anthropic" },
     { name = "claude-agent-sdk" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1488,9 +1454,8 @@ claude-agents = [
 ]
 crewai = [
     { name = "crewai" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "litellm" },
@@ -1498,9 +1463,8 @@ crewai = [
     { name = "uvicorn" },
 ]
 deepagents = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
     { name = "dapr-agents", marker = "extra == 'extra-7-diagrid-langgraph'" },
-    { name = "dapr-ext-langgraph", marker = "extra == 'extra-7-diagrid-langgraph'" },
-    { name = "dapr-ext-strands", marker = "extra == 'extra-7-diagrid-langgraph'" },
     { name = "deepagents" },
     { name = "fastapi", marker = "extra == 'extra-7-diagrid-langgraph'" },
     { name = "langchain-core" },
@@ -1510,9 +1474,8 @@ deepagents = [
     { name = "uvicorn", marker = "extra == 'extra-7-diagrid-langgraph'" },
 ]
 holmesgpt = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-holmesgpt'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "holmesgpt" },
     { name = "httpx2" },
@@ -1528,9 +1491,8 @@ identity = [
     { name = "starlette" },
 ]
 langchain = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
@@ -1539,9 +1501,8 @@ langchain = [
     { name = "uvicorn" },
 ]
 langgraph = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langchain-core" },
     { name = "langgraph" },
@@ -1549,9 +1510,8 @@ langgraph = [
     { name = "uvicorn" },
 ]
 openai-agents = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "openai" },
@@ -1560,19 +1520,17 @@ openai-agents = [
     { name = "uvicorn" },
 ]
 pydantic-ai = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
-    { name = "pydantic-ai-slim", extra = ["openai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "pydantic-ai-slim", extra = ["openai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "uvicorn" },
 ]
 smolagents = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "pydantic" },
@@ -1580,9 +1538,8 @@ smolagents = [
     { name = "uvicorn" },
 ]
 strands = [
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "dapr-agents" },
-    { name = "dapr-ext-langgraph" },
-    { name = "dapr-ext-strands" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "openai" },
@@ -1610,11 +1567,9 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'claude-agents'", specifier = ">=0.40.0" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-agents'", specifier = ">=0.1.45" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.6.1,<1.15.4" },
-    { name = "dapr", specifier = ">=1.17.3" },
-    { name = "dapr-agents", marker = "extra == 'agent-core'", git = "https://github.com/dapr/dapr-agents?branch=main" },
-    { name = "dapr-ext-langgraph", marker = "extra == 'agent-core'", specifier = ">=1.17.3" },
-    { name = "dapr-ext-strands", marker = "extra == 'agent-core'", specifier = ">=1.17.3" },
-    { name = "dapr-ext-workflow", specifier = ">=1.17.3" },
+    { name = "dapr", extras = ["langgraph", "strands"], marker = "extra == 'agent-core'", specifier = ">=1.19.0" },
+    { name = "dapr", extras = ["workflow"], specifier = ">=1.19.0" },
+    { name = "dapr-agents", marker = "extra == 'agent-core'", specifier = ">=1.1.1" },
     { name = "deepagents", marker = "extra == 'deepagents'", specifier = ">=0.5.6" },
     { name = "diagrid", extras = ["agent-core"], marker = "extra == 'adk'", editable = "." },
     { name = "diagrid", extras = ["agent-core"], marker = "extra == 'claude-agents'", editable = "." },
@@ -1675,7 +1630,7 @@ dependencies = [
     { name = "click" },
     { name = "diagrid-core" },
     { name = "rich", version = "13.9.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "rich", version = "14.3.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "rich", version = "14.3.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1708,7 +1663,7 @@ version = "0.2.4"
 source = { virtual = "examples/adk" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["adk"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["adk"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "google-adk" },
 ]
 
@@ -1724,7 +1679,7 @@ version = "0.1.0"
 source = { virtual = "examples/claude_agents" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["claude-agents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["claude-agents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1736,7 +1691,7 @@ version = "0.2.4"
 source = { virtual = "examples/crewai" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["crewai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["crewai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1748,7 +1703,7 @@ version = "0.2.4"
 source = { virtual = "examples/deepagents" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["deepagents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["deepagents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1760,7 +1715,7 @@ version = "0.1.0"
 source = { virtual = "examples/langchain" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["langchain"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["langchain"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1788,7 +1743,7 @@ version = "0.2.4"
 source = { virtual = "examples/openai_agents" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["openai-agents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["openai-agents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1800,7 +1755,7 @@ version = "0.2.4"
 source = { virtual = "examples/pydantic_ai" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["pydantic-ai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["pydantic-ai"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1812,7 +1767,7 @@ version = "0.1.0"
 source = { virtual = "examples/smolagents" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["smolagents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["smolagents"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1824,7 +1779,7 @@ version = "0.2.4"
 source = { virtual = "examples/strands" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["strands"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 
 [package.metadata]
@@ -1862,7 +1817,7 @@ name = "docker"
 version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pywin32", marker = "sys_platform == 'win32' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "requests" },
     { name = "urllib3" },
 ]
@@ -2646,7 +2601,7 @@ version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi", version = "2024.12.14", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "certifi", version = "2026.5.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "certifi", version = "2026.5.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "h11" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/06/94/82699a10bca87a5556c9c59b5963f2d039dbd239f25bc2a63907a05a14cb/httpcore-1.0.9.tar.gz", hash = "sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8", size = 85484, upload-time = "2025-04-24T22:06:22.219Z" }
@@ -2659,8 +2614,8 @@ name = "httpcore2"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11", marker = "python_full_version != '3.12.*' or sys_platform != 'emscripten' or extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "truststore", marker = "python_full_version != '3.12.*' or sys_platform != 'emscripten' or extra == 'extra-7-diagrid-holmesgpt'" },
+    { name = "h11" },
+    { name = "truststore" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/be/ad/f4f0e57345f1870f3e8cb624e058d7eca6e5a27d33bcc3311d9b618734cd/httpcore2-2.12.0.tar.gz", hash = "sha256:9293522bba0aa7c4c8e9e3f040c16575bd8868e155a77fa30c7a9085a5eae648", size = 67548, upload-time = "2026-08-18T13:22:08.211Z" }
 wheels = [
@@ -2674,7 +2629,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "certifi", version = "2024.12.14", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "certifi", version = "2026.5.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "certifi", version = "2026.5.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "httpcore" },
     { name = "idna" },
 ]
@@ -2705,12 +2660,12 @@ name = "httpx2"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio", marker = "sys_platform != 'emscripten' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "httpcore2", marker = "sys_platform != 'emscripten' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "httpx2-jsfetch", marker = "(python_full_version >= '3.12' and sys_platform == 'emscripten') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (python_full_version < '3.12' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (sys_platform != 'emscripten' and extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "anyio", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
+    { name = "httpx2-jsfetch", marker = "python_full_version >= '3.12' and sys_platform == 'emscripten'" },
     { name = "idna" },
-    { name = "truststore", marker = "sys_platform != 'emscripten' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7f/f8/579a8b51e42e38ee32647df9f08aa25643ae788e275cc625b199829c4671/httpx2-2.12.0.tar.gz", hash = "sha256:7631fe9887a8a2275f4a2540e053aa670fcc50742864a9ae7c66e609fdcf12cf", size = 100040, upload-time = "2026-08-18T13:22:09.086Z" }
 wheels = [
@@ -2734,13 +2689,13 @@ dependencies = [
     { name = "click" },
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
     { name = "httpx" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "tqdm" },
     { name = "typer", version = "0.22.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "typer", version = "0.25.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "typer", version = "0.25.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/88/27/629cfe58c582f92ded066c4a07d1a057ff617118ab7973200f770bd853cb/huggingface_hub-1.19.0.tar.gz", hash = "sha256:fd771622182d40977272a923953ee3b1b13538f9f8a7f5d78398f10af0f1c0bd", size = 824721, upload-time = "2026-06-11T12:33:18.665Z" }
@@ -2790,7 +2745,7 @@ version = "8.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "zipp", version = "3.23.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "zipp", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "zipp", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cd/12/33e59336dca5be0c398a7482335911a33aa0e20776128f038019f1a95f1b/importlib_metadata-8.5.0.tar.gz", hash = "sha256:71522656f0abace1d072b9e5481a48f07c138e00f079c38c8f883823f9c26bd7", size = 55304, upload-time = "2024-09-11T14:56:08.937Z" }
 wheels = [
@@ -3118,7 +3073,7 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.12' or (python_full_version == '3.12.*' and sys_platform != 'emscripten')",
 ]
 dependencies = [
     { name = "aiohttp" },
@@ -3341,7 +3296,7 @@ version = "0.8.15"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
-    { name = "orjson", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "orjson", marker = "platform_python_implementation != 'PyPy'" },
     { name = "packaging" },
     { name = "pydantic" },
     { name = "requests" },
@@ -3625,7 +3580,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
-    { name = "pywin32", marker = "sys_platform == 'win32' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "sse-starlette" },
     { name = "starlette" },
     { name = "typing-extensions" },
@@ -3765,10 +3720,46 @@ wheels = [
 ]
 
 [[package]]
-name = "msgpack-python"
-version = "0.5.6"
+name = "msgpack"
+version = "1.2.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8a/20/6eca772d1a5830336f84aca1d8198e5a3f4715cd1c7fc36d3cc7f7185091/msgpack-python-0.5.6.tar.gz", hash = "sha256:378cc8a6d3545b532dfd149da715abae4fda2a3adb6d74e525d0d5e51f46909b", size = 138996, upload-time = "2018-03-10T09:22:56.493Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/52/1ec7ead2c7528bf3d1db73e886fa4df10f9e6f0eb7854a448b7090cfcef7/msgpack-1.2.4.tar.gz", hash = "sha256:475c44e12f2a5de766a8448783f149c9b33f3f49b88953c6cd739a77d93c732c", size = 197764, upload-time = "2026-10-26T17:55:48.593Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/cb/a3bd4d234c0f2f7e646b9be259b801c5d6a35c97f93dded4f722e6b80acd/msgpack-1.2.4-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:1095b1ebcc8c9d3e70c51240b7160d8e9da66044e0a45c3ef8403d3a9ef0c5ad", size = 90935, upload-time = "2026-10-26T17:53:46.588Z" },
+    { url = "https://files.pythonhosted.org/packages/56/3c/fc87d06bdfc99b302f4379f0eb34bb8695b6ecd90b965652d0a3195d1acd/msgpack-1.2.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:a4b47ec7422bef149223786a87df80067ac65bfc7c0565e5cf1dfbdc40acee50", size = 90187, upload-time = "2026-10-26T17:53:48.151Z" },
+    { url = "https://files.pythonhosted.org/packages/05/a3/abebe12c1b589b7eeab60cb87dd5eb398fcf549bdafca8c30d8d73e48493/msgpack-1.2.4-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0c75cfda0d3ccb1f6abc20e0608ad6b226e11f317b5ac297721504d2509e2bd9", size = 466911, upload-time = "2026-10-26T17:53:49.536Z" },
+    { url = "https://files.pythonhosted.org/packages/03/41/ed5517a107628f6f7f3a1f46f19de3aca979bd1fc95861cb56ce0e4bcc02/msgpack-1.2.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a45ceb5f199d5e388f28b550ba881096a3740d4bda10e661d77f59d9a2e8187a", size = 480247, upload-time = "2026-10-26T17:53:51.211Z" },
+    { url = "https://files.pythonhosted.org/packages/31/71/14c39858380e11408fcf75aeab1cda0afb253cd8f62a01fbe4ae1838b66f/msgpack-1.2.4-cp311-cp311-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:7ca62b31a873c70b73f367bb2c1efec1d143016642c5191405549578184ff6ff", size = 438298, upload-time = "2026-10-26T17:53:52.919Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/73/ba40b91632e011851e1a397d53e0bd031848751902424a5b37c33f7de412/msgpack-1.2.4-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:f641971d3eec89ffca57fa36d151ad1cf1b6a214b47faca16cb165c7d45ef8be", size = 461600, upload-time = "2026-10-26T17:53:54.8Z" },
+    { url = "https://files.pythonhosted.org/packages/51/f0/c13ce7e7a7d8dabc1a48eecf61eb789084dbcc64374a7f19770eaf96f2c3/msgpack-1.2.4-cp311-cp311-musllinux_1_2_riscv64.whl", hash = "sha256:b9eff629190a4b118549b654df32a56ed535351819f690d0c935d185500cc90b", size = 435020, upload-time = "2026-10-26T17:53:56.433Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/d2/2a4e254f8ee5d5dd5019bd9f99164d79704788dbe16d9d6de77fda4e6727/msgpack-1.2.4-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:4e22c6571ab6ac9036da87d8a6fddb4baf86981844b480c0c60a4a4be417ee48", size = 479138, upload-time = "2026-10-26T17:53:57.918Z" },
+    { url = "https://files.pythonhosted.org/packages/70/b6/28f7eb3f38e3b6ea1f87f36c44cc25ab0eeb451147b5ff61637ce3d0b839/msgpack-1.2.4-cp311-cp311-win32.whl", hash = "sha256:5d7d4d2a5fc6a604f20c546ee1e8327bed1e9329be2417cef9af1f799f3e55e0", size = 67926, upload-time = "2026-10-26T17:53:59.172Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/9e/67a97d5caa41bcbdbb4fae7bf5009b60222c72d0748364ac9e32de334a4e/msgpack-1.2.4-cp311-cp311-win_amd64.whl", hash = "sha256:9db832747bd05834530189e564a3fe31e2617547dc1f3a005f835eafc2b8e048", size = 76117, upload-time = "2026-10-26T17:54:00.403Z" },
+    { url = "https://files.pythonhosted.org/packages/32/43/890b028b2cdb6b75fd56bd9388466c9fea9f10a31ebb685c489c5cb32fa9/msgpack-1.2.4-cp311-cp311-win_arm64.whl", hash = "sha256:deb1730c4c0c1a8c975be2f43efea6ee4834d35031a39075f78917d0ba8b3c04", size = 72632, upload-time = "2026-10-26T17:54:01.798Z" },
+    { url = "https://files.pythonhosted.org/packages/27/fd/45f6cd13cefbb659a8e0128ea64d51b349571163fec3c9c20f99792dc42a/msgpack-1.2.4-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:90cba4996b18ec1201fcaabd01ec48ff4b9755416bcd52105ded2f89fe145c49", size = 91903, upload-time = "2026-10-26T17:54:03.097Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/89/169c2a0b1ffeafe68a4f13d8d96b6ed1cd8d40d8262b3a6690851da7eda1/msgpack-1.2.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:112933726919f4239646cca9572e2c2fa5626358c670da8440aac09403100a48", size = 90573, upload-time = "2026-10-26T17:54:04.383Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/8e/272a384f2a001cfced1baab0a8abdd912d6281432670f4609d1aab718d7b/msgpack-1.2.4-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9ca1e78106675f2aed07dc37b842ce19be70010ab22c5c5c04688f0840d48539", size = 461057, upload-time = "2026-10-26T17:54:05.821Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/d9/f59bd841fc2fd2b74dc50ce85860a6a25f58e588dd48946aeaf2862cf990/msgpack-1.2.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c4d5bbdbea8f5669b3a734d6c226772804fb120848f99cbe63a0ddee63b049c9", size = 475652, upload-time = "2026-10-26T17:54:07.414Z" },
+    { url = "https://files.pythonhosted.org/packages/00/03/afd000e1b1e28fd535dc8c7bc21ebb88923bc1964a2429fe660fb313ace3/msgpack-1.2.4-cp312-cp312-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:0d9ff7f3aaffd84010f1c501b05406a497584f5cab2f732eb9d89bf960e12f6f", size = 427082, upload-time = "2026-10-26T17:54:09.1Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/7a/e2890b272883c496faad777324ddb70e9cc4a6c63731962a4a39a6a40f44/msgpack-1.2.4-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:aa10dc04c03408f31948ac1896a942141fd8d7a954b3612edac79f19663e4076", size = 451956, upload-time = "2026-10-26T17:54:10.476Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/46/0c1b240b8a580af3e72139c33b018025440a1a42c2579e82e39b1195ee36/msgpack-1.2.4-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:472a25463678f2795143a7cb42e88a1b59cc2375e9881917e69a9323bde42114", size = 423833, upload-time = "2026-10-26T17:54:12.195Z" },
+    { url = "https://files.pythonhosted.org/packages/80/8e/851415b1a9264e6abf64d8a9617d856769d59e247fb9470106f133aedbae/msgpack-1.2.4-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:cbb8a677da3e845713925e9a203b8a120b1e9da9989836890ba4a4a187902701", size = 470951, upload-time = "2026-10-26T17:54:13.764Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/74/d75bf61aab9cb88b84f7d3a8eca8dd92e19a742b77ded300a1177e88d031/msgpack-1.2.4-cp312-cp312-win32.whl", hash = "sha256:2b0b7dff5beddc10f16ecea6b28c6b98014d1135d7015bd83adff5037f35848d", size = 68786, upload-time = "2026-10-26T17:54:15.049Z" },
+    { url = "https://files.pythonhosted.org/packages/81/c5/dd0e78eb04f9a0773a810d25ef2cd8f16bb941487567d0c63f814881133c/msgpack-1.2.4-cp312-cp312-win_amd64.whl", hash = "sha256:6e38b123681df22373d545520f54bbeddc4706d9235a1161061f12bd6648497d", size = 77272, upload-time = "2026-10-26T17:54:16.491Z" },
+    { url = "https://files.pythonhosted.org/packages/65/e7/b38f63ae82777c0077daa56c4b09af39d29dcb8927ab2ff59268094069c5/msgpack-1.2.4-cp312-cp312-win_arm64.whl", hash = "sha256:6795c588b210b2f13d62c8fcc23bf779b509b839ec5c197a7ab4f5191459e126", size = 71884, upload-time = "2026-10-26T17:54:17.995Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/26/16eaad5fe6e199334fa5bd66070778665717c86e9a273525dc706ddb06a7/msgpack-1.2.4-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:fb811ac3d463a75013b234d2aae56b9f0bdb0105caf4dd2ee65305b6a8a6078d", size = 92057, upload-time = "2026-10-26T17:54:19.616Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/b8/9660be6d120820bc05106f291e824c73d35f4ab77d927788ae67ea80889c/msgpack-1.2.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:36258fd0909e1bf26e94604439108846432abe4ffa9a23c9dc2f6f1c60f94b60", size = 90542, upload-time = "2026-10-26T17:54:20.965Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/10/cd55a69fec29df26884b178dc4b1803442ec82abf929604aac619881917a/msgpack-1.2.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e9c5ba0f053a7e98f013f083c9d1b2dffb26cad8c897c533d8286e44ed24c669", size = 455798, upload-time = "2026-10-26T17:54:22.434Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/94/562e0733593a780c70b0b18994f30c205149f7f9f4efbe3e9b00b88612c5/msgpack-1.2.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7fabd415c41e62006c6641fcdf5b3e866f581c4e11c58328c0d0f69584b9577d", size = 469262, upload-time = "2026-10-26T17:54:24.043Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/92/76d1a5c597e04e1d360b05573d150bdb4502f5a014e6e9cf089c9537c156/msgpack-1.2.4-cp313-cp313-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:7433d340de45003db3ed909a642c9469b598d175530f7a707cbaba64287d27ce", size = 420789, upload-time = "2026-10-26T17:54:25.587Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/c6/b72b8d8022718380db459ced8ffbabc7570ad2d22c7f2fa659c872cb6734/msgpack-1.2.4-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:ccd6e4af5347eb9828147320449bcd30e3321f6397d4583ff16047485dd8be3d", size = 447068, upload-time = "2026-10-26T17:54:27.721Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/dc/f378ef1def4aa135e70325c09e22457f3203ae2a390a192e892267906f33/msgpack-1.2.4-cp313-cp313-musllinux_1_2_riscv64.whl", hash = "sha256:23d1459a1d0b4c9f6629df072d592eb74424b3ed3656b69af507bc9023cc027f", size = 418896, upload-time = "2026-10-26T17:54:29.325Z" },
+    { url = "https://files.pythonhosted.org/packages/62/93/a7e507378f43e91415cb6fda47e0ded0c9de1618a1f4ac4f2887912a92dd/msgpack-1.2.4-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:9e73761fe9fc55a4e9d2df8e8f59b0979231af4dbf80b8bf90cd64c74173d779", size = 465764, upload-time = "2026-10-26T17:54:30.719Z" },
+    { url = "https://files.pythonhosted.org/packages/60/76/7f39f49cbcdaa4aafe64b4941b2640772dbdc1cac3a9332f4c9ba6994da9/msgpack-1.2.4-cp313-cp313-pyemscripten_2025_0_wasm32.whl", hash = "sha256:d088d1f552e129859db830692268747aba0a1ee3e6e0fe6344dbb3aab1df9f6c", size = 53615, upload-time = "2026-10-26T17:54:32.213Z" },
+    { url = "https://files.pythonhosted.org/packages/67/9b/85b93350dbd7b52b358882f7f17a88a03664a7a59a359406e6315c162634/msgpack-1.2.4-cp313-cp313-win32.whl", hash = "sha256:892d4f17d7962bfd2c2928b0a47542bf2948f074a7c04721b73d4138b70481e4", size = 68724, upload-time = "2026-10-26T17:54:33.484Z" },
+    { url = "https://files.pythonhosted.org/packages/02/4a/a7e2778ce09a943c17b6f91c7acb2f9488357657c01f2cccb278297621c4/msgpack-1.2.4-cp313-cp313-win_amd64.whl", hash = "sha256:318d4e634d2b320be10decd9968ad1ae0be1d80cba23b5528c37b429eeb0e3e0", size = 77039, upload-time = "2026-10-26T17:54:35.016Z" },
+    { url = "https://files.pythonhosted.org/packages/64/16/9ff7495a9853e9d7de74965fdadce15017e7213ce564bb5dafc5403c9108/msgpack-1.2.4-cp313-cp313-win_arm64.whl", hash = "sha256:bec3e34749b90cfcf116149aad11295c720ff4a74a7d0a35abdb968a396c1524", size = 71873, upload-time = "2026-10-26T17:54:36.19Z" },
+]
 
 [[package]]
 name = "multidict"
@@ -3857,7 +3848,7 @@ version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ast-serialize" },
-    { name = "librt", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "librt", marker = "platform_python_implementation != 'PyPy'" },
     { name = "mypy-extensions" },
     { name = "pathspec" },
     { name = "typing-extensions" },
@@ -5307,7 +5298,7 @@ version = "26.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3f/e8/7325d258199b159eb2c03fe32107533e2832e70e63f4fb88a6aa00023201/pyopenssl-26.4.0.tar.gz", hash = "sha256:28dfcce0162b9211413e26dfbfdf1d24317fbeba18fc93c12400a1856b2a0bc7", size = 182046, upload-time = "2026-08-01T19:50:50.512Z" }
 wheels = [
@@ -5419,7 +5410,7 @@ name = "pytest"
 version = "9.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -5631,7 +5622,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "rpds-py" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/22/f5/df4e9027acead3ecc63e50fe1e36aca1523e1719559c499951bb4b53188f/referencing-0.37.0.tar.gz", hash = "sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8", size = 78036, upload-time = "2025-10-13T15:30:48.871Z" }
 wheels = [
@@ -5716,7 +5707,7 @@ version = "2.34.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi", version = "2024.12.14", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-holmesgpt'" },
-    { name = "certifi", version = "2026.5.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "certifi", version = "2026.5.20", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "charset-normalizer" },
     { name = "idna" },
     { name = "urllib3" },
@@ -5788,11 +5779,11 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.12' or (python_full_version == '3.12.*' and sys_platform != 'emscripten')",
 ]
 dependencies = [
-    { name = "markdown-it-py", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "pygments", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "markdown-it-py", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
+    { name = "pygments", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e9/67/cae617f1351490c25a4b8ac3b8b63a4dda609295d8222bad12242dfdc629/rich-14.3.4.tar.gz", hash = "sha256:817e02727f2b25b40ef56f5aa2217f400c8489f79ca8f46ea2b70dd5e14558a9", size = 230524, upload-time = "2026-04-11T02:57:45.419Z" }
 wheels = [
@@ -6078,7 +6069,7 @@ version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
@@ -6215,7 +6206,7 @@ name = "textual"
 version = "8.2.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markdown-it-py", extra = ["linkify"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "markdown-it-py", extra = ["linkify"], marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
     { name = "mdit-py-plugins" },
     { name = "platformdirs" },
     { name = "pygments" },
@@ -6333,7 +6324,7 @@ name = "tqdm"
 version = "4.68.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/85/05/0d5260f1f1ca784f4a4a0def9cbe6affe587f5b4025328d446c3d67765f4/tqdm-4.68.2.tar.gz", hash = "sha256:89c230e8dbc67c7615c142487111222f878c77427ea09549960f62389e258add", size = 171923, upload-time = "2026-06-09T13:26:42.539Z" }
 wheels = [
@@ -6376,13 +6367,13 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.12' or (python_full_version == '3.12.*' and sys_platform != 'emscripten')",
 ]
 dependencies = [
-    { name = "annotated-doc", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "click", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "rich", version = "14.3.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
-    { name = "shellingham", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "annotated-doc", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
+    { name = "click", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
+    { name = "rich", version = "14.3.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
+    { name = "shellingham", marker = "extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents' or extra != 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-langgraph' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e4/51/9aed62104cea109b820bbd6c14245af756112017d309da813ef107d42e7e/typer-0.25.1.tar.gz", hash = "sha256:9616eb8853a09ffeabab1698952f33c6f29ffdbceb4eaeecf571880e8d7664cc", size = 122276, upload-time = "2026-04-30T19:32:16.964Z" }
 wheels = [
@@ -6436,7 +6427,7 @@ name = "tzlocal"
 version = "5.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "tzdata", marker = "sys_platform == 'win32' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langgraph') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d8/52/ee2e6d7031687c5bad28363148cb72f2bbf38201d2e220671bd9fb830bc2/tzlocal-5.4.tar.gz", hash = "sha256:41e1293f80d4b5ff38dff222601a8fbd06b4fdcaf25e224704047ad26a39af54", size = 30922, upload-time = "2026-06-15T12:06:56.594Z" }
 wheels = [
@@ -6932,7 +6923,7 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')",
+    "python_full_version < '3.12' or (python_full_version == '3.12.*' and sys_platform != 'emscripten')",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/d8/eab98a517c14134c0b2eb4e2387bc5f457334293ec5d2dd3857ec2966802/zipp-4.1.0.tar.gz", hash = "sha256:4cb57381f544315db7688e976e922a2b18cdb513d21cc194eb42232ba2a3e602", size = 26214, upload-time = "2026-05-18T20:08:57.967Z" }
 wheels = [
