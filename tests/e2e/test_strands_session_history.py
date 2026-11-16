@@ -16,6 +16,9 @@ from tests.e2e.conftest import clear_dapr_registration
 class _CountingModel:
     """Replies with the number of messages it was given."""
 
+    # strands.Agent reads this; the base Model class defaults it to False.
+    stateful = False
+
     def __init__(self) -> None:
         self.seen: list[int] = []
 
