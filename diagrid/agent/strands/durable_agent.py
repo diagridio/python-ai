@@ -59,6 +59,10 @@ class DurableAgent:
         durable = DurableAgent(agent, name="paper-searcher")
         result = durable("Search for AI papers")
         ```
+
+    Like a plain Strands ``Agent``, a ``DurableAgent`` is one conversation:
+    each call starts from ``agent.messages`` and, when it finishes, writes the
+    full message list back to ``agent.messages``.
     """
 
     def __init__(
@@ -282,9 +286,10 @@ class DurableAgent:
             )
 
             # Build initial messages
-            messages: list[dict[str, Any]] = [
+            messages: list[dict[str, Any]] = list(input_data.get("messages", [])) + [
                 {"role": "user", "content": [{"text": task}]}
             ]
+            completed = False
             final_text = ""
             all_tool_calls: list[dict[str, Any]] = []
             max_iterations = 10
@@ -316,6 +321,7 @@ class DurableAgent:
                 # If no tool calls, we're done
                 if not tool_uses or stop_reason == "end_turn":
                     final_text = text
+                    completed = True
                     print(
                         f"[WORKFLOW] Model finished: {stop_reason}",
                         flush=True,
@@ -364,6 +370,7 @@ class DurableAgent:
             return {  # type: ignore[return-value]
                 "result": final_text,
                 "tool_calls": all_tool_calls,
+                "messages": messages if completed else None,
             }
 
         # Register everything
@@ -400,7 +407,7 @@ class DurableAgent:
         # Use the new DaprWorkflowClient API with function reference
         self._workflow_client.schedule_new_workflow(
             workflow=self._workflow_func,
-            input={"task": task},
+            input={"task": task, "messages": list(self._agent.messages)},
             instance_id=instance_id,
         )
 
@@ -434,6 +441,10 @@ class DurableAgent:
             output = json.loads(output)
 
         if isinstance(output, dict):
+            updated = output.get("messages")
+            if updated is not None:
+                # Keep the same list object so ``agent.messages`` stays live.
+                self._agent.messages[:] = updated
             return output.get("result", str(output))
         return str(output) if output else ""
 
