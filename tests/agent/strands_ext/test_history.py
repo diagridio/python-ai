@@ -310,3 +310,69 @@ class TestRunnerHistory:
         asyncio.run(_run())
         sent = client.schedule_new_workflow.call_args.kwargs["input"]
         assert sent == {"task": "task", "session_id": "s-9"}
+
+
+class _ToolOnceModel:
+    """Calls a tool on every new user text turn, then answers in text."""
+
+    async def stream(self, messages, tool_specs=None, system_prompt=None, **kwargs):
+        last = messages[-1]
+        is_tool_turn = any("toolResult" in b for b in last["content"])
+        yield {"messageStart": {"role": "assistant"}}
+        yield {"contentBlockStart": {"start": {}}}
+        if is_tool_turn:
+            yield {"contentBlockDelta": {"delta": {"text": "done"}}}
+            yield {"contentBlockStop": {}}
+            yield {"messageStop": {"stopReason": "end_turn"}}
+            return
+        yield {
+            "contentBlockStart": {
+                "start": {"toolUse": {"toolUseId": f"id{len(messages)}", "name": "t"}}
+            }
+        }
+        yield {"contentBlockDelta": {"delta": {"toolUse": {"input": "{}"}}}}
+        yield {"contentBlockStop": {}}
+        yield {"messageStop": {"stopReason": "tool_use"}}
+
+
+class TestToolTurnsInHistory:
+    def test_saved_history_has_no_orphan_tool_result(self):
+        store = FakeStateStore()
+        runner, registered, _ = _make_runner(
+            state_store=store,
+            conversation_manager=SlidingWindowConversationManager(window_size=6),
+            model=_ToolOnceModel(),
+        )
+
+        class _Tool:
+            tool_spec = {"name": "t", "description": "d", "inputSchema": {"json": {}}}
+
+            async def stream(self, tool_use, invocation_state):
+                yield {
+                    "toolUseId": tool_use["toolUseId"],
+                    "status": "success",
+                    "content": [{"text": "ok"}],
+                }
+
+        runner.agent.tool_registry.registry["t"] = _Tool()
+        for turn in ("one", "two", "three"):
+            out = _drive(registered, turn, "s")
+            assert out["tool_calls"], out
+
+        saved = store.data["strands-chat-s-messages"]
+        assert len(saved) <= 6
+        assert saved[0]["role"] == "user"
+        assert not any("toolResult" in b for b in saved[0]["content"])
+        use_ids = {
+            b["toolUse"]["toolUseId"]
+            for m in saved
+            for b in m["content"]
+            if "toolUse" in b
+        }
+        result_ids = {
+            b["toolResult"]["toolUseId"]
+            for m in saved
+            for b in m["content"]
+            if "toolResult" in b
+        }
+        assert result_ids <= use_ids
