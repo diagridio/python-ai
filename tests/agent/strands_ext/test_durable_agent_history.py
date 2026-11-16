@@ -24,9 +24,15 @@ class _EchoModel:
         yield {"messageStop": {"stopReason": "end_turn"}}
 
 
-def _make_durable() -> tuple[DurableAgent, dict[str, Any], MagicMock]:
+class _BrokenModel:
+    async def stream(self, messages, tool_specs=None, system_prompt=None, **kwargs):
+        raise RuntimeError("boom")
+        yield  # pragma: no cover
+
+
+def _make_durable(model: Any = None) -> tuple[DurableAgent, dict[str, Any], MagicMock]:
     agent = SimpleNamespace(
-        model=_EchoModel(),
+        model=model or _EchoModel(),
         system_prompt="",
         tool_registry=SimpleNamespace(registry={}),
         messages=[],
@@ -82,3 +88,9 @@ def test_messages_list_identity_is_preserved():
     before = durable.messages
     durable("hi")
     assert durable.messages is before
+
+
+def test_failed_model_call_leaves_messages_untouched():
+    durable, _, _ = _make_durable(model=_BrokenModel())
+    assert durable("hi").startswith("Error:")
+    assert durable.messages == []
