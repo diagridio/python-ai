@@ -26,8 +26,8 @@ from diagrid.agent.core.workflow.naming import build_workflow_name
 try:
     from diagrid.core.analytics import report_usage
 except ImportError:  # pragma: no cover - older diagrid-core
-
-    def report_usage(package: str, **dimensions: object) -> None:
+    # The fallback has no ``sinks`` parameter: an older core has no destination list.
+    def report_usage(package: str, **dimensions: object) -> None:  # type: ignore[misc]
         return None
 
 

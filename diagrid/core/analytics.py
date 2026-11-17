@@ -18,7 +18,8 @@ resolution, so the thread itself can outlive a second on a network that
 blackholes lookups. The calling thread never waits on it. Blocked egress and
 air-gapped clusters are normal conditions, not faults.
 
-Set ``USAGE_ENDPOINT`` to an empty string to turn the module into a no-op.
+Events go to every destination in ``USAGE_SINKS``. Set ``USAGE_ENDPOINT`` to an
+empty string to turn the Scarf destination into a no-op.
 """
 
 from __future__ import annotations
@@ -29,7 +30,10 @@ import platform
 import threading
 import urllib.parse
 import urllib.request
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from importlib import metadata
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +68,7 @@ _CATALYST_HOST_SUFFIX = "diagrid.io"
 _DIMENSION_MAX_LEN = 64
 
 _reported_lock = threading.Lock()
-_reported_packages: set[str] = set()
+_reported_packages: set[tuple[str, str]] = set()
 
 
 def _is_truthy(value: str) -> bool:
@@ -116,14 +120,9 @@ def _clean_dimension(value: object) -> str:
     return str(value).strip()[:_DIMENSION_MAX_LEN]
 
 
-def build_url(package: str, version: str, **dimensions: object) -> str:
-    """Build the event URL for ``package``. Exposed for tests.
-
-    The defaults describe the package and the host. ``dimensions`` are added by
-    the caller (for example ``kind`` and ``framework``) and override a default
-    of the same name. Empty values are dropped.
-    """
-    params: dict[str, str] = {
+def _default_dimensions(package: str, version: str) -> dict[str, str]:
+    """Return the dimensions every destination reports: the package and the host."""
+    return {
         "package": package,
         "version": version,
         "core_version": package_version("diagrid-core"),
@@ -133,6 +132,16 @@ def build_url(package: str, version: str, **dimensions: object) -> str:
         "target": detect_target(),
         "ci": "true" if running_in_ci() else "false",
     }
+
+
+def build_url(package: str, version: str, **dimensions: object) -> str:
+    """Build the Scarf event URL for ``package``. Exposed for tests.
+
+    The defaults describe the package and the host. ``dimensions`` are added by
+    the caller (for example ``kind`` and ``framework``) and override a default
+    of the same name. Empty values are dropped.
+    """
+    params = _default_dimensions(package, version)
     for key, value in dimensions.items():
         if value is None:
             continue
@@ -142,47 +151,103 @@ def build_url(package: str, version: str, **dimensions: object) -> str:
     return f"{USAGE_ENDPOINT}?{urllib.parse.urlencode(params)}"
 
 
-def _send_event(package: str, dimensions: dict[str, object]) -> None:
-    """Send one event and swallow every failure."""
-    try:
-        version = package_version(package)
-        request = urllib.request.Request(
-            build_url(package, version, **dimensions),
-            headers={"User-Agent": f"{package}/{version}"},
-        )
-        with urllib.request.urlopen(request, timeout=USAGE_TIMEOUT_SECONDS):
-            pass
-        logger.debug("usage event sent for %s %s", package, version)
-    except Exception as exc:
-        logger.debug("usage event for %s not sent: %r", package, exc)
+def _always() -> bool:
+    return True
 
 
-def report_usage(package: str, **dimensions: object) -> None:
-    """Report one usage event per package per process, on a daemon thread.
+@dataclass(frozen=True)
+class Sink:
+    """One usage-analytics destination.
+
+    ``allowed`` is that destination's gate, evaluated on the calling thread
+    before anything is sent. ``build_request`` turns a package and the caller's
+    dimensions into the request to send. ``configured`` is False while the
+    destination has no endpoint, which makes it a no-op that is not even counted
+    as reported.
+    """
+
+    name: str
+    allowed: Callable[[], bool]
+    build_request: Callable[[str, Mapping[str, Any]], urllib.request.Request]
+    configured: Callable[[], bool] = _always
+
+
+def _scarf_request(
+    package: str, dimensions: Mapping[str, Any]
+) -> urllib.request.Request:
+    version = package_version(package)
+    return urllib.request.Request(
+        build_url(package, version, **dimensions),
+        headers={"User-Agent": f"{package}/{version}"},
+    )
+
+
+SCARF_SINK = Sink(
+    name="scarf",
+    allowed=lambda: not usage_reporting_disabled(),
+    build_request=_scarf_request,
+    configured=lambda: bool(USAGE_ENDPOINT),
+)
+
+USAGE_SINKS: tuple[Sink, ...] = (SCARF_SINK,)
+
+
+def _send_event(
+    package: str,
+    dimensions: dict[str, object],
+    sinks: Sequence[Sink] = USAGE_SINKS,
+) -> None:
+    """Send one event to each sink and swallow every failure."""
+    for sink in sinks:
+        try:
+            request = sink.build_request(package, dimensions)
+            with urllib.request.urlopen(request, timeout=USAGE_TIMEOUT_SECONDS):
+                pass
+            logger.debug("usage event sent for %s to %s", package, sink.name)
+        except Exception as exc:
+            logger.debug(
+                "usage event for %s not sent to %s: %r", package, sink.name, exc
+            )
+
+
+def report_usage(
+    package: str, *, sinks: Sequence[Sink] = USAGE_SINKS, **dimensions: object
+) -> None:
+    """Report one usage event per package per sink per process, on a daemon thread.
 
     ``package`` is the distribution that triggered the call, for example
     ``diagrid`` for an agent runner. ``dimensions`` are extra query parameters
     such as ``kind`` and ``framework``. Never blocks the caller and never
-    raises. Does nothing while ``USAGE_ENDPOINT`` is empty or when the user
-    opted out.
+    raises. A sink is skipped while it has no endpoint or when its gate is
+    closed, for example when the user opted out.
     """
     try:
-        if not USAGE_ENDPOINT:
-            return
-        with _reported_lock:
-            if package in _reported_packages:
-                return
-            _reported_packages.add(package)
+        selected: list[Sink] = []
+        for sink in sinks:
+            try:
+                if not sink.configured():
+                    continue
+                key = (sink.name, package)
+                with _reported_lock:
+                    if key in _reported_packages:
+                        continue
+                    _reported_packages.add(key)
 
-        if usage_reporting_disabled():
-            logger.debug(
-                "usage reporting for %s is disabled by the environment", package
-            )
+                if not sink.allowed():
+                    logger.debug(
+                        "usage reporting for %s to %s is disabled", package, sink.name
+                    )
+                    continue
+                selected.append(sink)
+            except Exception:
+                continue
+        if not selected:
             return
 
         thread = threading.Thread(
             target=_send_event,
             args=(package, dict(dimensions)),
+            kwargs={"sinks": tuple(selected)},
             name="diagrid-usage",
             daemon=True,
         )
