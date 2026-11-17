@@ -66,14 +66,14 @@ Diagrid reports anonymous usage events to two services, [Scarf](https://scarf.sh
 
 Every agent runner reports one event when it is constructed, once per package per process. It goes to Scarf and Reo. Because it is one event per process, a Kubernetes deployment produces one event per replica per restart: the numbers count process starts, not deployments or users.
 
-`diagridpy`, the console script for `diagrid-cli`, reports to Reo only. It sends one event per invocation, including `--help` and `--version`. The send blocks the command for at most about one second per socket operation. That timeout does not cover DNS resolution, so a network that stalls lookups can delay the command for longer.
+`diagridpy`, the console script for `diagrid-cli`, reports to Reo only. It sends one event per invocation, including `--help` and `--version`. The send blocks the command for at most about one second in total, a hard cap that includes DNS resolution. A send still running at the cap is abandoned. Shell completion requests are not reported.
 
 **What is sent:** the package name and version, the `diagrid-core` version, operating system, architecture, Python version, and, for agent runners, the agent framework and the installed version of its library. Nothing else: no prompts, application data, configuration, app IDs, hostnames, or file paths.
 
 | | Scarf | Reo |
 |---|---|---|
 | Sent by | agent runners | agent runners and `diagridpy` |
-| Fields | `package`, `version`, `core_version`, `os`, `arch`, `python_version`, `kind`, `framework`, `framework_version`, `target`, `ci` | `activity_type=pypi_download`, `product`, `version`, `python`, `platform`, `arch`, `kind`, `framework`, `framework_version`, `core_version` |
+| Fields | `package`, `version`, `core_version`, `os`, `arch`, `python_version`, `target`, `ci`, plus `kind` (`agent`), `framework` and `framework_version` from agent runners only | `activity_type=pypi_download`, `product`, `version`, `python`, `platform`, `arch`, `core_version`, plus `kind` (`agent`), `framework` and `framework_version` from agent runners only |
 | `target` and `ci` | sent | not sent |
 
 `target` says whether the process points at Catalyst or at a plain Dapr sidecar. `ci` says whether a CI variable is set.

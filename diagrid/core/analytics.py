@@ -12,11 +12,14 @@ opt out.
 One event per process means one event per replica per restart on Kubernetes.
 The numbers count process starts, not deployments or users.
 
-The call never blocks and never raises: it runs on a daemon thread and swallows
-every failure. The one second timeout bounds each socket operation, not DNS
-resolution, so the thread itself can outlive a second on a network that
-blackholes lookups. The calling thread never waits on it. Blocked egress and
+``report_usage`` never blocks and never raises: it runs on a daemon thread and
+swallows every failure. The calling thread never waits on it. Blocked egress and
 air-gapped clusters are normal conditions, not faults.
+
+``report_usage_blocking`` is for one-shot processes such as the CLI. It sends on
+the same kind of daemon thread but joins it for at most ``USAGE_TIMEOUT_SECONDS``,
+a hard wall-clock cap that includes DNS resolution. A send still running at the
+cap is abandoned and dies with the process.
 
 Events go to every destination in ``USAGE_SINKS``: Scarf and Reo. Reo is gated
 more strictly than Scarf (see ``reo_allowed``): it never receives events from
@@ -25,7 +28,8 @@ the Scarf destination into a no-op, and ``REO_ENDPOINT`` to an empty string to
 do the same for Reo.
 
 The destinations are sent to one after another on the same daemon thread, so a
-slow Scarf send can delay the Reo send by up to the timeout.
+slow Scarf send can delay the Reo send by up to the timeout. In the blocking
+variant the cap covers all destinations together.
 """
 
 from __future__ import annotations
@@ -354,17 +358,26 @@ def report_usage(
 def report_usage_blocking(
     package: str, *, sinks: Sequence[Sink], **dimensions: object
 ) -> None:
-    """Report like ``report_usage``, but send on the calling thread.
+    """Report like ``report_usage``, but wait for the send, for at most the timeout.
 
-    For a one-shot process, such as a CLI command, that exits before a daemon
-    thread would finish. The caller waits for the send. Each socket operation
-    is capped at ``USAGE_TIMEOUT_SECONDS``, so a host that accepts and never
-    replies costs about that long per destination. DNS resolution is not
-    covered by that cap. Never raises.
+    For a one-shot process, such as a CLI command, that exits before a fire and
+    forget thread would finish. The send runs on a daemon thread and the caller
+    joins it for at most ``USAGE_TIMEOUT_SECONDS``, a hard wall-clock cap that
+    also covers DNS resolution. A send still in flight at the cap is abandoned
+    and dies with the process. Never raises.
     """
     try:
         selected = _select_sinks(package, sinks)
-        if selected:
-            _send_event(package, dict(dimensions), sinks=tuple(selected))
+        if not selected:
+            return
+        thread = threading.Thread(
+            target=_send_event,
+            args=(package, dict(dimensions)),
+            kwargs={"sinks": tuple(selected)},
+            name="diagrid-usage",
+            daemon=True,
+        )
+        thread.start()
+        thread.join(USAGE_TIMEOUT_SECONDS)
     except Exception:
         pass

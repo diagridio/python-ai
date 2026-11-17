@@ -660,3 +660,46 @@ def test_scarf_url_is_unchanged_by_reo_dimensions(
     assert scarf.url == SCARF_GOLDEN_URL
     assert scarf.user_agent == "diagrid/0.5.3"
     assert any(r.url.startswith(REO_TEST_ENDPOINT) for r in recorded)
+
+
+def test_reo_url_drops_unknown_dimensions_and_cannot_override_product(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The allowlist is the privacy guarantee: an arbitrary dimension never
+    # reaches Reo, and a caller cannot rewrite the product.
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage(
+        "diagrid", sinks=(analytics.REO_SINK,), hostname="secret-host", product="evil"
+    )
+    assert len(recorded) == 1
+    assert "secret-host" not in recorded[0].url
+    q = query_of(recorded[0].url)
+    assert "hostname" not in q
+    assert q["product"] == ["diagrid"]
+
+
+def test_blocking_send_is_capped_when_the_send_itself_stalls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DNS and other stalls are not covered by the socket timeout. The caller
+    # still gets control back at the cap. The stalled send is released in
+    # teardown so no thread outlives the test.
+    import threading
+    import time
+
+    release = threading.Event()
+
+    def stalled_send(*_: Any, **__: Any) -> None:
+        release.wait(10)
+
+    monkeypatch.setattr(analytics, "REO_ENDPOINT", REO_TEST_ENDPOINT)
+    monkeypatch.setattr(analytics, "_send_event", stalled_send)
+    clear_all_gate_vars(monkeypatch)
+    try:
+        start = time.monotonic()
+        analytics.report_usage_blocking("diagrid-cli", sinks=(analytics.REO_SINK,))
+        elapsed = time.monotonic() - start
+    finally:
+        release.set()
+    assert elapsed < 1.5
+    assert elapsed >= 0.5  # it waited for the send up to the cap
