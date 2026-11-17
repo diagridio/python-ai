@@ -192,6 +192,26 @@ SCARF_SINK = Sink(
 USAGE_SINKS: tuple[Sink, ...] = (SCARF_SINK,)
 
 
+def reo_allowed() -> bool:
+    """Return True when a Reo event may be sent. Fails closed.
+
+    Stricter than Scarf's gate. All of these must hold: no opt-out variable is
+    set, the process is not inside a Kubernetes cluster (no exceptions), it is
+    not pointed at Catalyst, and it is not running in CI. Anything that cannot
+    be determined, including an exception, means no event.
+    """
+    try:
+        if usage_reporting_disabled():
+            return False
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            return False
+        if detect_target() != "dapr":
+            return False
+        return not running_in_ci()
+    except Exception:
+        return False
+
+
 def _send_event(
     package: str,
     dimensions: dict[str, object],

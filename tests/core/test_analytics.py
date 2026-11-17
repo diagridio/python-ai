@@ -415,3 +415,99 @@ def test_a_sink_whose_gate_raises_does_not_stop_the_others(
 def test_scarf_is_the_default_destination() -> None:
     assert analytics.USAGE_SINKS == (analytics.SCARF_SINK,)
     assert analytics.SCARF_SINK.name == "scarf"
+
+
+def clear_all_gate_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear every variable the Reo gate reads, so a gate-open test is not vacuous."""
+    for name in (*_ENV_TO_CLEAR, "KUBERNETES_SERVICE_HOST"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_reo_gate_open_on_a_clean_developer_machine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_all_gate_vars(monkeypatch)
+    assert analytics.reo_allowed() is True
+
+
+@pytest.mark.parametrize(
+    "var", ["DO_NOT_TRACK", "SCARF_NO_ANALYTICS", "DIAGRID_NO_ANALYTICS"]
+)
+def test_reo_gate_closed_on_opt_out(monkeypatch: pytest.MonkeyPatch, var: str) -> None:
+    clear_all_gate_vars(monkeypatch)
+    monkeypatch.setenv(var, "1")
+    assert analytics.reo_allowed() is False
+
+
+def test_reo_gate_closed_in_kubernetes(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_all_gate_vars(monkeypatch)
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+    assert analytics.reo_allowed() is False
+
+
+@pytest.mark.parametrize(
+    "var,value",
+    [
+        ("DAPR_API_TOKEN", "t"),
+        ("DAPR_GRPC_ENDPOINT", "https://grpc.abc.diagrid.io:443"),
+        ("DAPR_HTTP_ENDPOINT", "https://http.abc.diagrid.io"),
+    ],
+)
+def test_reo_gate_closed_when_pointed_at_catalyst(
+    monkeypatch: pytest.MonkeyPatch, var: str, value: str
+) -> None:
+    clear_all_gate_vars(monkeypatch)
+    monkeypatch.setenv(var, value)
+    assert analytics.reo_allowed() is False
+
+
+@pytest.mark.parametrize(
+    "var",
+    [
+        "CI",
+        "GITHUB_ACTIONS",
+        "GITLAB_CI",
+        "CIRCLECI",
+        "TRAVIS",
+        "TF_BUILD",
+        "BUILDKITE",
+        "JENKINS_URL",
+    ],
+)
+def test_reo_gate_closed_in_ci(monkeypatch: pytest.MonkeyPatch, var: str) -> None:
+    clear_all_gate_vars(monkeypatch)
+    monkeypatch.setenv(var, "true")
+    assert analytics.reo_allowed() is False
+
+
+def test_reo_gate_fails_closed_on_malformed_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DAPR_GRPC_ENDPOINT is user-supplied. If detect_target() raises on it, the gate
+    # must suppress the event rather than let the exception reach the runner.
+    clear_all_gate_vars(monkeypatch)
+    monkeypatch.setenv("DAPR_GRPC_ENDPOINT", "http://[:::::")
+    # Prove the input is not vacuous: it really makes detect_target() raise.
+    with pytest.raises(ValueError):
+        analytics.detect_target()
+    assert analytics.reo_allowed() is False
+
+
+def test_reo_gate_fails_closed_when_a_check_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_all_gate_vars(monkeypatch)
+
+    def boom() -> str:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(analytics, "detect_target", boom)
+    assert analytics.reo_allowed() is False
+
+
+def test_reo_gate_is_not_vacuous_under_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Guards the Review Focus trap.
+    monkeypatch.setenv("CI", "true")
+    assert analytics.reo_allowed() is False
+    clear_all_gate_vars(monkeypatch)
+    assert analytics.reo_allowed() is True
