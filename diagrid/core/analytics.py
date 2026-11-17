@@ -18,8 +18,14 @@ resolution, so the thread itself can outlive a second on a network that
 blackholes lookups. The calling thread never waits on it. Blocked egress and
 air-gapped clusters are normal conditions, not faults.
 
-Events go to every destination in ``USAGE_SINKS``. Set ``USAGE_ENDPOINT`` to an
-empty string to turn the Scarf destination into a no-op.
+Events go to every destination in ``USAGE_SINKS``: Scarf and Reo. Reo is gated
+more strictly than Scarf (see ``reo_allowed``): it never receives events from
+Kubernetes, Catalyst or CI. Set ``USAGE_ENDPOINT`` to an empty string to turn
+the Scarf destination into a no-op, and ``REO_ENDPOINT`` to an empty string to
+do the same for Reo.
+
+The destinations are sent to one after another on the same daemon thread, so a
+slow Scarf send can delay the Reo send by up to the timeout.
 """
 
 from __future__ import annotations
@@ -42,6 +48,10 @@ logger = logging.getLogger(__name__)
 # reporting entirely.
 USAGE_ENDPOINT = "https://diagrid.gateway.scarf.sh/python-ai"
 USAGE_TIMEOUT_SECONDS = 1.0
+
+# Reo event-collection endpoint. Reo accepts a GET with the meta keys as query
+# parameters and no authentication. An empty string disables the destination.
+REO_ENDPOINT = "https://telemetry.diagrid.io/data"
 
 # The cross-ecosystem DO_NOT_TRACK convention, Scarf's own variable, and a
 # Diagrid-specific opt-out. Any of them set to a truthy value disables reporting.
@@ -134,12 +144,13 @@ def _default_dimensions(package: str, version: str) -> dict[str, str]:
     }
 
 
-def build_url(package: str, version: str, **dimensions: object) -> str:
-    """Build the Scarf event URL for ``package``. Exposed for tests.
+def _merged_dimensions(
+    package: str, version: str, dimensions: Mapping[str, object]
+) -> dict[str, str]:
+    """Return the defaults overlaid with the caller's dimensions, cleaned.
 
-    The defaults describe the package and the host. ``dimensions`` are added by
-    the caller (for example ``kind`` and ``framework``) and override a default
-    of the same name. Empty values are dropped.
+    ``None`` and empty values are dropped and every value is capped. Shared by
+    every destination so they cannot drift apart.
     """
     params = _default_dimensions(package, version)
     for key, value in dimensions.items():
@@ -148,6 +159,17 @@ def build_url(package: str, version: str, **dimensions: object) -> str:
         cleaned = _clean_dimension(value)
         if cleaned:
             params[key] = cleaned
+    return params
+
+
+def build_url(package: str, version: str, **dimensions: object) -> str:
+    """Build the Scarf event URL for ``package``. Exposed for tests.
+
+    The defaults describe the package and the host. ``dimensions`` are added by
+    the caller (for example ``kind`` and ``framework``) and override a default
+    of the same name. Empty values are dropped.
+    """
+    params = _merged_dimensions(package, version, dimensions)
     return f"{USAGE_ENDPOINT}?{urllib.parse.urlencode(params)}"
 
 
@@ -189,8 +211,6 @@ SCARF_SINK = Sink(
     configured=lambda: bool(USAGE_ENDPOINT),
 )
 
-USAGE_SINKS: tuple[Sink, ...] = (SCARF_SINK,)
-
 
 def reo_allowed() -> bool:
     """Return True when a Reo event may be sent. Fails closed.
@@ -210,6 +230,49 @@ def reo_allowed() -> bool:
         return not running_in_ci()
     except Exception:
         return False
+
+
+# Collected name -> the key Reo registered. Names absent from this table (target
+# and ci) are not sent to Reo: the gate makes both constant on every Reo event.
+_REO_KEY_MAP = {
+    "package": "product",
+    "version": "version",
+    "python_version": "python",
+    "os": "platform",
+    "arch": "arch",
+    "kind": "kind",
+    "framework": "framework",
+    "framework_version": "framework_version",
+    "core_version": "core_version",
+}
+
+
+def build_reo_url(package: str, version: str, **dimensions: object) -> str:
+    """Build the Reo ``pypi_download`` event URL for ``package``. Exposed for tests."""
+    merged = _merged_dimensions(package, version, dimensions)
+    params = {"activity_type": "pypi_download"}
+    for collected, reo_key in _REO_KEY_MAP.items():
+        if collected in merged:
+            params[reo_key] = merged[collected]
+    return f"{REO_ENDPOINT}?{urllib.parse.urlencode(params)}"
+
+
+def _reo_request(package: str, dimensions: Mapping[str, Any]) -> urllib.request.Request:
+    version = package_version(package)
+    return urllib.request.Request(
+        build_reo_url(package, version, **dimensions),
+        headers={"User-Agent": f"{package}/{version}"},
+    )
+
+
+REO_SINK = Sink(
+    name="reo",
+    allowed=reo_allowed,
+    build_request=_reo_request,
+    configured=lambda: bool(REO_ENDPOINT),
+)
+
+USAGE_SINKS: tuple[Sink, ...] = (SCARF_SINK, REO_SINK)
 
 
 def _send_event(

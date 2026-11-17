@@ -16,6 +16,16 @@ import pytest
 from diagrid.core import analytics
 
 ENDPOINT = "https://example.invalid/python-ai"
+REO_TEST_ENDPOINT = "https://example.invalid/data"
+
+# The Scarf URL for the fixed inputs below. Shared by the documented-shape test
+# and the test that Reo's dimensions leave Scarf's bytes alone.
+SCARF_GOLDEN_URL = (
+    "https://diagrid.gateway.scarf.sh/python-ai"
+    "?package=diagrid&version=0.5.3&core_version=0.5.3&os=linux&arch=x86_64"
+    "&python_version=3.12.1&target=dapr&ci=false&kind=workflow"
+    "&framework=langgraph&framework_version=0.2.0"
+)
 
 _ENV_TO_CLEAR = (
     *analytics.OPT_OUT_ENV_VARS,
@@ -42,6 +52,7 @@ class Recorded(NamedTuple):
     url: str
     sink: str
     package: str
+    user_agent: str = ""
 
 
 class _SyncThread:
@@ -85,6 +96,7 @@ def record_requests(monkeypatch: pytest.MonkeyPatch) -> list[Recorded]:
                 request.full_url,
                 request.get_header("X-test-sink") or "",
                 query.get("package", [""])[0],
+                request.get_header("User-agent") or "",
             )
         )
         return _Response()
@@ -122,12 +134,7 @@ def test_scarf_url_is_the_documented_shape(monkeypatch: pytest.MonkeyPatch) -> N
         framework_version="0.2.0",
     )
     assert len(recorded) == 1
-    assert recorded[0].url == (
-        "https://diagrid.gateway.scarf.sh/python-ai"
-        "?package=diagrid&version=0.5.3&core_version=0.5.3&os=linux&arch=x86_64"
-        "&python_version=3.12.1&target=dapr&ci=false&kind=workflow"
-        "&framework=langgraph&framework_version=0.2.0"
-    )
+    assert recorded[0].url == SCARF_GOLDEN_URL
 
 
 def test_does_nothing_while_endpoint_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,7 +216,10 @@ def test_send_uses_the_short_timeout_and_computes_the_version_once(
         patch.object(analytics.urllib.request, "urlopen") as urlopen,
         patch.object(analytics, "package_version", return_value="1.2.3") as version,
     ):
-        analytics._send_event("diagrid", {"kind": "agent"})
+        # Scarf only: this test pins one send. Reo's is covered separately.
+        analytics._send_event(
+            "diagrid", {"kind": "agent"}, sinks=(analytics.SCARF_SINK,)
+        )
     _, kwargs = urlopen.call_args
     assert kwargs["timeout"] == analytics.USAGE_TIMEOUT_SECONDS
     request = urlopen.call_args.args[0]
@@ -412,9 +422,10 @@ def test_a_sink_whose_gate_raises_does_not_stop_the_others(
     assert {r.sink for r in recorded} == {"b"}
 
 
-def test_scarf_is_the_default_destination() -> None:
-    assert analytics.USAGE_SINKS == (analytics.SCARF_SINK,)
+def test_scarf_and_reo_are_the_default_destinations() -> None:
+    assert analytics.USAGE_SINKS == (analytics.SCARF_SINK, analytics.REO_SINK)
     assert analytics.SCARF_SINK.name == "scarf"
+    assert analytics.REO_SINK.name == "reo"
 
 
 def clear_all_gate_vars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -511,3 +522,141 @@ def test_reo_gate_is_not_vacuous_under_ci(monkeypatch: pytest.MonkeyPatch) -> No
     assert analytics.reo_allowed() is False
     clear_all_gate_vars(monkeypatch)
     assert analytics.reo_allowed() is True
+
+
+def query_of(url: str) -> dict[str, list[str]]:
+    return urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+
+
+def _reo_setup(monkeypatch: pytest.MonkeyPatch) -> list[Recorded]:
+    """Point Reo at a non-routable host, record sends, pin the package version."""
+    monkeypatch.setattr(analytics, "REO_ENDPOINT", REO_TEST_ENDPOINT)
+    recorded = record_requests(monkeypatch)
+    clear_all_gate_vars(monkeypatch)
+    # ``version`` is the installed version of the package, not a dimension.
+    monkeypatch.setattr(analytics, "package_version", lambda _package: "0.5.3")
+    return recorded
+
+
+def test_reo_url_maps_collected_names_to_registered_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage(
+        "diagrid",
+        sinks=(analytics.REO_SINK,),
+        python_version="3.12.1",
+        os="linux",
+        arch="x86_64",
+        target="dapr",
+        ci="false",
+    )
+    assert len(recorded) == 1
+    assert recorded[0].url.startswith(REO_TEST_ENDPOINT + "?")
+    q = query_of(recorded[0].url)
+    assert q["activity_type"] == ["pypi_download"]
+    assert q["product"] == ["diagrid"]
+    assert q["version"] == ["0.5.3"]
+    assert q["python"] == ["3.12.1"]
+    assert q["platform"] == ["linux"]
+    assert q["arch"] == ["x86_64"]
+    assert recorded[0].user_agent == "diagrid/0.5.3"
+
+
+def test_reo_url_keeps_names_that_need_no_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage(
+        "diagrid",
+        sinks=(analytics.REO_SINK,),
+        core_version="0.5.3",
+        kind="workflow",
+        framework="langgraph",
+        framework_version="0.2.0",
+    )
+    q = query_of(recorded[0].url)
+    assert q["core_version"] == ["0.5.3"]
+    assert q["kind"] == ["workflow"]
+    assert q["framework"] == ["langgraph"]
+    assert q["framework_version"] == ["0.2.0"]
+
+
+def test_reo_url_omits_target_and_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage(
+        "diagrid", sinks=(analytics.REO_SINK,), target="dapr", ci="false"
+    )
+    q = query_of(recorded[0].url)
+    assert "target" not in q and "ci" not in q
+    # and the unmapped source names must not leak through either
+    assert "os" not in q and "python_version" not in q and "package" not in q
+
+
+def test_reo_url_drops_none_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage(
+        "diagrid", sinks=(analytics.REO_SINK,), framework_version=None, kind=""
+    )
+    q = query_of(recorded[0].url)
+    assert "framework_version" not in q  # never the string "None"
+    assert "kind" not in q
+
+
+def test_reo_url_escapes_hostile_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage("diagrid", sinks=(analytics.REO_SINK,), framework="a&b=c")
+    q = query_of(recorded[0].url)
+    assert q["framework"] == ["a&b=c"]  # one parameter, not two
+    assert "b" not in q
+
+
+def test_reo_url_bounds_long_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage("diagrid", sinks=(analytics.REO_SINK,), framework="x" * 200)
+    assert query_of(recorded[0].url)["framework"] == ["x" * 64]
+
+
+def test_reo_is_a_no_op_while_its_endpoint_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded = _reo_setup(monkeypatch)
+    monkeypatch.setattr(analytics, "REO_ENDPOINT", "")
+    analytics.report_usage("diagrid", sinks=(analytics.REO_SINK,))
+    assert recorded == []
+
+
+def test_reo_is_not_sent_when_its_gate_is_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded = _reo_setup(monkeypatch)
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+    analytics.report_usage("diagrid", sinks=(analytics.REO_SINK,))
+    assert recorded == []
+
+
+def test_scarf_url_is_unchanged_by_reo_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Adding Reo must not move Scarf's bytes, with both sinks live.
+    monkeypatch.setattr(
+        analytics, "USAGE_ENDPOINT", "https://diagrid.gateway.scarf.sh/python-ai"
+    )
+    recorded = _reo_setup(monkeypatch)
+    analytics.report_usage(
+        "diagrid",
+        core_version="0.5.3",
+        os="linux",
+        arch="x86_64",
+        python_version="3.12.1",
+        target="dapr",
+        ci="false",
+        kind="workflow",
+        framework="langgraph",
+        framework_version="0.2.0",
+    )
+    assert len(recorded) == 2
+    scarf = next(r for r in recorded if "scarf.sh" in r.url)
+    assert scarf.url == SCARF_GOLDEN_URL
+    assert scarf.user_agent == "diagrid/0.5.3"
+    assert any(r.url.startswith(REO_TEST_ENDPOINT) for r in recorded)
