@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import importlib
 import socket
+import sys
 import time
 import urllib.parse
 from typing import Any
@@ -196,3 +198,51 @@ def test_cli_reports_once_per_process(monkeypatch: pytest.MonkeyPatch) -> None:
     invoke_cli(["--help"])
     invoke_cli(["--version"])
     assert len(recorded) == 1
+
+
+def test_cli_skips_reporting_for_shell_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(analytics, "REO_ENDPOINT", REO_TEST_ENDPOINT)
+    recorded = record_requests(monkeypatch)
+    clear_all_gate_vars(monkeypatch)
+    # Positive control: the same setup without the variable does report.
+    CliRunner().invoke(cli, ["--help"], prog_name="diagridpy")
+    assert len(recorded) == 1
+
+    monkeypatch.setattr(analytics, "_reported_packages", set())
+    recorded.clear()
+    CliRunner().invoke(
+        cli, [], prog_name="diagridpy", env={"_DIAGRIDPY_COMPLETE": "bash_source"}
+    )
+    assert recorded == []
+
+
+def test_cli_skips_reporting_for_completion_with_custom_complete_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(analytics, "REO_ENDPOINT", REO_TEST_ENDPOINT)
+    recorded = record_requests(monkeypatch)
+    clear_all_gate_vars(monkeypatch)
+    monkeypatch.setenv("_CUSTOM_VAR", "bash_source")
+    with pytest.raises(SystemExit):
+        cli.main([], prog_name="diagridpy", complete_var="_CUSTOM_VAR")
+    assert recorded == []
+
+
+def test_cli_runs_without_the_analytics_module() -> None:
+    # An older diagrid-core has no diagrid.core.analytics: the CLI must still run.
+    import diagrid.cli.main as main_module
+    import diagrid.core
+
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setitem(sys.modules, "diagrid.core.analytics", None)
+            mp.delattr(diagrid.core, "analytics")
+            reloaded = importlib.reload(main_module)
+            assert reloaded.analytics is None
+            result = CliRunner().invoke(reloaded.cli, ["--help"])
+            assert result.exit_code == 0, result.output
+    finally:
+        importlib.reload(main_module)
+    assert main_module.analytics is not None
