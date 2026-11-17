@@ -155,7 +155,7 @@ def test_cli_send_is_blocking_and_capped(monkeypatch: pytest.MonkeyPatch) -> Non
         elapsed = time.monotonic() - start
     finally:
         server.close()
-    assert elapsed < 3.0
+    assert elapsed < 1.5  # the hard cap, not per socket operation
     assert elapsed >= 0.5  # it really waited on the socket, not skipped the send
 
 
