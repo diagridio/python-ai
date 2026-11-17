@@ -293,6 +293,36 @@ def _send_event(
             )
 
 
+def _select_sinks(package: str, sinks: Sequence[Sink]) -> list[Sink]:
+    """Return the sinks that should receive ``package``'s event, marking them reported.
+
+    Shared by ``report_usage`` and ``report_usage_blocking`` so the dedupe set
+    and the gates cannot drift apart. A sink is skipped while it has no
+    endpoint, once it has already seen this package in this process, or when its
+    gate is closed. Never raises.
+    """
+    selected: list[Sink] = []
+    for sink in sinks:
+        try:
+            if not sink.configured():
+                continue
+            key = (sink.name, package)
+            with _reported_lock:
+                if key in _reported_packages:
+                    continue
+                _reported_packages.add(key)
+
+            if not sink.allowed():
+                logger.debug(
+                    "usage reporting for %s to %s is disabled", package, sink.name
+                )
+                continue
+            selected.append(sink)
+        except Exception:
+            continue
+    return selected
+
+
 def report_usage(
     package: str, *, sinks: Sequence[Sink] = USAGE_SINKS, **dimensions: object
 ) -> None:
@@ -305,25 +335,7 @@ def report_usage(
     closed, for example when the user opted out.
     """
     try:
-        selected: list[Sink] = []
-        for sink in sinks:
-            try:
-                if not sink.configured():
-                    continue
-                key = (sink.name, package)
-                with _reported_lock:
-                    if key in _reported_packages:
-                        continue
-                    _reported_packages.add(key)
-
-                if not sink.allowed():
-                    logger.debug(
-                        "usage reporting for %s to %s is disabled", package, sink.name
-                    )
-                    continue
-                selected.append(sink)
-            except Exception:
-                continue
+        selected = _select_sinks(package, sinks)
         if not selected:
             return
 
@@ -335,5 +347,24 @@ def report_usage(
             daemon=True,
         )
         thread.start()
+    except Exception:
+        pass
+
+
+def report_usage_blocking(
+    package: str, *, sinks: Sequence[Sink], **dimensions: object
+) -> None:
+    """Report like ``report_usage``, but send on the calling thread.
+
+    For a one-shot process, such as a CLI command, that exits before a daemon
+    thread would finish. The caller waits for the send. Each socket operation
+    is capped at ``USAGE_TIMEOUT_SECONDS``, so a host that accepts and never
+    replies costs about that long per destination. DNS resolution is not
+    covered by that cap. Never raises.
+    """
+    try:
+        selected = _select_sinks(package, sinks)
+        if selected:
+            _send_event(package, dict(dimensions), sinks=tuple(selected))
     except Exception:
         pass

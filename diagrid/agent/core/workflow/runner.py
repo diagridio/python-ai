@@ -8,9 +8,10 @@ import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from importlib import metadata
-from typing import Any, AsyncIterator, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
 from dapr_agents.utils.signal.mixin import SignalMixin
@@ -23,11 +24,16 @@ from diagrid.agent.core.workflow.naming import build_workflow_name
 # ``diagrid-core`` ships the reporter. This distribution only pins
 # ``diagrid-core>=0.1.0`` (through ``diagrid-cli``), so an application holding
 # an older ``diagrid-core`` must keep working: fall back to a no-op.
+if TYPE_CHECKING:
+    from diagrid.core.analytics import Sink
+
 try:
     from diagrid.core.analytics import report_usage
 except ImportError:  # pragma: no cover - older diagrid-core
-    # The fallback has no ``sinks`` parameter: an older core has no destination list.
-    def report_usage(package: str, **dimensions: object) -> None:  # type: ignore[misc]
+    # ``sinks`` is accepted and ignored: an older core has no destination list.
+    def report_usage(
+        package: str, *, sinks: Sequence["Sink"] = (), **dimensions: object
+    ) -> None:
         return None
 
 
