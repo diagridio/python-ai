@@ -1401,7 +1401,7 @@ wheels = [
 
 [[package]]
 name = "diagrid"
-version = "0.5.3"
+version = "0.5.4"
 source = { editable = "." }
 dependencies = [
     { name = "dapr" },
@@ -1471,7 +1471,7 @@ crewai = [
     { name = "uvicorn" },
 ]
 deepagents = [
-    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents') and extra == 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-holmesgpt' and (extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands')" },
     { name = "dapr-agents", marker = "extra == 'extra-7-diagrid-langgraph'" },
     { name = "deepagents" },
     { name = "fastapi", marker = "extra == 'extra-7-diagrid-langgraph'" },
@@ -1509,7 +1509,7 @@ langchain = [
     { name = "uvicorn" },
 ]
 langgraph = [
-    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "dapr", extra = ["langgraph", "strands"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents') and extra == 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-holmesgpt' and (extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands')" },
     { name = "dapr-agents" },
     { name = "fastapi" },
     { name = "langchain-core" },
@@ -1632,7 +1632,7 @@ test = [
 
 [[package]]
 name = "diagrid-cli"
-version = "0.5.3"
+version = "0.5.4"
 source = { editable = "diagrid/cli" }
 dependencies = [
     { name = "click" },
@@ -1650,7 +1650,7 @@ requires-dist = [
 
 [[package]]
 name = "diagrid-core"
-version = "0.5.3"
+version = "0.5.4"
 source = { editable = "diagrid/core" }
 dependencies = [
     { name = "httpx" },
@@ -1735,7 +1735,7 @@ version = "0.2.4"
 source = { virtual = "examples/langgraph" }
 dependencies = [
     { name = "diagrid" },
-    { name = "diagrid", extra = ["langgraph"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-all' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-claude-agents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-crewai' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-deepagents' and extra == 'extra-7-diagrid-holmesgpt') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-langchain') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-openai-agents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-pydantic-ai') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-smolagents') or (extra == 'extra-7-diagrid-holmesgpt' and extra == 'extra-7-diagrid-strands')" },
+    { name = "diagrid", extra = ["langgraph"], marker = "extra == 'extra-7-diagrid-langgraph' or (extra == 'extra-7-diagrid-adk' or extra == 'extra-7-diagrid-all' or extra == 'extra-7-diagrid-claude-agents' or extra == 'extra-7-diagrid-crewai' or extra == 'extra-7-diagrid-deepagents') and extra == 'extra-7-diagrid-holmesgpt' or extra == 'extra-7-diagrid-holmesgpt' and (extra == 'extra-7-diagrid-langchain' or extra == 'extra-7-diagrid-openai-agents' or extra == 'extra-7-diagrid-pydantic-ai' or extra == 'extra-7-diagrid-smolagents' or extra == 'extra-7-diagrid-strands')" },
     { name = "langchain-openai" },
 ]
 

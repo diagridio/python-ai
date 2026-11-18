@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid-cli"
-version = "0.5.3"
+version = "0.5.4"
 description = "diagridpy CLI: scaffold, deploy and chaos-test durable AI agents on Dapr and Diagrid"
 readme = "README.md"
 requires-python = ">=3.11"
