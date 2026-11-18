@@ -385,7 +385,9 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         """Start an HTTP server exposing /agent/run endpoints.
 
         Creates a FastAPI app, calls ``_setup_telemetry()``, starts the
-        runtime, and registers POST/GET ``/agent/run`` endpoints.
+        runtime, and registers POST/GET ``/agent/run`` endpoints plus
+        ``GET /`` and ``GET /healthz`` health routes that return 200 once
+        startup has finished.
 
         When pub/sub parameters are provided, also registers Dapr
         programmatic subscription endpoints so the agent can receive
@@ -450,6 +452,14 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                     logger.error("Failed to publish result: %s", str(e))
 
             return result
+
+        # Health routes: platforms probe the app (Catalyst uses ``GET /``)
+        # and route no invocations to it until these answer 200. Uvicorn only
+        # serves requests once the lifespan, which starts the runtime, is up.
+        @app.get("/")
+        @app.get("/healthz")
+        async def health() -> dict:  # type: ignore[type-arg]
+            return {"status": "ok"}
 
         @app.post("/agent/run")
         async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
