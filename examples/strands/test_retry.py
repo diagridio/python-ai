@@ -156,7 +156,7 @@ async def main():
         await asyncio.sleep(1)
 
         async for event in runner.run_async(
-            prompt=PROMPT,
+            task=PROMPT,
             session_id=SESSION_ID,
         ):
             event_type = event["type"]
