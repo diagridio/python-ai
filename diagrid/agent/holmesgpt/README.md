@@ -26,11 +26,13 @@ The store is whatever Dapr is configured for — Redis is the default, but any D
 ## Quick start
 
 ```python
+from pathlib import Path
+
 from diagrid.agent.holmesgpt import DaprWorkflowHolmesRunner
 
 runner = DaprWorkflowHolmesRunner(
     name="sre-agent",
-    config_path="~/.holmes/config.yaml",  # optional
+    config_path=Path("~/.holmes/config.yaml").expanduser(),  # optional
     model="anthropic/claude-sonnet-4-5-20250929",  # optional
     max_steps=10,
 )
