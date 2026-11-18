@@ -119,7 +119,7 @@ def step_three(processed_data: str) -> str:
 
 # Create the agent with all three tools
 agent = Agent(
-    "gpt-4o-mini",
+    "openai:gpt-4o-mini",
     system_prompt="""You are a sequential task processor that MUST call tools in a specific order.
     You MUST call all three tools in sequence:
     1. First call 'step_one' with the input
