@@ -17,7 +17,8 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
 from holmes.config import Config
 from holmes.core.llm import LLM
@@ -51,7 +52,7 @@ class HolmesRegistry:
     def build(
         cls,
         *,
-        config_path: Optional[str] = None,
+        config_path: Optional[Union[str, Path]] = None,
         model: Optional[str] = None,
         toolset_tags: Optional[List[str]] = None,
         enable_all_toolsets_possible: bool = False,
@@ -59,7 +60,7 @@ class HolmesRegistry:
         if config_path is None:
             cfg = Config.load_from_env()
         else:
-            cfg = Config.load_from_file(config_path)
+            cfg = Config.load_from_file(Path(config_path).expanduser())
 
         if model:
             cfg.model = model

@@ -3,8 +3,12 @@
 
 """Tests for workflow functions."""
 
+import os
 import unittest
 from unittest import mock
+
+from langsmith.run_helpers import get_current_run_tree
+from langsmith.run_trees import RunTree
 
 from diagrid.agent.langgraph.models import (
     ChannelState,
@@ -27,6 +31,8 @@ from diagrid.agent.langgraph.workflow import (
     _serialize_value,
     _apply_write,
     execute_node_activity,
+    make_node_activity,
+    node_activity_name,
     evaluate_condition_activity,
 )
 from langgraph.types import Send
@@ -499,6 +505,71 @@ class TestEvaluateConditionActivity(unittest.TestCase):
         self.assertEqual(output.next_nodes, ["next_node"])
 
 
+class TestEvaluateConditionLangSmithParent(unittest.TestCase):
+    """A traced condition must nest under the workflow's "LangGraph" trace,
+    not land in LangSmith as a top-level trace of its own."""
+
+    ROOT_RUN_ID = "00000000-0000-4000-8000-000000000001"
+
+    def setUp(self):
+        clear_registries()
+
+    def tearDown(self):
+        clear_registries()
+
+    def _evaluate_traced(self, config):
+        # A private LangGraph module; importing it here keeps a move from
+        # breaking every test in this file.
+        from langgraph._internal._runnable import RunnableCallable
+
+        seen = {}
+
+        def route(state):
+            run = get_current_run_tree()
+            seen["trace_id"] = str(run.trace_id) if run else None
+            seen["parent_run_id"] = str(run.parent_run_id) if run else None
+            return "next_node"
+
+        # add_conditional_edges wraps every path in a RunnableCallable, which
+        # traces itself when LANGSMITH_TRACING is on.
+        register_condition("cond", RunnableCallable(route))
+        input_data = EvaluateConditionInput(
+            source_node="node_a",
+            condition_name="cond",
+            channel_state=ChannelState(),
+            config=config,
+        ).to_dict()
+        env = {"LANGSMITH_TRACING": "true", "LANGSMITH_API_KEY": "test-not-a-key"}
+        with (
+            mock.patch.dict(os.environ, env),
+            mock.patch.object(RunTree, "post"),
+            mock.patch.object(RunTree, "patch"),
+        ):
+            output = EvaluateConditionOutput.from_dict(
+                evaluate_condition_activity(mock.Mock(), input_data)
+            )
+        return output, seen
+
+    def test_condition_nests_under_parent_trace(self):
+        output, seen = self._evaluate_traced(
+            {
+                "langsmith_dotted_order": f"20261016T000000000000Z{self.ROOT_RUN_ID}",
+                "langsmith_run_id": self.ROOT_RUN_ID,
+            }
+        )
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
+        self.assertEqual(seen["trace_id"], self.ROOT_RUN_ID)
+        self.assertEqual(seen["parent_run_id"], self.ROOT_RUN_ID)
+
+    def test_condition_without_parent_trace_still_evaluates(self):
+        output, _ = self._evaluate_traced({})
+
+        self.assertIsNone(output.error)
+        self.assertEqual(output.next_nodes, ["next_node"])
+
+
 class TestExecuteNodeRuntimeInjection(unittest.TestCase):
     """execute_node_activity must inject a Runtime carrying the thread_id."""
 
@@ -600,6 +671,34 @@ class TestBuildNodeRuntime(unittest.TestCase):
         rt = _build_node_runtime(None, _FakeActivityCtx(), "model")
         self.assertIsNotNone(rt.execution_info)
         self.assertIsNone(rt.execution_info.thread_id)
+
+
+class TestNodeActivityName(unittest.TestCase):
+    def test_node_named_after_itself(self):
+        self.assertEqual(node_activity_name("check_venues"), "check_venues")
+
+    def test_generic_names_fall_back_to_execute_node_activity(self):
+        for name in ("execute_node_activity", "evaluate_condition_activity"):
+            self.assertEqual(node_activity_name(name), "execute_node_activity")
+
+    def test_each_node_gets_its_own_activity_function(self):
+        first = make_node_activity("check_venues")
+        second = make_node_activity("compare_options")
+
+        self.assertIsNot(first, second)
+
+    def test_node_activity_runs_the_node(self):
+        clear_registries()
+        register_node("check_venues", lambda state: {"value": 2})
+        input_data = ExecuteNodeInput(
+            node_name="check_venues",
+            channel_state=ChannelState(values={"value": 1}),
+        ).to_dict()
+
+        result = make_node_activity("check_venues")(_FakeActivityCtx(), input_data)
+
+        self.assertEqual(result, execute_node_activity(_FakeActivityCtx(), input_data))
+        clear_registries()
 
 
 if __name__ == "__main__":

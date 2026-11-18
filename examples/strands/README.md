@@ -76,3 +76,47 @@ Yield workflow events to caller
 ```
 
 Each workflow activity is checkpointed by Dapr, providing durability guarantees.
+
+## Conversation history
+
+`DaprWorkflowAgentRunner` treats `session_id` as one conversation. A second
+call with the same `session_id` sees the earlier turns, like repeated calls on
+one plain Strands `Agent`. Use a new `session_id` to start fresh.
+
+```python
+runner.run_sync(task="My name is Ada.", session_id="chat-1")
+runner.run_sync(task="What is my name?", session_id="chat-1")  # sees the first turn
+```
+
+- History is stored under `strands-<runner name>-<session_id>-messages`, so two
+  runners with different names never share it.
+- It is saved after each successful run and trimmed to the agent's
+  `SlidingWindowConversationManager.window_size` (default 40).
+- For durable memory, add a Dapr state store component named `agent-memory`
+  (or pass `state_store=` to the runner). History then survives restarts and is
+  shared between replicas:
+
+  ```yaml
+  apiVersion: dapr.io/v1alpha1
+  kind: Component
+  metadata:
+    name: agent-memory
+  spec:
+    type: state.redis
+    version: v1
+    metadata:
+      - name: redisHost
+        value: "localhost:6379"
+      - name: redisPassword
+        value: ""
+  ```
+
+- Without a state store, history stays in the runner process and a warning is
+  logged: it does not survive a restart and is not shared between replicas.
+- The agent's own `messages` and any Strands session manager are not used by
+  the runner.
+- Callers that reuse one fixed `session_id` for unrelated tasks now carry
+  history between those tasks.
+
+`DurableAgent` is a single conversation, like `Agent`: each call starts from
+`agent.messages` and writes the result back to it.

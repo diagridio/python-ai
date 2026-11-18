@@ -15,7 +15,8 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from pathlib import Path
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 import uvicorn
 from dapr.ext.workflow import WorkflowStatus
@@ -70,8 +71,9 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
 
     Args:
         name: Logical agent name (used in the workflow registration name).
-        config_path: Optional path to a HolmesGPT config file. If ``None``,
-            HolmesGPT loads from the environment / default config locations.
+        config_path: Optional path to a HolmesGPT config file, as a ``str`` or
+            ``Path``. ``~`` is expanded. If ``None``, HolmesGPT loads from the
+            environment / default config locations.
         model: Optional LLM model override, e.g.
             ``"anthropic/claude-sonnet-4-5-20250929"``.
         toolset_tags: Toolset tags to enable. Defaults to ``["core", "cluster"]``
@@ -90,7 +92,7 @@ class DaprWorkflowHolmesRunner(BaseWorkflowRunner):
         self,
         *,
         name: str = "holmes-sre",
-        config_path: Optional[str] = None,
+        config_path: Optional[Union[str, Path]] = None,
         model: Optional[str] = None,
         toolset_tags: Optional[List[str]] = None,
         enable_all_toolsets_possible: bool = False,

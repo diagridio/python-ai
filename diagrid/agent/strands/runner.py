@@ -11,6 +11,7 @@ from typing import Any, AsyncIterator, Generator, Optional, TYPE_CHECKING
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 
+from .history import HistoryStore, resolve_window_size, trim_history
 from .workflow import WorkflowOutput
 
 if TYPE_CHECKING:
@@ -65,6 +66,18 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         runner.shutdown()
         ```
 
+    Conversation history:
+        ``session_id`` identifies a conversation. Calls with the same
+        ``session_id`` see the earlier turns, like repeated calls on one plain
+        Strands ``Agent``; use a new ``session_id`` to start fresh. History is
+        stored under ``strands-<name>-<session_id>-messages``, so runners with
+        different names never share it. It is saved after each successful run,
+        trimmed to the agent's ``SlidingWindowConversationManager.window_size``
+        (default 40). It goes to the state store (``state_store``, or the
+        ``agent-memory`` component when present) and survives restarts. Without
+        one it stays in this process and a warning is logged. The agent's own
+        ``messages`` and session manager are not used.
+
     Attributes:
         agent: The Strands Agent to execute
         workflow_runtime: The Dapr WorkflowRuntime instance
@@ -104,6 +117,8 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
             state_store=state_store,
         )
 
+        self._history = HistoryStore(name, self._state_store)
+
         # Register metadata
         self._register_agent_metadata(
             agent=self._agent,
@@ -121,6 +136,21 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         """Set up the workflow runtime, activities, and workflow."""
         # Store references for closures
         agent_ref = self._agent
+        history = self._history
+
+        # ============================================================
+        # Activities: load and save conversation history
+        # ============================================================
+        def load_history_activity(ctx: Any, input_data: dict) -> list:  # type: ignore[type-arg]
+            """Activity that returns the stored messages for a session."""
+            return history.load(input_data["session_id"])
+
+        def save_history_activity(ctx: Any, input_data: dict) -> None:  # type: ignore[type-arg]
+            """Activity that trims and stores the full message list."""
+            trimmed = trim_history(
+                input_data.get("messages", []), resolve_window_size(agent_ref)
+            )
+            history.save(input_data["session_id"], trimmed)
 
         # ============================================================
         # Activity: Call the model (LLM)
@@ -257,11 +287,16 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         def agent_workflow(ctx: Any, input_data: dict) -> Generator[Any, Any, dict]:  # type: ignore[type-arg]
             """Workflow that orchestrates the agent loop."""
             task = input_data.get("task", "")
+            session_id = input_data.get("session_id", "")
             system_prompt = agent_ref.system_prompt or ""
 
-            messages: list[dict[str, Any]] = [
+            stored = yield ctx.call_activity(
+                load_history_activity, input={"session_id": session_id}
+            )
+            messages: list[dict[str, Any]] = list(stored or []) + [
                 {"role": "user", "content": [{"text": task}]}
             ]
+            completed = False
             final_text = ""
             all_tool_calls: list[dict[str, Any]] = []
 
@@ -287,6 +322,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
                 if not tool_uses or stop_reason == "end_turn":
                     final_text = text
+                    completed = True
                     break
 
                 tool_results = []
@@ -315,6 +351,12 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
 
                 messages.append({"role": "user", "content": tool_results})
 
+            if completed:
+                yield ctx.call_activity(
+                    save_history_activity,
+                    input={"session_id": session_id, "messages": messages},
+                )
+
             return {  # type: ignore[return-value]
                 "result": final_text,
                 "tool_calls": all_tool_calls,
@@ -323,6 +365,12 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         # Register workflow and activities
         self._workflow_runtime.register_workflow(
             agent_workflow, name=self.workflow_name
+        )
+        self._workflow_runtime.register_activity(
+            load_history_activity, name="strands_load_history"
+        )
+        self._workflow_runtime.register_activity(
+            save_history_activity, name="strands_save_history"
         )
         self._workflow_runtime.register_activity(
             call_model_activity, name="strands_call_model"
@@ -365,7 +413,7 @@ class DaprWorkflowAgentRunner(BaseWorkflowRunner):
         if workflow_id is None:
             workflow_id = f"strands-{session_id}-{uuid.uuid4().hex[:8]}"
 
-        input_data = {"task": task}
+        input_data = {"task": task, "session_id": session_id}
 
         logger.info("Starting workflow: %s", workflow_id)
         self._workflow_client.schedule_new_workflow(
