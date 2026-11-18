@@ -173,4 +173,9 @@ def test_root_readme_opening_line() -> None:
         for line in (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     ]
-    assert lines[0] == "Durable execution for AI agents and workflows."
+    assert lines[0] == (
+        "Durable execution for Python AI agents on "
+        "[Dapr Workflows](https://docs.dapr.io/developing-applications/"
+        "building-blocks/workflow/), with "
+        "[Diagrid Catalyst](https://www.diagrid.io/catalyst)."
+    )
