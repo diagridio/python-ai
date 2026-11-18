@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diagrid"
-version = "0.5.3"
+version = "0.5.4"
 description = "Durable execution for AI agents: LangGraph, CrewAI, Pydantic AI, OpenAI Agents SDK, Google ADK, Strands and more, on Dapr Workflow"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -18,7 +18,6 @@ keywords = [
     "dapr-workflow",
     "workflow",
     "diagrid",
-    "catalyst",
     "langgraph",
     "crewai",
     "pydantic-ai",
@@ -49,7 +48,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://www.diagrid.io/catalyst"
+Homepage = "https://www.diagrid.io/platform"
 Documentation = "https://docs.diagrid.io"
 Source = "https://github.com/diagridio/python-ai"
 Issues = "https://github.com/diagridio/python-ai/issues"
@@ -71,20 +70,17 @@ agent-core = [
     "fastapi>=0.129.0",
     "uvicorn>=0.41.0",
     "pydantic>=2.12.5,<2.14",
-    "langgraph>=1.1.10",
+    "langgraph>=1.2.14",
 ]
 langgraph = [
-    "langgraph>=1.1.10",
+    "langgraph>=1.2.14",
     "langchain-core>=1.3.2",
     "diagrid[agent-core]",
 ]
 crewai = [
-    # crewai>=1.15.4 requires `mcp~=1.28.1`, but the `mcp==1.26.0` override
-    # (see [tool.uv]) forces 1.26.0 and silently hides that clash. 1.15.3 is
-    # the newest release that accepts both `mcp~=1.26.0` and the
-    # `opentelemetry-api~=1.42.0` line the rest of the graph resolves. Raise
-    # this bound only together with the mcp override.
-    "crewai>=1.6.1,<1.15.4",
+    # crewai>=1.15.4 requires `mcp~=1.28.1`, which matches the `mcp==1.28.1`
+    # override (see [tool.uv]). Keep this bound in step with that override.
+    "crewai>=1.15.39,<1.16",
     "litellm>=1.0.0,!=1.82.7,!=1.82.8",
     "diagrid[agent-core]",
 ]
@@ -103,7 +99,7 @@ openai_agents = [
     "diagrid[agent-core]",
 ]
 claude_agents = [
-    "claude-agent-sdk>=0.1.45",
+    "claude-agent-sdk>=0.2.121",
     "anthropic>=0.40.0",
     "diagrid[agent-core]",
 ]
@@ -216,9 +212,9 @@ override-dependencies = [
     # at ``>=6.1.0``.
     "cachetools>=6.1.0,<8.0.0",
     # holmesgpt pins ``mcp==1.25.0`` while dapr-agents requires
-    # ``mcp>=1.26.0``. mcp 1.26 adds APIs over 1.25 and is wire-compatible
+    # ``mcp>=1.26.0``. mcp 1.28 adds APIs over 1.25 and is wire-compatible
     # for the surfaces both libraries use.
-    "mcp==1.26.0",
+    "mcp==1.28.1",
     # Cap numpy below the 2.5.x line — 2.5.0rc1's stubs use PEP 695
     # ``type X = ...`` syntax (Python 3.12+), which trips mypy's
     # ``python_version = 3.11`` target with ``Type statement is only

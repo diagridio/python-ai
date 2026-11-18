@@ -107,8 +107,12 @@ def _merge(
     base: AgentObservabilityConfig,
     override: AgentObservabilityConfig,
 ) -> AgentObservabilityConfig:
-    """Merge two configs; override values win when not None."""
-    merged_headers = {**base.headers, **override.headers}
+    """Merge two configs; override values win when not None.
+
+    ``headers`` may be None on either side (dapr-agents 1.1.0 ``from_env()``
+    returns None when no OTLP headers are set), so None counts as empty.
+    """
+    merged_headers = {**(base.headers or {}), **(override.headers or {})}
     return AgentObservabilityConfig(
         enabled=override.enabled if override.enabled is not None else base.enabled,
         headers=merged_headers,

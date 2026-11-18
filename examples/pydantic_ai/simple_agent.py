@@ -52,7 +52,7 @@ def get_datetime() -> str:
 async def main():
     # Create a Pydantic AI agent with tools
     agent = Agent(
-        "gpt-4o-mini",
+        "openai:gpt-4o-mini",
         system_prompt="""You are an expert research assistant with access to various
         information sources. You excel at finding and synthesizing information
         to provide comprehensive answers to user queries.""",

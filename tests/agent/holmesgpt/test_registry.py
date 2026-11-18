@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -66,6 +67,7 @@ def _fake_config(
 
         @classmethod
         def load_from_file(cls, _path):
+            captured["load_from_file_path"] = _path
             return cls()
 
         def get_skill_catalog(self):
@@ -141,3 +143,22 @@ def test_build_swallows_skill_catalog_errors():
     with _patch_holmes(FakeConfig):
         reg = HolmesRegistry.build(model="anthropic/foo")
     assert reg.skills is None
+
+
+def test_build_passes_config_path_as_expanded_path():
+    """``config_path`` must reach HolmesGPT as an expanded ``Path``.
+
+    ``holmes.config.Config.load_from_file`` is annotated ``Optional[Path]`` and
+    calls ``.exists()`` on the value, so a ``str`` raises ``AttributeError``.
+    An unexpanded ``~`` is worse than an error: ``.exists()`` returns False and
+    the config file is silently ignored.
+    """
+    FakeConfig, captured = _fake_config()
+
+    with _patch_holmes(FakeConfig):
+        registry_module.HolmesRegistry.build(config_path="~/.holmes/config.yaml")
+
+    received = captured["load_from_file_path"]
+    assert isinstance(received, Path)
+    assert "~" not in str(received)
+    assert received == Path("~/.holmes/config.yaml").expanduser()

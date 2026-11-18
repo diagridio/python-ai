@@ -28,12 +28,12 @@ DESCRIPTIONS = {
         "OpenAI Agents SDK, Google ADK, Strands and more, on Dapr Workflow"
     ),
     "diagrid-core": (
-        "Shared auth, configuration and Catalyst API client for the Diagrid "
+        "Shared auth, configuration and Diagrid API client for the Diagrid "
         "durable AI agent integrations"
     ),
     "diagrid-cli": (
         "diagridpy CLI: scaffold, deploy and chaos-test durable AI agents on "
-        "Dapr and Diagrid Catalyst"
+        "Dapr and Diagrid"
     ),
 }
 
@@ -46,7 +46,6 @@ ROOT_KEYWORDS = [
     "dapr-workflow",
     "workflow",
     "diagrid",
-    "catalyst",
     "langgraph",
     "crewai",
     "pydantic-ai",
@@ -74,7 +73,7 @@ CLASSIFIERS = {
 }
 
 URLS = {
-    "Homepage": "https://www.diagrid.io/catalyst",
+    "Homepage": "https://www.diagrid.io/platform",
     "Documentation": "https://docs.diagrid.io",
     "Source": "https://github.com/diagridio/python-ai",
     "Issues": "https://github.com/diagridio/python-ai/issues",
@@ -110,7 +109,7 @@ def test_keywords_present(name: str) -> None:
     keywords = _project(name)["keywords"]
     assert keywords
     assert len(keywords) == len(set(keywords))
-    assert {"durable-execution", "dapr", "diagrid", "catalyst"} <= set(keywords)
+    assert {"durable-execution", "dapr", "diagrid"} <= set(keywords)
 
 
 def test_root_keywords() -> None:
