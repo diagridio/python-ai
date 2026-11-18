@@ -71,18 +71,14 @@ A LangGraph graph whose nodes each run as a durable Dapr Workflow activity, trim
 from typing import List, TypedDict
 from langgraph.graph import StateGraph, START, END
 from diagrid.agent.langgraph import DaprWorkflowGraphRunner
-
 class State(TypedDict):
     messages: List[str]
-
 def process_node(state: State) -> dict:
     return {"messages": state["messages"] + ["processed by node A"]}
-
 graph = StateGraph(State)
 graph.add_node("process", process_node)
 graph.add_edge(START, "process")
 graph.add_edge("process", END)
-
 runner = DaprWorkflowGraphRunner(graph=graph.compile(), name="simple_graph")
 runner.start()
 print(runner.invoke(input={"messages": ["initial message"]}, thread_id="simple-example-001"))
