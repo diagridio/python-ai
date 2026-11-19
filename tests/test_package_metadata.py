@@ -177,5 +177,5 @@ def test_root_readme_opening_line() -> None:
         "Durable execution for Python AI agents on "
         "[Dapr Workflows](https://docs.dapr.io/developing-applications/"
         "building-blocks/workflow/), with "
-        "[Diagrid Catalyst](https://www.diagrid.io/catalyst)."
+        "[Diagrid](https://www.diagrid.io/catalyst)."
     )
