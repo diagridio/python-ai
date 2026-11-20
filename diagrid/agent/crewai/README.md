@@ -31,10 +31,12 @@ from crewai import Agent, Task
 from crewai.tools import tool
 from diagrid.agent.crewai import DaprWorkflowAgentRunner
 
+
 @tool("Search the web for information")
 def search_web(query: str) -> str:
     """Search the web and return results."""
     return f"Results for: {query}"
+
 
 # Create your CrewAI agent
 agent = Agent(
