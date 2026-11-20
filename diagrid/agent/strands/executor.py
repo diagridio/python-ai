@@ -28,6 +28,16 @@ from strands.types.tools import ToolResult, ToolUse
 logger = logging.getLogger(__name__)
 
 
+def _context_kwargs(invocation_context: Any) -> dict[str, Any]:
+    """Forward ``invocation_context`` only when strands supplied one.
+
+    Older strands releases neither pass nor accept this argument.
+    """
+    if invocation_context is None:
+        return {}
+    return {"invocation_context": invocation_context}
+
+
 class DaprWorkflowToolExecutor(ToolExecutor):
     """Tool executor that dispatches tool calls as Dapr Workflow activities.
 
@@ -124,6 +134,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
         cycle_span: Any,
         invocation_state: dict[str, Any],
         structured_output_context: "StructuredOutputContext | None" = None,
+        invocation_context: Any = None,
     ) -> AsyncGenerator[TypedEvent, None]:
         """Execute a single tool as a Dapr workflow activity.
 
@@ -135,6 +146,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
             cycle_span: Span for tracing
             invocation_state: Agent invocation state
             structured_output_context: Structured output context
+            invocation_context: Request context (strands >= 1.64), forwarded as-is
 
         Yields:
             Tool execution events
@@ -205,6 +217,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
                 cycle_span,
                 invocation_state,
                 structured_output_context,
+                **_context_kwargs(invocation_context),
             ):
                 yield event
 
@@ -218,6 +231,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
         cycle_span: Any,
         invocation_state: dict[str, Any],
         structured_output_context: "StructuredOutputContext | None" = None,
+        invocation_context: Any = None,
     ) -> AsyncGenerator[TypedEvent, None]:
         """Execute tools according to Dapr workflow activity strategy.
 
@@ -232,6 +246,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
             cycle_span: Span for tracing
             invocation_state: Agent invocation state
             structured_output_context: Structured output context
+            invocation_context: Request context (strands >= 1.64), forwarded as-is
 
         Yields:
             Tool execution events
@@ -247,6 +262,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
                 cycle_span,
                 invocation_state,
                 structured_output_context,
+                **_context_kwargs(invocation_context),
             ):
                 yield event
             return
@@ -261,6 +277,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
                 cycle_span,
                 invocation_state,
                 structured_output_context,
+                **_context_kwargs(invocation_context),
             ):
                 yield event
         else:
@@ -274,6 +291,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
                     cycle_span,
                     invocation_state,
                     structured_output_context,
+                    **_context_kwargs(invocation_context),
                 ):
                     yield event
 
@@ -286,6 +304,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
         cycle_span: Any,
         invocation_state: dict[str, Any],
         structured_output_context: "StructuredOutputContext | None" = None,
+        invocation_context: Any = None,
     ) -> AsyncGenerator[TypedEvent, None]:
         """Execute multiple tools concurrently as Dapr activities.
 
@@ -300,6 +319,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
             cycle_span: Span for tracing
             invocation_state: Agent invocation state
             structured_output_context: Structured output context
+            invocation_context: Request context (strands >= 1.64), forwarded as-is
 
         Yields:
             Tool execution events from all tools
@@ -322,6 +342,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
                     cycle_span,
                     invocation_state,
                     structured_output_context,
+                    **_context_kwargs(invocation_context),
                 ):
                     task_queue.put_nowait((task_id, event))
                     await task_events[task_id].wait()
@@ -355,6 +376,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
         cycle_span: Any,
         invocation_state: dict[str, Any],
         structured_output_context: "StructuredOutputContext | None" = None,
+        invocation_context: Any = None,
     ) -> AsyncGenerator[TypedEvent, None]:
         """Execute tools directly without Dapr (fallback mode).
 
@@ -369,6 +391,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
             cycle_span: Span for tracing
             invocation_state: Agent invocation state
             structured_output_context: Structured output context
+            invocation_context: Request context (strands >= 1.64), forwarded as-is
 
         Yields:
             Tool execution events
@@ -389,6 +412,7 @@ class DaprWorkflowToolExecutor(ToolExecutor):
                         cycle_span,
                         invocation_state,
                         structured_output_context,
+                        **_context_kwargs(invocation_context),
                     ):
                         task_queue.put_nowait((task_id, event))
                         await task_events[task_id].wait()
@@ -421,5 +445,6 @@ class DaprWorkflowToolExecutor(ToolExecutor):
                     cycle_span,
                     invocation_state,
                     structured_output_context,
+                    **_context_kwargs(invocation_context),
                 ):
                     yield event
