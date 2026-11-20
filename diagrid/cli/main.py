@@ -5,6 +5,11 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import sys
+from typing import Any
+
 import click
 
 from diagrid.cli.commands.chaos import chaos
@@ -13,8 +18,67 @@ from diagrid.cli.commands.init import init
 from diagrid.cli.utils.process import set_verbose
 from diagrid.core.config.constants import PROD_API_URL, STAGING_API_URL
 
+# ``diagrid.core.analytics`` first shipped in diagrid-core 0.5.1, but this
+# package pins ``diagrid-core>=0.1.0``. With an older core the CLI must still
+# run, so fall back to no reporting.
+try:
+    from diagrid.core import analytics
+except ImportError:  # pragma: no cover - older diagrid-core
+    analytics = None  # type: ignore[assignment]
 
-@click.group()
+
+def _is_completion_request(prog_name: str | None, complete_var: str | None) -> bool:
+    """Return True when click will treat this invocation as shell completion.
+
+    Mirrors ``click.Command._main_shell_completion``: the variable is
+    ``complete_var`` when given, else ``_{PROG_NAME}_COMPLETE`` upper-cased with
+    ``-`` and ``.`` in the program name replaced by ``_``. Click then exits
+    after printing the script or the completions, so such a call must neither
+    report nor block (``eval "$(_DIAGRIDPY_COMPLETE=zsh_source diagridpy)"``
+    runs on every new terminal).
+    """
+    try:
+        if complete_var is None:
+            name = prog_name or os.path.basename(sys.argv[0])
+            name = name.replace("-", "_").replace(".", "_")
+            complete_var = f"_{name}_COMPLETE".upper()
+        return bool(os.environ.get(complete_var))
+    except Exception:
+        return False
+
+
+def _report_cli_usage() -> None:
+    """Report one anonymous usage event to Reo. Never raises, never prints."""
+    if analytics is None:
+        return
+    try:
+        analytics.report_usage_blocking("diagrid-cli", sinks=(analytics.REO_SINK,))
+    except Exception:
+        logging.getLogger(__name__).debug("cli usage report failed", exc_info=True)
+
+
+class _UsageReportingGroup(click.Group):
+    """A group that reports usage before it parses anything.
+
+    ``--help`` and ``--version`` are eager options: click handles them while
+    parsing, before the group callback runs. ``main`` is the one point every
+    invocation passes through, including ``CliRunner.invoke``.
+    """
+
+    def main(
+        self,
+        args: Any = None,
+        prog_name: str | None = None,
+        complete_var: str | None = None,
+        *rest: Any,
+        **kwargs: Any,
+    ) -> Any:
+        if not _is_completion_request(prog_name, complete_var):
+            _report_cli_usage()
+        return super().main(args, prog_name, complete_var, *rest, **kwargs)
+
+
+@click.group(cls=_UsageReportingGroup)
 # Read the version from the installed ``diagrid-cli`` distribution rather than
 # hardcoding it. The release workflow bumps ``diagrid/cli/pyproject.toml`` but
 # never touched a literal here, so a hardcoded string silently goes stale.
