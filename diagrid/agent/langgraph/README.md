@@ -88,6 +88,19 @@ async def main():
 asyncio.run(main())
 ```
 
+## Serving over HTTP
+
+`runner.serve(port=5001)` starts the workflow runtime and a FastAPI app with
+these routes:
+
+| Route | Purpose |
+|---|---|
+| `POST /agent/run` | Run the graph and return its result |
+| `GET /agent/run/{workflow_id}` | Status of a run |
+| `GET /`, `GET /healthz` | Health checks: return `200 {"status": "ok"}` once startup has finished |
+
+Point your platform's health probe at `GET /` or `GET /healthz`.
+
 ## Architecture
 
 ```text

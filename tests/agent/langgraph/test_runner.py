@@ -458,5 +458,73 @@ class TestNodeActivityNames(_RunnerTestCase):
         self.assertEqual(ctx.scheduled, ["execute_node_activity"])
 
 
+class TestServeRoutes(_RunnerTestCase):
+    """The app built by ``serve()`` exposes health routes next to ``/agent/run``."""
+
+    def _serve_app(self) -> Any:
+        graph = StateGraph(_Value)
+        graph.add_node("node", lambda state: {"value": 1})
+        graph.add_edge(START, "node")
+        graph.add_edge("node", END)
+        runner = DaprWorkflowGraphRunner(graph=graph.compile(), name="serve-routes")
+        runner._workflow_runtime = mock.MagicMock()
+
+        async def fake_serve_run(request: dict, session_id: str) -> Any:
+            yield {"type": "workflow_started", "workflow_id": "wf-1"}
+            yield {"type": "workflow_completed", "workflow_id": "wf-1", "output": {}}
+
+        # Stay patched while requests run: the lifespan's start() builds a
+        # workflow client, and /agent/run looks up _serve_run per request.
+        for patcher in (
+            mock.patch("diagrid.agent.core.workflow.runner.DaprWorkflowClient"),
+            mock.patch.object(runner, "_serve_run", fake_serve_run),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        captured: Dict[str, Any] = {}
+        with (
+            mock.patch.object(runner, "_setup_telemetry"),
+            mock.patch(
+                "uvicorn.run", side_effect=lambda app, **kw: captured.update(app=app)
+            ),
+        ):
+            runner.serve(port=5001)
+        self.runner = runner
+        return captured["app"]
+
+    def test_health_routes_return_200_after_startup(self):
+        from fastapi.testclient import TestClient
+
+        with TestClient(self._serve_app()) as client:
+            self.runner._workflow_runtime.start.assert_called_once()
+            for path in ("/", "/healthz"):
+                resp = client.get(path)
+                self.assertEqual(resp.status_code, 200, path)
+                self.assertEqual(resp.json(), {"status": "ok"})
+
+    def test_agent_run_routes_unchanged(self):
+        from fastapi.testclient import TestClient
+
+        with TestClient(self._serve_app()) as client:
+            resp = client.post("/agent/run", json={"task": "hi"})
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["instance_id"], "wf-1")
+            self.assertEqual(resp.json()["type"], "workflow_completed")
+
+            with mock.patch.object(
+                self.runner, "get_workflow_status", return_value=None
+            ):
+                self.assertEqual(client.get("/agent/run/missing").status_code, 404)
+            with mock.patch.object(
+                self.runner,
+                "get_workflow_status",
+                return_value={"workflow_id": "wf-1", "status": "COMPLETED"},
+            ):
+                resp = client.get("/agent/run/wf-1")
+                self.assertEqual(resp.status_code, 200)
+                self.assertEqual(resp.json()["status"], "COMPLETED")
+
+
 if __name__ == "__main__":
     unittest.main()
