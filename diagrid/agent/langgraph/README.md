@@ -26,20 +26,21 @@ from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from diagrid.agent.langgraph import DaprWorkflowGraphRunner
 
+
 # Define your state
 class State(TypedDict):
     messages: list[str]
     count: int
 
+
 # Define node functions
 def process_node(state: State) -> dict:
-    return {
-        "messages": state["messages"] + ["processed"],
-        "count": state["count"] + 1
-    }
+    return {"messages": state["messages"] + ["processed"], "count": state["count"] + 1}
+
 
 def validate_node(state: State) -> dict:
     return {"messages": state["messages"] + ["validated"]}
+
 
 # Build the graph
 graph = StateGraph(State)
@@ -70,6 +71,7 @@ finally:
 ```python
 import asyncio
 
+
 async def main():
     runner = DaprWorkflowGraphRunner(graph=compiled, name="my-graph")
     runner.start()
@@ -84,6 +86,7 @@ async def main():
                 print(f"Output: {event['output']}")
     finally:
         runner.shutdown()
+
 
 asyncio.run(main())
 ```

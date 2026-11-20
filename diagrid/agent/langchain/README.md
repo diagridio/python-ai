@@ -36,10 +36,12 @@ from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from diagrid.agent.langchain import DaprWorkflowAgentRunner
 
+
 @tool
 def search_web(query: str) -> str:
     """Search the web for information."""
     return f"Results for: {query}"
+
 
 # Create a Dapr workflow runner around plain langchain_core building blocks
 runner = DaprWorkflowAgentRunner(
