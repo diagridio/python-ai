@@ -1,16 +1,17 @@
-# Durable Workflows for AI agents
+# diagrid: durable execution for Python AI agents
 
-Durable execution for AI agents and workflows.
+Durable execution for Python AI agents on [Dapr Workflows](https://docs.dapr.io/developing-applications/building-blocks/workflow/), with [Diagrid](https://www.diagrid.io/catalyst).
 
-**Make your AI agents resilient to failure and outages**
+[![PyPI version](https://img.shields.io/pypi/v/diagrid)](https://pypi.org/project/diagrid/)
+[![Python versions](https://img.shields.io/pypi/pyversions/diagrid)](https://pypi.org/project/diagrid/)
+[![License](https://img.shields.io/badge/license-BSL--1.1-blue)](https://github.com/diagridio/python-ai/blob/main/LICENSE.md)
+[![Build](https://github.com/diagridio/python-ai/actions/workflows/build.yaml/badge.svg?branch=main)](https://github.com/diagridio/python-ai/actions/workflows/build.yaml)
 
-The `diagrid` package is an extension SDK for the open-source [Dapr](https://github.com/dapr/dapr) project to build durable, fault-tolerant AI agents. It integrates seamlessly with popular agent frameworks, wrapping them in Dapr Workflows to ensure agents can recover from failures, persist state across restarts, and scale effectively.
+**Make your AI agents resilient to failure and outages.** The `diagrid` package is an extension SDK for the open-source [Dapr](https://github.com/dapr/dapr) project for building durable, fault-tolerant AI agents. It wraps popular agent frameworks in Dapr Workflows, so agents recover from failures, persist state across restarts, and scale out.
 
-Get started with [Diagrid Catalyst for free](https://diagrid.ws/get-catalyst). Catalyst has a permanent free tier, with Cloud Plus for higher limits.
+Get started with [Diagrid for free](https://diagrid.ws/get-catalyst). Diagrid has a permanent free tier.
 
-## Community
-
-Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
+Related SDKs: [TypeScript](https://github.com/diagridio/typescript-ai) · [.NET](https://github.com/diagridio/dotnet-ai) · [Go](https://github.com/diagridio/go-ai) · [Java](https://github.com/diagridio/java-ai) · [Rust](https://github.com/diagridio/rust-ai)
 
 ## Features
 
@@ -20,6 +21,8 @@ Have questions, hit a bug, or want to share what you're building? Join the [Diag
 - **Observability:** Deep insights into agent execution, tool calls, and state transitions.
 
 ## Installation
+
+Requires Python 3.11, 3.12 or 3.13.
 
 Install the base package along with the extension for your chosen framework:
 
@@ -60,27 +63,59 @@ pip install "diagrid[holmesgpt]"
 
 > **Note:** `diagrid[holmesgpt]` is intentionally not part of `diagrid[all]`. HolmesGPT ships strict pins on `fastapi`, `uvicorn`, `cachetools`, `mcp`, and `httpx[socks]` that conflict with the looser constraints used by the other agent extras. Install it in its own environment.
 
-## Usage analytics
+## Quickstart
 
-Every agent runner reports one anonymous usage event when it is constructed, once per package per process. PyPI publishes aggregate download counts only, so this is how Diagrid sees which package versions run on which platforms. Because it is one event per process, a Kubernetes deployment produces one event per replica per restart: the numbers count process starts, not deployments or users.
+A LangGraph graph whose nodes each run as a durable Dapr Workflow activity, trimmed from [`examples/langgraph/simple_graph.py`](https://github.com/diagridio/python-ai/blob/main/examples/langgraph/simple_graph.py):
 
-**What is sent:** the package name and version, the `diagrid-core` version, operating system, architecture, Python version, the agent framework and the installed version of its library (`framework`, `framework_version`), `kind=agent`, whether the process points at Catalyst or at a plain Dapr sidecar (`target`), and whether it runs under a CI variable (`ci`). Nothing else: no application data, configuration, app IDs, prompts, or hostnames. The receiving service is [Scarf](https://scarf.sh). It derives coarse company and location information from the request IP. How Scarf handles that data is described in [Scarf's privacy policy](https://about.scarf.sh/privacy-policy).
+```python
+from typing import List, TypedDict
+from langgraph.graph import StateGraph, START, END
+from diagrid.agent.langgraph import DaprWorkflowGraphRunner
+class State(TypedDict):
+    messages: List[str]
+def process_node(state: State) -> dict:
+    return {"messages": state["messages"] + ["processed by node A"]}
+graph = StateGraph(State)
+graph.add_node("process", process_node)
+graph.add_edge(START, "process")
+graph.add_edge("process", END)
+runner = DaprWorkflowGraphRunner(graph=graph.compile(), name="simple_graph")
+runner.start()
+print(runner.invoke(input={"messages": ["initial message"]}, thread_id="simple-example-001"))
+runner.shutdown()
+```
 
-**It never gets in the way:** the request runs on a background daemon thread with a one second socket timeout, every failure is swallowed, and the calling thread never waits. Blocked egress and air-gapped clusters behave normally. Nothing is written to your application's output; a `DEBUG` line on the `diagrid.core.analytics` logger records whether the event was sent or skipped, for operators who want to confirm an opt-out.
-
-To opt out, set any of these environment variables before starting your application:
+Save it as `simple_graph.py` and run it next to a Dapr sidecar with a state store, as the [LangGraph examples](https://github.com/diagridio/python-ai/tree/main/examples/langgraph) do. Copy [`examples/langgraph/resources/`](https://github.com/diagridio/python-ai/tree/main/examples/langgraph/resources) next to it, make sure Redis is running on `localhost:6379` (the `dapr init` default), then run:
 
 ```bash
-export DO_NOT_TRACK=1
-# or
-export SCARF_NO_ANALYTICS=1
-# or
-export DIAGRID_NO_ANALYTICS=1
+dapr run --app-id langgraph-simple --resources-path ./resources -- python3 simple_graph.py
 ```
+
+## How It Works
+
+This SDK leverages [Dapr Workflows](https://docs.dapr.io/developing-applications/building-blocks/workflow/) to orchestrate agent execution.
+1.  **Orchestration:** The agent's control loop is modeled as a workflow.
+2.  **Activities:** Each tool execution or LLM call is modeled as a durable activity.
+3.  **State Store:** Dapr saves the workflow state to a configured state store (e.g., Redis, CosmosDB) after every step.
+
+Your code can run anywhere (local machine, Kubernetes, EC2, etc.) while the fully managed workflow engine takes care of the agent's execution state, making it crash-proof and resilient to any outage or failure.
+
+## Examples & Quickstarts
+
+Two paths to your first running agent:
+
+- **Managed quickstart templates** — `diagridpy init my-project --framework langgraph` bootstraps a Diagrid project, local kind cluster, Helm chart, and framework template in one command. Templates are cloned from [`diagridio/catalyst-quickstarts`](https://github.com/diagridio/catalyst-quickstarts).
+- **In-repo code samples** — clone this repo and run any framework's example directly. See [`examples/`](https://github.com/diagridio/python-ai/tree/main/examples) for the index, or jump straight to a framework: [`langgraph`](https://github.com/diagridio/python-ai/tree/main/examples/langgraph), [`crewai`](https://github.com/diagridio/python-ai/tree/main/examples/crewai), [`adk`](https://github.com/diagridio/python-ai/tree/main/examples/adk), [`strands`](https://github.com/diagridio/python-ai/tree/main/examples/strands), [`openai_agents`](https://github.com/diagridio/python-ai/tree/main/examples/openai_agents), [`claude_agents`](https://github.com/diagridio/python-ai/tree/main/examples/claude_agents), [`pydantic_ai`](https://github.com/diagridio/python-ai/tree/main/examples/pydantic_ai), [`deepagents`](https://github.com/diagridio/python-ai/tree/main/examples/deepagents), [`langchain`](https://github.com/diagridio/python-ai/tree/main/examples/langchain), [`smolagents`](https://github.com/diagridio/python-ai/tree/main/examples/smolagents), [`holmesgpt`](https://github.com/diagridio/python-ai/tree/main/examples/holmesgpt).
+
+## Getting Started with Diagrid
+
+Diagrid is a fully managed workflow engine for AI agents, built on the open-source CNCF Dapr Workflow project. It's the easiest way to test the different agentic integrations for free.
+
+See [quickstarts](https://docs.diagrid.io/getting-started/quickstarts/ai-agents/) to get started in less than 5 minutes.
 
 ## Verified identity
 
-Catalyst signs the calling user's identity into an `X-Diagrid-User-Token` header on
+Diagrid signs the calling user's identity into an `X-Diagrid-User-Token` header on
 every inbound request. `diagrid.identity` verifies it before your handler runs, and
 puts it back on the calls your agent makes on the caller's behalf.
 
@@ -177,7 +212,7 @@ Coordinates come from four sources, in this order:
    deployed in-cluster app keeps using the loopback call rather than a network round
    trip.
 3. **The remote sidecar** — `GET $DAPR_HTTP_ENDPOINT/v1.0/metadata`, which is the
-   `diagrid dev run` shape: the app runs on your machine against a Catalyst-hosted
+   `diagrid dev run` shape: the app runs on your machine against a Diagrid-hosted
    sidecar, so nothing is listening on 127.0.0.1. `DAPR_API_TOKEN` is sent as the
    `dapr-api-token` header when it is set.
 4. **Environment variables** — `DIAGRID_DP_SENTRY_ISSUER` and
@@ -223,28 +258,24 @@ are constants on `OAuthErrorCodes`.
 | 503 | `oauth.not_configured` | No identity coordinates could be resolved. |
 | 503 | `oauth.verifier_unavailable` | Key material has not loaded yet. |
 
-## Prerequisites
+## Usage analytics
 
-- **Python:** 3.11 or higher
+Every agent runner reports one anonymous usage event when it is constructed, once per package per process. PyPI publishes aggregate download counts only, so this is how Diagrid sees which package versions run on which platforms. Because it is one event per process, a Kubernetes deployment produces one event per replica per restart: the numbers count process starts, not deployments or users.
 
-## Examples & Quickstarts
+**What is sent:** the package name and version, the `diagrid-core` version, operating system, architecture, Python version, the agent framework and the installed version of its library (`framework`, `framework_version`), `kind=agent`, whether the process points at Diagrid (`target=catalyst`) or at a plain Dapr sidecar (`target=dapr`), and whether it runs under a CI variable (`ci`). Nothing else: no application data, configuration, app IDs, prompts, or hostnames. The receiving service is [Scarf](https://scarf.sh). It derives coarse company and location information from the request IP. How Scarf handles that data is described in [Scarf's privacy policy](https://about.scarf.sh/privacy-policy).
 
-Two paths to your first running agent:
+**It never gets in the way:** the request runs on a background daemon thread with a one second socket timeout, every failure is swallowed, and the calling thread never waits. Blocked egress and air-gapped clusters behave normally. Nothing is written to your application's output; a `DEBUG` line on the `diagrid.core.analytics` logger records whether the event was sent or skipped, for operators who want to confirm an opt-out.
 
-- **Managed quickstart templates** — `diagridpy init my-project --framework langgraph` bootstraps a Catalyst project, local kind cluster, Helm chart, and framework template in one command. Templates are cloned from [`diagridio/catalyst-quickstarts`](https://github.com/diagridio/catalyst-quickstarts).
-- **In-repo code samples** — clone this repo and run any framework's example directly. See [`examples/`](https://github.com/diagridio/python-ai/tree/main/examples) for the index, or jump straight to a framework: [`langgraph`](https://github.com/diagridio/python-ai/tree/main/examples/langgraph), [`crewai`](https://github.com/diagridio/python-ai/tree/main/examples/crewai), [`adk`](https://github.com/diagridio/python-ai/tree/main/examples/adk), [`strands`](https://github.com/diagridio/python-ai/tree/main/examples/strands), [`openai_agents`](https://github.com/diagridio/python-ai/tree/main/examples/openai_agents), [`claude_agents`](https://github.com/diagridio/python-ai/tree/main/examples/claude_agents), [`pydantic_ai`](https://github.com/diagridio/python-ai/tree/main/examples/pydantic_ai), [`deepagents`](https://github.com/diagridio/python-ai/tree/main/examples/deepagents), [`langchain`](https://github.com/diagridio/python-ai/tree/main/examples/langchain), [`smolagents`](https://github.com/diagridio/python-ai/tree/main/examples/smolagents), [`holmesgpt`](https://github.com/diagridio/python-ai/tree/main/examples/holmesgpt).
+To opt out, set any of these environment variables before starting your application:
 
-## Getting Started with Diagrid Catalyst
+```bash
+export DO_NOT_TRACK=1
+# or
+export SCARF_NO_ANALYTICS=1
+# or
+export DIAGRID_NO_ANALYTICS=1
+```
 
-Diagrid Catalyst is a fully managed workflow engine for AI agents, built on the open-source CNCF Dapr Workflow project. It's the easiest way to test the different agentic integrations for free.
+## Community
 
-See [quickstarts](https://docs.diagrid.io/getting-started/quickstarts/ai-agents/) to get started in less than 5 minutes.
-
-## How It Works
-
-This SDK leverages [Dapr Workflows](https://docs.dapr.io/developing-applications/building-blocks/workflow/) to orchestrate agent execution.
-1.  **Orchestration:** The agent's control loop is modeled as a workflow.
-2.  **Activities:** Each tool execution or LLM call is modeled as a durable activity.
-3.  **State Store:** Dapr saves the workflow state to a configured state store (e.g., Redis, CosmosDB) after every step.
-
-Your code can run anywhere (local machine, Kubernetes, EC2, etc.) while the fully managed workflow engine takes care of the agent's execution state, making it crash-proof and resilient to any outage or failure.
+Have questions, hit a bug, or want to share what you're building? Join the [Diagrid Community Discord](https://diagrid.ws/diagrid-community) to connect with the team and other users.
