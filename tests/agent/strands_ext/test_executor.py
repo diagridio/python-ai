@@ -285,3 +285,94 @@ class TestExecutorIntegration:
             assert call_order == ["strands_tool_first", "strands_tool_second"]
 
         asyncio.run(_run())
+
+
+def _recording_stream(calls):
+    """Build a stand-in for ToolExecutor._stream_with_trace that records kwargs."""
+
+    async def _stream(*args, **kwargs):
+        calls.append(kwargs)
+        return
+        yield  # pragma: no cover - makes this an async generator
+
+    return _stream
+
+
+async def _collect_with_context(executor, tool_uses, **extra):
+    """Run executor._execute in direct mode, passing any extra kwargs."""
+    async for _ in executor._execute(
+        agent=_make_mock_agent(),
+        tool_uses=tool_uses,
+        tool_results=[],
+        cycle_trace=MagicMock(),
+        cycle_span=MagicMock(),
+        invocation_state={},
+        **extra,
+    ):
+        pass
+
+
+class TestInvocationContextForwarding:
+    """invocation_context (strands >= 1.64) reaches the underlying executor."""
+
+    def _run_direct(self, tool_uses, concurrent, **extra):
+        calls: list[dict] = []
+
+        async def _run():
+            executor = DaprWorkflowToolExecutor(concurrent=concurrent)
+            with patch(
+                "diagrid.agent.strands.executor.ToolExecutor._stream_with_trace",
+                _recording_stream(calls),
+            ):
+                await _collect_with_context(executor, tool_uses, **extra)
+
+        asyncio.run(_run())
+        return calls
+
+    def test_forwarded_when_supplied_single_tool(self):
+        ctx = object()
+        calls = self._run_direct(
+            [_make_mock_tool_use()], concurrent=False, invocation_context=ctx
+        )
+
+        assert len(calls) == 1
+        assert calls[0]["invocation_context"] is ctx
+
+    def test_forwarded_when_supplied_concurrent_tools(self):
+        ctx = object()
+        tool_uses = [
+            {"name": "a", "toolUseId": "1", "input": {}},
+            {"name": "b", "toolUseId": "2", "input": {}},
+        ]
+        calls = self._run_direct(tool_uses, concurrent=True, invocation_context=ctx)
+
+        assert len(calls) == 2
+        assert all(c["invocation_context"] is ctx for c in calls)
+
+    def test_forwarded_when_supplied_sequential_tools(self):
+        ctx = object()
+        tool_uses = [
+            {"name": "a", "toolUseId": "1", "input": {}},
+            {"name": "b", "toolUseId": "2", "input": {}},
+        ]
+        calls = self._run_direct(tool_uses, concurrent=False, invocation_context=ctx)
+
+        assert len(calls) == 2
+        assert all(c["invocation_context"] is ctx for c in calls)
+
+    def test_not_forwarded_when_none(self):
+        """Older strands never passes the argument, so none may be forwarded."""
+        calls = self._run_direct([_make_mock_tool_use()], concurrent=False)
+
+        assert len(calls) == 1
+        assert "invocation_context" not in calls[0]
+
+    def test_not_forwarded_when_none_concurrent(self):
+        tool_uses = [
+            {"name": "a", "toolUseId": "1", "input": {}},
+            {"name": "b", "toolUseId": "2", "input": {}},
+        ]
+        calls = self._run_direct(tool_uses, concurrent=True)
+
+        assert len(calls) == 2
+        assert all("invocation_context" not in c for c in calls)
