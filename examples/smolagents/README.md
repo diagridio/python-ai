@@ -2,6 +2,8 @@
 
 ## Prerequisites
 
+Check the Dapr runtime version (1.17 or later) and activate the repo's virtual environment first. See [Shared prerequisites](../README.md#shared-prerequisites).
+
 1. **Dapr** installed and initialized:
    ```bash
    dapr init
