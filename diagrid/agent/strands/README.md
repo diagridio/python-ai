@@ -30,10 +30,12 @@ pip install "diagrid[strands]"
 from strands import Agent, tool
 from diagrid.agent.strands import DurableAgent
 
+
 @tool
 def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}"
+
 
 agent = Agent(
     model="us.amazon.nova-pro-v1:0",
@@ -69,9 +71,11 @@ Using the decorator pattern:
 ```python
 from diagrid.agent.strands import dapr_agent_workflow
 
+
 @dapr_agent_workflow(name="my_agent")
 def create_agent() -> Agent:
     return Agent(model="us.amazon.nova-pro-v1:0", tools=[my_tool])
+
 
 workflow = create_agent()
 workflow.register(workflow_runtime)

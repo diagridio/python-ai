@@ -36,6 +36,7 @@ pip install "diagrid[smolagents]"
 from smolagents import ToolCallingAgent, OpenAIServerModel, tool
 from diagrid.agent.smolagents import DaprWorkflowAgentRunner
 
+
 @tool
 def search_web(query: str) -> str:
     """Search the web for information.
@@ -44,6 +45,7 @@ def search_web(query: str) -> str:
         query: The search query.
     """
     return f"Results for: {query}"
+
 
 # Build the agent as usual
 agent = ToolCallingAgent(
