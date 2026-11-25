@@ -21,6 +21,7 @@ from .streaming import (
     EXECUTED_KEY,
     GraphRunError,
     StreamControl,
+    run_error,
     stream_unavailable_event,
     to_wire,
 )
@@ -176,7 +177,7 @@ def route_astream_item(
         if is_list:
             out.append((control.kind, control.data))
     if item.get("type") == "workflow_failed":
-        return out, GraphRunError(item)
+        return out, run_error(item)
     return out, None
 
 

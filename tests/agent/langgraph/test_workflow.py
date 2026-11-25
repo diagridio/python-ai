@@ -496,7 +496,9 @@ class TestEvaluateConditionActivity(unittest.TestCase):
         )
 
         self.assertIsNone(output.error)
-        self.assertEqual(output.next_nodes, ["worker"])
+        # a Send is a task of its own, not a node name
+        self.assertEqual(output.next_nodes, [])
+        self.assertEqual([s["node"] for s in output.sends], ["worker"])
 
     def test_async_only_runnable_condition(self):
         output = self._evaluate(_AsyncOnlyRunnable("next_node"))

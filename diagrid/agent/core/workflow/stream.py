@@ -16,7 +16,7 @@ import logging
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Protocol, Tuple
+from typing import Any, AsyncIterator, Dict, Optional, Protocol, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,25 @@ class StreamEvent:
     ns: Tuple[str, ...]
     mode: str
     data: Any
+    #: The node name the chunk's metadata carries (``langgraph_node``), when
+    #: ``node`` is a key of the sink's own (a ``Send`` task or a router).
+    display_node: Optional[str] = None
+    #: The task's ``langgraph_path`` when it is not the node's own (a ``Send``).
+    path: Optional[Tuple[Any, ...]] = None
+
+    def reset_data(self) -> Dict[str, Any]:
+        """The ``node_reset`` payload for a retry of this event's task.
+
+        It names the node and step as the chunks do, so a client can match them
+        (plus the path of a ``Send`` task, as the chunk's metadata has it).
+        """
+        data: Dict[str, Any] = {
+            "node": self.display_node or self.node,
+            "step": display_step(self.step),
+        }
+        if self.path:
+            data["path"] = list(self.path)
+        return data
 
 
 class StreamSink(Protocol):
@@ -131,7 +150,7 @@ class InProcessSink:
                         event.seq,
                         event.ns,
                         NODE_RESET,
-                        {"node": event.node, "step": display_step(event.step)},
+                        event.reset_data(),
                     )
                 )
             self._owner[key] = event.attempt_id
@@ -247,7 +266,6 @@ class StreamSinkRegistry:
         """True the first time it is asked about ``workflow_id``.
 
         Lets an activity log a problem once per run instead of once per node.
-        Any other key works the same way (the Send warning uses one per edge).
         Remembers the most recent runs only, so it cannot grow without limit.
         """
         with self._lock:
@@ -257,11 +275,6 @@ class StreamSinkRegistry:
             while len(self._reported) > _MAX_REPORTED_RUNS:
                 self._reported.popitem(last=False)
             return True
-
-    def clear_reports(self) -> None:
-        """Forget what :meth:`first_report` was asked, so it reports again."""
-        with self._lock:
-            self._reported.clear()
 
     def get(self, workflow_id: Optional[str]) -> Optional[InProcessSink]:
         """The open sink for ``workflow_id``, or ``None``."""
@@ -298,3 +311,23 @@ def format_sse(event: str, data: Any, event_id: Optional[int] = None) -> str:
     # json.dumps escapes newlines, so the payload is always one line.
     lines.append(f"data: {payload}")
     return "\n".join(lines) + "\n\n"
+
+
+async def frame_sse(events: AsyncIterator[Tuple[str, Any]]) -> AsyncIterator[str]:
+    """Frame ``(event, data)`` pairs as SSE.
+
+    The only place a streamed run is turned into SSE frames, so a runner just
+    yields pairs. Publishing is the runner's job (``on_result``).
+    """
+    event_id = 0
+    try:
+        async for name, data in events:
+            if name != KEEPALIVE_EVENT:
+                event_id += 1
+            yield format_sse(name, data, event_id)
+    finally:
+        # A client that disconnects ends the generator at a yield; close the
+        # runner's stream now rather than when it is collected.
+        aclose = getattr(events, "aclose", None)
+        if aclose is not None:
+            await aclose()

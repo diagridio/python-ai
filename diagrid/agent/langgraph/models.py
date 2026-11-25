@@ -233,6 +233,11 @@ class ExecuteNodeInput:
         thread_id: Thread identifier for the execution. Propagated into the
             LangGraph ``Runtime`` so sandbox/state backends can resolve which
             workflow owns a given tool call.
+        send: Set when the node runs for a ``Send``: ``{"arg": ..., "index": i,
+            "slot": k}``, the argument the node takes as its input, the
+            ``Send``'s position in the list its source returned, and its
+            position among the step's ``Send`` tasks. ``None`` for a node
+            that runs on the channel state.
     """
 
     node_name: str
@@ -240,6 +245,7 @@ class ExecuteNodeInput:
     config: Optional[Dict[str, Any]] = None
     thread_id: Optional[str] = None
     step: Optional[int] = None
+    send: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -250,6 +256,8 @@ class ExecuteNodeInput:
         }
         if self.step is not None:
             data["step"] = self.step
+        if self.send is not None:
+            data["send"] = self.send
         return data
 
     @classmethod
@@ -260,6 +268,7 @@ class ExecuteNodeInput:
             config=data.get("config"),
             thread_id=data.get("thread_id"),
             step=data.get("step"),
+            send=data.get("send"),
         )
 
 
@@ -273,12 +282,15 @@ class ExecuteNodeOutput:
         error: Optional error message
         goto: Nodes the node asked to run next through ``Command(goto=...)``,
             in addition to the nodes its edges lead to
+        sends: The ``Send`` objects of that ``goto``, each ``{"node", "arg"}``:
+            every one runs its node once, on its argument
     """
 
     node_name: str
     writes: List[NodeWrite] = field(default_factory=list)
     error: Optional[str] = None
     goto: List[str] = field(default_factory=list)
+    sends: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -288,6 +300,8 @@ class ExecuteNodeOutput:
         }
         if self.goto:
             data["goto"] = list(self.goto)
+        if self.sends:
+            data["sends"] = list(self.sends)
         return data
 
     @classmethod
@@ -297,6 +311,7 @@ class ExecuteNodeOutput:
             writes=[NodeWrite.from_dict(w) for w in data.get("writes", [])],
             error=data.get("error"),
             goto=list(data.get("goto") or []),
+            sends=list(data.get("sends") or []),
         )
 
 
@@ -313,6 +328,10 @@ class EvaluateConditionInput:
         thread_id: Thread identifier for the execution
         path_map: Optional mapping from the condition's return values to node
             names (see ``EdgeConfig.path_map``)
+        step: The workflow step of the source node (``-1`` for a START edge),
+            so a streamed run can give the condition's chunks that node's
+            step. ``None`` (an older workflow): the condition's chunks are not
+            streamed.
     """
 
     source_node: str
@@ -321,9 +340,10 @@ class EvaluateConditionInput:
     config: Optional[Dict[str, Any]] = None
     thread_id: Optional[str] = None
     path_map: Optional[Dict[str, str]] = None
+    step: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "source_node": self.source_node,
             "condition_name": self.condition_name,
             "channel_state": self.channel_state.to_dict(),
@@ -331,6 +351,9 @@ class EvaluateConditionInput:
             "thread_id": self.thread_id,
             "path_map": self.path_map,
         }
+        if self.step is not None:
+            data["step"] = self.step
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "EvaluateConditionInput":
@@ -341,6 +364,7 @@ class EvaluateConditionInput:
             config=data.get("config"),
             thread_id=data.get("thread_id"),
             path_map=data.get("path_map"),
+            step=data.get("step"),
         )
 
 
@@ -351,22 +375,29 @@ class EvaluateConditionOutput:
     Attributes:
         next_nodes: List of next node names to execute
         error: Optional error message
+        sends: The ``Send`` objects the condition returned, each ``{"node",
+            "arg"}``: every one runs its node once, on its argument
     """
 
     next_nodes: List[str] = field(default_factory=list)
     error: Optional[str] = None
+    sends: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "next_nodes": self.next_nodes,
             "error": self.error,
         }
+        if self.sends:
+            data["sends"] = list(self.sends)
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "EvaluateConditionOutput":
         return cls(
             next_nodes=data.get("next_nodes", []),
             error=data.get("error"),
+            sends=list(data.get("sends") or []),
         )
 
 

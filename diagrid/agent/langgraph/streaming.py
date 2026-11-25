@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from langchain_core.load import dumpd
 from langchain_core.load.serializable import Serializable
+from langgraph.errors import GraphRecursionError
 
 from diagrid.agent.core.workflow.stream import (
     STREAM_UNAVAILABLE,
@@ -143,7 +144,14 @@ class NodeStreamer:
         thread_id: Optional[str] = None,
         triggers: Optional[Sequence[str]] = None,
         static: Optional[StaticConfig] = None,
+        sink_node: Optional[str] = None,
+        path: Optional[Sequence[Any]] = None,
     ) -> None:
+        self._path = tuple(path) if path else None
+        # ``sink_node`` is the name chunks are keyed under in the sink when it
+        # is not the node's own: a conditional edge's function streams as its
+        # source node but must not share that node's attempts and ``updates``.
+        self._sink_node = sink_node or node
         self._static = static or StaticConfig()
         self._sink = sink
         self._thread_id = thread_id
@@ -170,7 +178,7 @@ class NodeStreamer:
             "langgraph_node": self._node,
             # Every trigger channel of the node, sorted, as Pregel lists them.
             "langgraph_triggers": self._triggers or (f"branch:to:{self._node}",),
-            "langgraph_path": ("__pregel_pull", self._node),
+            "langgraph_path": self._path or ("__pregel_pull", self._node),
             "langgraph_checkpoint_ns": f"{self._node}:{self._task_id}",
             "checkpoint_ns": f"{self._node}:{self._task_id}",
         }
@@ -181,12 +189,14 @@ class NodeStreamer:
                 StreamEvent(
                     workflow_id=self._workflow_id,
                     step=self._step,
-                    node=self._node,
+                    node=self._sink_node,
                     attempt_id=self._attempt_id,
                     seq=next(self._seq),
                     ns=tuple(ns),
                     mode=mode,
                     data=data,
+                    display_node=self._node,
+                    path=self._path,
                 )
             )
 
@@ -420,6 +430,21 @@ class GraphRunError(RuntimeError):
     def __init__(self, final: Dict[str, Any]) -> None:
         super().__init__(failure_message(final))
         self.final = final
+
+
+class GraphRecursionRunError(GraphRunError, GraphRecursionError):
+    """A run cut by its step limit: a :class:`GraphRunError` that is also LangGraph's.
+
+    ``except GraphRecursionError`` (the usual guard around an agent loop) catches
+    it, as it catches the error native LangGraph raises.
+    """
+
+
+def run_error(final: Dict[str, Any]) -> GraphRunError:
+    """The exception for a ``workflow_failed`` terminal event."""
+    if final.get("status") == "max_steps_reached":
+        return GraphRecursionRunError(final)
+    return GraphRunError(final)
 
 
 def _failed(final: Dict[str, Any], message: str, error_type: str) -> Dict[str, Any]:

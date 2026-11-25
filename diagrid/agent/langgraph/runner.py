@@ -23,6 +23,7 @@ from typing import (
 )
 
 from dapr.ext.workflow import WorkflowStatus
+from langchain_core.runnables.config import DEFAULT_RECURSION_LIMIT
 
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
@@ -50,9 +51,11 @@ from .streaming import (
     STREAM_RUN_KEY,
     UPDATES,
     StaticConfig,
+    FAILED_STATUSES,
     StreamControl,
     normalize_final,
     normalize_stream_mode,
+    run_error,
 )
 from .stream_events import (
     FINAL_EVENTS,
@@ -74,6 +77,8 @@ from .workflow import (
     node_activity_name,
     register_node,
     register_node_static_config,
+    register_condition_input,
+    register_node_input,
     register_node_triggers,
     register_condition,
     register_channel_reducer,
@@ -142,6 +147,35 @@ def _check_run_config(config: Optional[Dict[str, Any]]) -> None:
                     f"{where} is not JSON serializable, and the config travels to "
                     f"the workflow as JSON: {e}"
                 ) from e
+
+
+def _merge_graph_config(
+    graph_config: Optional[Dict[str, Any]], config: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """``config`` over the config bound to the graph (``compiled.with_config(...)``).
+
+    LangGraph merges the two for every run: the bound ``configurable`` is the
+    base of the caller's, and the bound ``recursion_limit`` applies unless the
+    caller sets one (LangGraph takes the default, 25, for no limit). The bound
+    ``metadata`` and ``tags`` reach the tasks through ``StaticConfig``, and bound
+    ``callbacks`` (handler objects) cannot travel to the workflow as JSON.
+    Returns a new dict.
+    """
+    bound = graph_config or {}
+    merged = dict(config or {})
+    configurable = {
+        **(bound.get("configurable") or {}),
+        **(merged.get("configurable") or {}),
+    }
+    if configurable:
+        merged["configurable"] = configurable
+    limit = bound.get("recursion_limit")
+    if limit is not None and merged.get("recursion_limit") in (
+        None,
+        DEFAULT_RECURSION_LIMIT,
+    ):
+        merged["recursion_limit"] = limit
+    return merged
 
 
 def _max_steps_for(config: Optional[Dict[str, Any]], default: int) -> int:
@@ -359,6 +393,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 )
 
             register_node_triggers(node_name, triggers)
+            register_node_input(
+                node_name, node_spec.channels, getattr(node_spec, "mapper", None)
+            )
             register_node_static_config(node_name, self._static_config(node_spec))
             nodes.append(
                 NodeConfig(
@@ -396,6 +433,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     if path_func:
                         condition_name = f"{source}_{branch_name}_condition"
                         register_condition(condition_name, path_func)
+                        self._register_condition_input(
+                            condition_name, source, branch_spec
+                        )
 
                         # ``ends`` is the edge's path_map ({return value: node}),
                         # either given to add_conditional_edges or inferred from
@@ -458,6 +498,41 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             output_channels=output_channels,
             entry_points=entry_points,
             waiting_edges=waiting_edges,
+        )
+
+    def _run_config(self, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """The config a run starts with: the caller's over the graph's own.
+
+        Checked for what cannot travel to the workflow before anything starts.
+        """
+        merged = _merge_graph_config(getattr(self._graph, "config", None), config)
+        _check_run_config(merged)
+        return merged
+
+    def _register_condition_input(
+        self, condition_name: str, source: str, branch_spec: Any
+    ) -> None:
+        """Record the state a conditional edge's function is handed.
+
+        LangGraph reads it through the edge's input schema (taken from the
+        annotation of the function's parameter), else its source node's, else the
+        graph's state schema: the channels of that schema, coerced to the schema
+        class for pydantic and dataclass state. A function with no input schema
+        of its own is also given the keys its source node wrote, so the state is
+        not cut to the channels then (unless it is coerced to a class).
+        """
+        builder = self._graph.builder
+        node = builder.nodes.get(source)
+        schema = branch_spec.input_schema or (
+            node.input_schema if node is not None else builder.state_schema
+        )
+        channels = builder.schemas.get(schema)
+        if channels is None:
+            return
+        mapper = getattr(self._graph, "schema_to_mapper", {}).get(schema)
+        cut = branch_spec.input_schema is not None or mapper is not None
+        register_condition_input(
+            condition_name, list(channels) if cut else None, mapper
         )
 
     def _static_config(self, node_spec: Any) -> StaticConfig:
@@ -562,13 +637,25 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         Args:
             input: Input values for the graph channels
             thread_id: Thread identifier for the execution
-            config: Optional LangGraph config dict
+            config: Optional LangGraph config dict. It travels to the workflow
+                as JSON: ``tags``, ``metadata``, ``configurable`` and
+                ``recursion_limit`` work (the limit bounds the run's steps as
+                LangGraph counts them; ``recursion_limit`` and ``configurable``
+                bound to the graph with ``with_config`` apply unless the caller
+                sets its own). ``callbacks`` and any value that is not JSON
+                raise ``ValueError`` before a run starts.
             workflow_id: Optional workflow instance ID (generated if not provided)
             poll_interval: How often to poll for workflow status (seconds)
             timeout: Optional timeout in seconds
 
         Returns:
             Final output values from the graph
+
+        Raises:
+            GraphRecursionError: The run hit its step limit (the error is also a
+                :class:`GraphRunError`).
+            GraphRunError: The run failed (a node or a condition raised).
+            RuntimeError: The workflow failed or was terminated.
         """
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
@@ -577,8 +664,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
-        _check_run_config(config)
-        config = config or {}
+        config = self._run_config(config)
         config["thread_id"] = thread_id
 
         # Create LangSmith parent trace and pass dotted_order to activities via config.
@@ -668,6 +754,21 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                             else state.serialized_output
                         )
                         output = GraphWorkflowOutput.from_dict(output_dict)
+                        if output.status in FAILED_STATUSES:
+                            # Not a result: a run that hit its step limit or
+                            # failed in a node raises, as native invoke does.
+                            raise run_error(
+                                normalize_final(
+                                    {
+                                        "type": "workflow_completed",
+                                        "status": output.status,
+                                        "error": output.error,
+                                        "output": output.output,
+                                    },
+                                    workflow_id=workflow_id,
+                                    thread_id=thread_id,
+                                )
+                            )
                         return output.output
                     return {}
 
@@ -707,7 +808,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         Args:
             input: Input values for the graph channels
             thread_id: Thread identifier for the execution
-            config: Optional LangGraph config dict
+            config: Optional LangGraph config dict, with the rules of
+                :meth:`invoke`: JSON only, ``callbacks`` and values that are not
+                JSON raise ``ValueError``, and ``recursion_limit`` bounds the steps
             workflow_id: Optional workflow instance ID (generated if not provided)
             poll_interval: How often to poll for workflow status (seconds)
 
@@ -721,8 +824,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
-        _check_run_config(config)
-        config = config or {}
+        config = self._run_config(config)
         config["thread_id"] = thread_id
 
         # Create LangSmith parent trace and pass dotted_order to activities via config.
@@ -947,7 +1049,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         whenever nothing arrived for ``SSE_KEEPALIVE_SECONDS``.
         """
         thread_id, workflow_id, run_config = _run_identity(
-            config, thread_id, workflow_id
+            self._run_config(config), thread_id, workflow_id
         )
         sink = self._stream_registry.open(workflow_id)
         task: Optional["asyncio.Task[None]"] = None

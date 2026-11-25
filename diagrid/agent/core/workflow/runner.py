@@ -19,7 +19,7 @@ from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
 from diagrid.agent.core.observability import resolve_observability_config
 from diagrid.agent.core.workflow.naming import build_workflow_name
-from diagrid.agent.core.workflow.stream import KEEPALIVE_EVENT, format_sse
+from diagrid.agent.core.workflow.stream import frame_sse
 
 # ``diagrid-core`` ships the reporter. This distribution only pins
 # ``diagrid-core>=0.1.0`` (through ``diagrid-cli``), so an application holding
@@ -103,6 +103,86 @@ def _is_transient_poll_error(error: BaseException) -> bool:
         return code_of() in _transient_grpc_codes()
     except Exception:
         return False
+
+
+def _poll_retry_delay(
+    error: BaseException, failed_polls: int, retry: bool, workflow_id: str
+) -> Optional[float]:
+    """Seconds to wait before polling again, or ``None`` to raise ``error``.
+
+    ``failed_polls`` counts consecutive failures, this one included.
+    """
+    if (
+        not retry
+        or not _is_transient_poll_error(error)
+        or failed_polls > POLL_MAX_ERRORS
+    ):
+        return None
+    delay = min(
+        POLL_RETRY_BASE_SECONDS * 2 ** (failed_polls - 1), POLL_RETRY_MAX_SECONDS
+    )
+    logger.warning(
+        "Polling workflow %s failed (%d of %d), retrying in %.1fs: %s",
+        workflow_id,
+        failed_polls,
+        POLL_MAX_ERRORS,
+        delay,
+        error,
+    )
+    return delay
+
+
+def _completed_event(
+    state: Any, workflow_id: str, parse_output: Optional[Callable[..., Any]]
+) -> dict[str, Any]:
+    """The ``workflow_completed`` event for a finished workflow's ``state``."""
+    output_data = state.serialized_output
+    if not output_data:
+        return {"type": "workflow_completed", "workflow_id": workflow_id}
+    try:
+        output_dict = (
+            json.loads(output_data) if isinstance(output_data, str) else output_data
+        )
+        if parse_output:
+            return parse_output(workflow_id, output_dict)  # type: ignore[no-any-return]
+        return {
+            "type": "workflow_completed",
+            "workflow_id": workflow_id,
+            "output": output_dict,
+        }
+    except Exception as e:
+        return {
+            "type": "workflow_completed",
+            "workflow_id": workflow_id,
+            "raw_output": output_data,
+            "parse_error": str(e),
+        }
+
+
+def _terminal_event(
+    state: Any, workflow_id: str, parse_output: Optional[Callable[..., Any]]
+) -> Optional[dict[str, Any]]:
+    """The event that ends a poll for ``state``, or ``None`` while it is running."""
+    status = state.runtime_status
+    if status == WorkflowStatus.COMPLETED:
+        return _completed_event(state, workflow_id, parse_output)
+    if status == WorkflowStatus.FAILED:
+        error_info = None
+        if state.failure_details:
+            fd = state.failure_details
+            error_info = {
+                "message": getattr(fd, "message", str(fd)),
+                "error_type": getattr(fd, "error_type", None),
+                "stack_trace": getattr(fd, "stack_trace", None),
+            }
+        return {
+            "type": "workflow_failed",
+            "workflow_id": workflow_id,
+            "error": error_info,
+        }
+    if status == WorkflowStatus.TERMINATED:
+        return {"type": "workflow_terminated", "workflow_id": workflow_id}
+    return None
 
 
 def fold_run_event(result: dict, event: dict) -> bool:  # type: ignore[type-arg]
@@ -364,24 +444,11 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 # dropped call). Retry; only a poll that keeps failing is given
                 # up on, and the caller learns the run's fate is unknown.
                 failed_polls += 1
-                if (
-                    not retry_failed_polls
-                    or not _is_transient_poll_error(e)
-                    or failed_polls > POLL_MAX_ERRORS
-                ):
+                delay = _poll_retry_delay(
+                    e, failed_polls, retry_failed_polls, workflow_id
+                )
+                if delay is None:
                     raise
-                delay = min(
-                    POLL_RETRY_BASE_SECONDS * 2 ** (failed_polls - 1),
-                    POLL_RETRY_MAX_SECONDS,
-                )
-                logger.warning(
-                    "Polling workflow %s failed (%d of %d), retrying in %.1fs: %s",
-                    workflow_id,
-                    failed_polls,
-                    POLL_MAX_ERRORS,
-                    delay,
-                    e,
-                )
                 await asyncio.sleep(delay)
                 continue
             failed_polls = 0
@@ -403,58 +470,9 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 }
                 previous_status = state.runtime_status
 
-            if state.runtime_status == WorkflowStatus.COMPLETED:
-                output_data = state.serialized_output
-                if output_data:
-                    try:
-                        output_dict = (
-                            json.loads(output_data)
-                            if isinstance(output_data, str)
-                            else output_data
-                        )
-                        if parse_output:
-                            yield parse_output(workflow_id, output_dict)
-                        else:
-                            yield {
-                                "type": "workflow_completed",
-                                "workflow_id": workflow_id,
-                                "output": output_dict,
-                            }
-                    except Exception as e:
-                        yield {
-                            "type": "workflow_completed",
-                            "workflow_id": workflow_id,
-                            "raw_output": output_data,
-                            "parse_error": str(e),
-                        }
-                else:
-                    yield {
-                        "type": "workflow_completed",
-                        "workflow_id": workflow_id,
-                    }
-                break
-
-            elif state.runtime_status == WorkflowStatus.FAILED:
-                error_info = None
-                if state.failure_details:
-                    fd = state.failure_details
-                    error_info = {
-                        "message": getattr(fd, "message", str(fd)),
-                        "error_type": getattr(fd, "error_type", None),
-                        "stack_trace": getattr(fd, "stack_trace", None),
-                    }
-                yield {
-                    "type": "workflow_failed",
-                    "workflow_id": workflow_id,
-                    "error": error_info,
-                }
-                break
-
-            elif state.runtime_status == WorkflowStatus.TERMINATED:
-                yield {
-                    "type": "workflow_terminated",
-                    "workflow_id": workflow_id,
-                }
+            terminal = _terminal_event(state, workflow_id, parse_output)
+            if terminal is not None:
+                yield terminal
                 break
 
     # ------------------------------------------------------------------
@@ -480,6 +498,93 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
     # ------------------------------------------------------------------
     # Shared serve pattern
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _result_publisher(
+        pubsub_name: Optional[str], publish_topic: Optional[str]
+    ) -> Optional[Callable[[dict], None]]:  # type: ignore[type-arg]
+        """The function that publishes a run's result, or ``None`` without a topic.
+
+        Blocking: callers run it off the event loop. A failure is logged, not
+        raised, so publishing never fails the run.
+        """
+        if not (pubsub_name and publish_topic):
+            return None
+        from diagrid.agent.core.pubsub import DaprPubSub
+
+        client = DaprPubSub(pubsub_name=pubsub_name)
+
+        def publish(result: dict) -> None:  # type: ignore[type-arg]
+            try:
+                client.publish(publish_topic, result)
+                logger.info("Published result to topic=%s", publish_topic)
+            except Exception as e:
+                logger.error("Failed to publish result: %s", str(e))
+
+        return publish
+
+    @staticmethod
+    def _add_subscription_routes(
+        app: Any,
+        pubsub_name: str,
+        subscribe_topic: str,
+        run_and_collect: Callable[[dict], Any],  # type: ignore[type-arg]
+    ) -> None:
+        """Register the Dapr programmatic subscription and its event route."""
+        from fastapi import Request
+
+        @app.get("/dapr/subscribe")
+        async def dapr_subscribe() -> list:  # type: ignore[type-arg]
+            return [
+                {
+                    "pubsubname": pubsub_name,
+                    "topic": subscribe_topic,
+                    "route": f"/events/{subscribe_topic}",
+                }
+            ]
+
+        @app.post(f"/events/{subscribe_topic}")
+        async def handle_topic_event(request: Request) -> dict:  # type: ignore[type-arg]
+            body = await request.json()
+
+            # Extract task from CloudEvent data
+            data = body.get("data", body)
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except (json.JSONDecodeError, TypeError):
+                    data = {"task": data}
+            if isinstance(data, dict) and "task" not in data:
+                data = {"task": json.dumps(data) if data else ""}
+
+            logger.info("Received event on topic=%s", subscribe_topic)
+            return await run_and_collect(data)  # type: ignore[no-any-return]
+
+    def _stream_response(
+        self,
+        request: dict,  # type: ignore[type-arg]
+        on_result: Optional[Callable[[dict], None]],  # type: ignore[type-arg]
+    ) -> Any:
+        """The SSE response of a ``POST /agent/run`` with ``"stream": true``."""
+        from fastapi import HTTPException
+        from fastapi.responses import StreamingResponse
+
+        # A bad request is refused with a 4xx now: once the response starts,
+        # its 200 is committed and an error can only be in-band.
+        try:
+            self._validate_stream_request(request)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        session_id = request.get(
+            "session_id", request.get("thread_id", uuid.uuid4().hex[:8])
+        )
+        return StreamingResponse(
+            frame_sse(self._serve_stream(request, session_id, on_result=on_result)),
+            media_type="text/event-stream",
+            # Without these an ingress or reverse proxy may buffer the stream
+            # and hand the client its tokens in one batch.
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     def serve(
         self,
@@ -519,8 +624,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             publish_topic: Topic to publish results to after completion.
         """
         try:
-            from fastapi import FastAPI, HTTPException, Request
-            from fastapi.responses import StreamingResponse
+            from fastapi import FastAPI, HTTPException
             import uvicorn
         except ImportError:
             raise ImportError(
@@ -533,12 +637,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         self._setup_telemetry()
         self._setup_serve_defaults()
 
-        # Set up pub/sub publisher if configured
-        pubsub_client = None
-        if pubsub_name and publish_topic:
-            from diagrid.agent.core.pubsub import DaprPubSub
-
-            pubsub_client = DaprPubSub(pubsub_name=pubsub_name)
+        publish = self._result_publisher(pubsub_name, publish_topic)
 
         runner_ref = self
 
@@ -555,67 +654,19 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 if fold_run_event(result, event):
                     break
 
-            await asyncio.to_thread(_publish_result, result)
+            if publish:
+                await asyncio.to_thread(publish, result)
             return result
 
-        def _publish_result(result: dict) -> None:  # type: ignore[type-arg]
-            """Publish a result to the configured topic, if any.
-
-            Blocking: callers run it off the event loop.
-            """
-            if pubsub_client and publish_topic:
-                try:
-                    pubsub_client.publish(publish_topic, result)
-                    logger.info("Published result to topic=%s", publish_topic)
-                except Exception as e:
-                    logger.error("Failed to publish result: %s", str(e))
-
-        async def _frame(events: AsyncIterator[Tuple[str, Any]]) -> AsyncIterator[str]:
-            """Frame ``(event, data)`` pairs as SSE.
-
-            The only place a streamed run is turned into SSE frames, so a runner
-            just yields pairs. Publishing is the runner's job (``on_result``).
-            """
-            event_id = 0
-            try:
-                async for name, data in events:
-                    if name != KEEPALIVE_EVENT:
-                        event_id += 1
-                    yield format_sse(name, data, event_id)
-            finally:
-                # A client that disconnects ends the generator at a yield; close
-                # the runner's stream now rather than when it is collected.
-                aclose = getattr(events, "aclose", None)
-                if aclose is not None:
-                    await aclose()
-
         # Only a run that is published needs to outlive its client.
-        on_result = _publish_result if pubsub_client else None
+        on_result = publish
 
         @app.post("/agent/run")
         async def run_agent(request: dict) -> Any:  # type: ignore[type-arg]
             # Only the JSON value true streams. Anything else ("false", an
             # object) is a plain request whose "stream" key may be the graph's own.
             if request.get("stream") is True and self._supports_serve_stream:
-                # A bad request is refused with a 4xx now: once the response
-                # starts, its 200 is committed and an error can only be in-band.
-                try:
-                    self._validate_stream_request(request)
-                except ValueError as e:
-                    raise HTTPException(status_code=422, detail=str(e))
-                session_id = request.get(
-                    "session_id",
-                    request.get("thread_id", uuid.uuid4().hex[:8]),
-                )
-                return StreamingResponse(
-                    _frame(
-                        self._serve_stream(request, session_id, on_result=on_result)
-                    ),
-                    media_type="text/event-stream",
-                    # Without these an ingress or reverse proxy may buffer the
-                    # stream and hand the client its tokens in one batch.
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-                )
+                return self._stream_response(request, on_result)
             return await _run_and_collect(request)
 
         @app.get("/agent/run/{workflow_id}")
@@ -625,36 +676,10 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 raise HTTPException(status_code=404, detail="Workflow not found")
             return status
 
-        # Register Dapr programmatic subscription if configured
         if pubsub_name and subscribe_topic:
-
-            @app.get("/dapr/subscribe")
-            async def dapr_subscribe() -> list:  # type: ignore[type-arg]
-                return [
-                    {
-                        "pubsubname": pubsub_name,
-                        "topic": subscribe_topic,
-                        "route": f"/events/{subscribe_topic}",
-                    }
-                ]
-
-            @app.post(f"/events/{subscribe_topic}")
-            async def handle_topic_event(request: Request) -> dict:  # type: ignore[type-arg]
-                body = await request.json()
-
-                # Extract task from CloudEvent data
-                data = body.get("data", body)
-                if isinstance(data, str):
-                    try:
-                        data = json.loads(data)
-                    except (json.JSONDecodeError, TypeError):
-                        data = {"task": data}
-                if isinstance(data, dict) and "task" not in data:
-                    data = {"task": json.dumps(data) if data else ""}
-
-                logger.info("Received event on topic=%s", subscribe_topic)
-                result = await _run_and_collect(data)
-                return result
+            self._add_subscription_routes(
+                app, pubsub_name, subscribe_topic, _run_and_collect
+            )
 
         uvicorn.run(app, host=host, port=port)
 
