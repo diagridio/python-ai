@@ -14,16 +14,26 @@ import asyncio
 import json
 import logging
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Protocol, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Upper bound on buffered chunks per run; extra chunks are dropped (and logged
-# once) so a slow consumer cannot grow memory without limit.
+# Upper bound on buffered chunks per run. Past it, token and custom chunks are
+# dropped (counted, and reported on the final event) so a slow consumer cannot
+# grow memory without limit. Updates, node resets and the close marker are never
+# dropped: they cannot be re-sent and are bounded by the size of the graph.
 MAX_BUFFERED_EVENTS = 10_000
 
 NODE_RESET = "node_reset"
+STREAM_UNAVAILABLE = "stream_unavailable"
+STREAM_DROPPED = "stream_dropped"
+# Events about the stream itself, delivered whatever stream modes were asked for.
+CONTROL_MODES = (NODE_RESET, STREAM_UNAVAILABLE)
+
+# Runs remembered by StreamSinkRegistry.first_report; older ones are forgotten.
+_MAX_REPORTED_RUNS = 1024
 UPDATES = "updates"
 
 
@@ -51,11 +61,13 @@ class StreamClosed:
     """Last item a sink hands its consumer: the run is over.
 
     ``final`` is the run's terminal event (``workflow_completed`` or
-    ``workflow_failed`` with its payload).
+    ``workflow_failed`` with its payload). ``dropped`` is how many chunks the
+    sink discarded because the consumer fell behind.
     """
 
     def __init__(self, final: Optional[Dict[str, Any]] = None) -> None:
         self.final: Dict[str, Any] = final or {}
+        self.dropped = 0
 
 
 class InProcessSink:
@@ -78,7 +90,7 @@ class InProcessSink:
         self._retired: set = set()
         self._last_seq: Dict[Tuple[str, int], int] = {}
         self._closed = False
-        self._warned_full = False
+        self._dropped = 0
 
     def put(self, event: StreamEvent) -> None:
         key = (event.step, event.node)
@@ -126,15 +138,23 @@ class InProcessSink:
 
     def _enqueue(self, item: Any) -> None:
         def _put() -> None:
-            if self._queue.qsize() >= MAX_BUFFERED_EVENTS and not isinstance(
-                item, StreamClosed
-            ):
-                if not self._warned_full:
-                    self._warned_full = True
+            # Runs on the loop thread in the order chunks were handed over, so
+            # the count on the close marker covers every chunk before it.
+            if isinstance(item, StreamClosed):
+                item.dropped = self._dropped
+                if self._dropped:
+                    logger.warning(
+                        "Stream %s dropped %d chunks: the consumer fell behind",
+                        self.workflow_id,
+                        self._dropped,
+                    )
+            elif self._queue.qsize() >= MAX_BUFFERED_EVENTS and not _is_control(item):
+                if not self._dropped:
                     logger.warning(
                         "Stream buffer for %s is full; dropping chunks",
                         self.workflow_id,
                     )
+                self._dropped += 1
                 return
             self._queue.put_nowait(item)
 
@@ -142,6 +162,11 @@ class InProcessSink:
             self._loop.call_soon_threadsafe(_put)
         except RuntimeError:  # loop already closed
             self._closed = True
+
+
+def _is_control(item: Any) -> bool:
+    """Chunks that must not be dropped: they cannot be re-sent."""
+    return isinstance(item, StreamEvent) and item.mode in (UPDATES, NODE_RESET)
 
 
 class StreamSinkRegistry:
@@ -156,6 +181,7 @@ class StreamSinkRegistry:
     def __init__(self) -> None:
         self._sinks: Dict[str, InProcessSink] = {}
         self._lock = threading.Lock()
+        self._reported: "OrderedDict[str, None]" = OrderedDict()
 
     def open(self, workflow_id: str) -> InProcessSink:
         """Register a sink for ``workflow_id`` on the running event loop.
@@ -182,6 +208,20 @@ class StreamSinkRegistry:
                 return
             del self._sinks[workflow_id]
         current.close()
+
+    def first_report(self, workflow_id: str) -> bool:
+        """True the first time it is asked about ``workflow_id``.
+
+        Lets an activity log a problem once per run instead of once per node.
+        Remembers the most recent runs only, so it cannot grow without limit.
+        """
+        with self._lock:
+            if workflow_id in self._reported:
+                return False
+            self._reported[workflow_id] = None
+            while len(self._reported) > _MAX_REPORTED_RUNS:
+                self._reported.popitem(last=False)
+            return True
 
     def get(self, workflow_id: Optional[str]) -> Optional[InProcessSink]:
         """The open sink for ``workflow_id``, or ``None``."""

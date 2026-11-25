@@ -11,16 +11,24 @@ every task. Chunks go to a :class:`StreamSink` wrapped in a ``StreamEvent``.
 
 import itertools
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from langchain_core.load import dumpd
 
-from diagrid.agent.core.workflow.stream import StreamEvent, StreamSink
+from diagrid.agent.core.workflow.stream import (
+    STREAM_UNAVAILABLE,
+    StreamEvent,
+    StreamSink,
+)
 
 MESSAGES = "messages"
 UPDATES = "updates"
 CUSTOM = "custom"
 SUPPORTED_MODES = (MESSAGES, UPDATES, CUSTOM)
+
+# Set in the workflow config of a run someone is streaming, so an activity that
+# finds no sink to write to knows that is a problem and not just a plain run.
+STREAM_RUN_KEY = "diagrid_streamed"
 
 
 class NodeStreamer:
@@ -233,3 +241,43 @@ def normalize_final(
         out.setdefault("workflow_id", workflow_id)
     out.setdefault("thread_id", thread_id)
     return out
+
+
+UNAVAILABLE_REASON = (
+    "No chunks arrived for the listed steps: their node activities ran in "
+    "another process (several replicas) or before this stream was opened. "
+    "Streaming only works while the activities run in the process that serves "
+    "the stream; the run's result is complete."
+)
+
+
+def stream_unavailable_event(
+    final: Dict[str, Any], seen_steps: Set[int], workflow_id: str
+) -> Optional[StreamEvent]:
+    """The ``stream_unavailable`` event for a finished run, if it applies.
+
+    Every node that runs here sends at least its ``updates`` chunk, so a step
+    of a completed run from which nothing arrived had its activities elsewhere.
+    A run that failed is just a failure, and one with no step count (or none
+    run) has nothing to report.
+    """
+    steps = final.get("steps")
+    if final.get("type") != "workflow_completed" or not isinstance(steps, int):
+        return None
+    missing = [step for step in range(steps) if step not in seen_steps]
+    if not missing:
+        return None
+    return StreamEvent(
+        workflow_id=workflow_id,
+        step=missing[0],
+        node="",
+        attempt_id="",
+        seq=0,
+        ns=(),
+        mode=STREAM_UNAVAILABLE,
+        data={
+            "workflow_id": workflow_id,
+            "reason": UNAVAILABLE_REASON,
+            "missing_steps": missing,
+        },
+    )

@@ -30,9 +30,13 @@ except ImportError:  # pragma: no cover - constant moved/renamed across versions
     CONFIG_KEY_RUNTIME = "__pregel_runtime"
     CONF = "configurable"
 
-from diagrid.agent.core.workflow.stream import StreamSinkRegistry, get_stream_sink
+from diagrid.agent.core.workflow.stream import (
+    StreamSinkRegistry,
+    default_registry,
+    get_stream_sink,
+)
 
-from .streaming import NodeStreamer
+from .streaming import STREAM_RUN_KEY, NodeStreamer
 from .models import (
     ChannelState,
     ExecuteNodeInput,
@@ -490,6 +494,23 @@ def _is_async_only(runnable: Any) -> bool:
     )
 
 
+def _warn_stream_sink_missing(
+    registry: StreamSinkRegistry, workflow_id: str, node_name: str
+) -> None:
+    """Say, once per run, that a streamed run's chunks are going nowhere."""
+    if not registry.first_report(workflow_id):
+        return
+    logger.warning(
+        "Run %s is streamed but this process has no stream sink for it, so the "
+        "chunks of node %r (and of any node that runs here) are not delivered. "
+        "The activity is running in another process (several replicas) or the "
+        "run outlived the process that streams it. Cross-replica streaming is "
+        "not supported yet; the run itself is unaffected.",
+        workflow_id,
+        node_name,
+    )
+
+
 def execute_node_activity(
     ctx: WorkflowActivityContext,
     input_data: Dict[str, Any],
@@ -537,6 +558,10 @@ def execute_node_activity(
     # Stream chunks only when a consumer registered a sink for this run;
     # otherwise nothing below changes.
     sink = get_stream_sink(getattr(ctx, "workflow_id", None), registry=stream_registry)
+    if sink is None and config.get(STREAM_RUN_KEY):
+        _warn_stream_sink_missing(
+            stream_registry or default_registry, str(ctx.workflow_id), node_name
+        )
     streamer = (
         NodeStreamer(
             sink,

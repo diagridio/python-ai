@@ -15,6 +15,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
     Tuple,
     TYPE_CHECKING,
 )
@@ -24,7 +25,9 @@ from dapr.ext.workflow import WorkflowStatus
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 from diagrid.agent.core.workflow.stream import (
-    NODE_RESET,
+    CONTROL_MODES,
+    STREAM_DROPPED,
+    STREAM_UNAVAILABLE,
     StreamClosed,
     StreamEvent,
     StreamSinkRegistry,
@@ -38,7 +41,9 @@ from .models import (
     NodeConfig,
 )
 from .streaming import (
+    STREAM_RUN_KEY,
     GraphRunError,
+    stream_unavailable_event,
     normalize_final,
     normalize_stream_mode,
     to_wire,
@@ -716,14 +721,18 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             poll_interval=poll_interval,
         ):
             if isinstance(item, StreamEvent):
-                if item.mode == NODE_RESET:
-                    # Always delivered so a client can drop a failed attempt's
-                    # partial output; a single mode yields it as a tuple too.
-                    yield (NODE_RESET, item.data)
+                if item.mode in CONTROL_MODES:
+                    # Always delivered, as a tuple even for a single mode:
+                    # node_reset lets a client drop a failed attempt's partial
+                    # output, stream_unavailable says chunks went missing.
+                    yield (item.mode, item.data)
                 elif item.mode in modes:
                     yield (item.mode, item.data) if is_list else item.data
-            elif item.get("type") == "workflow_failed":
-                raise GraphRunError(item)
+            else:
+                if item.get("dropped"):
+                    yield (STREAM_DROPPED, {"dropped": item["dropped"]})
+                if item.get("type") == "workflow_failed":
+                    raise GraphRunError(item)
 
     async def _stream_events(
         self,
@@ -744,6 +753,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
         sink = self._stream_registry.open(workflow_id)
         task: Optional["asyncio.Task[None]"] = None
+        seen_steps: Set[int] = set()
 
         async def _pump() -> None:
             final: Dict[str, Any] = {}
@@ -751,7 +761,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 async for event in self.run_async(
                     input,
                     thread_id=thread_id,
-                    config=dict(config) if config else None,
+                    config={**(config or {}), STREAM_RUN_KEY: True},
                     workflow_id=workflow_id,
                     poll_interval=poll_interval,
                 ):
@@ -775,8 +785,23 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     # Unregister before handing over the result: chunks a late
                     # activity attempt writes from here on are dropped.
                     self._stream_registry.close(workflow_id, sink)
-                    yield item.final
+                    unavailable = stream_unavailable_event(
+                        item.final, seen_steps, workflow_id
+                    )
+                    if unavailable is not None:
+                        logger.warning(
+                            "Streamed run %s: no chunks for steps %s",
+                            workflow_id,
+                            unavailable.data["missing_steps"],
+                        )
+                        yield unavailable
+                    yield (
+                        {**item.final, "dropped": item.dropped}
+                        if item.dropped
+                        else item.final
+                    )
                     return
+                seen_steps.add(item.step)
                 yield item
         finally:
             # Also reached when the consumer goes away (client disconnect,
@@ -871,7 +896,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             modes, _ = normalize_stream_mode(
                 request.get("stream_mode") or ["messages", "updates", "custom"]
             )
-            graph_input = self._request_to_input(request)
+            graph_input = self._request_to_input(request, streaming=True)
             async for item in self._stream_events(
                 graph_input,
                 config=None,
@@ -880,7 +905,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 poll_interval=0.5,
             ):
                 if isinstance(item, StreamEvent):
-                    if item.mode != NODE_RESET and item.mode not in modes:
+                    if item.mode not in CONTROL_MODES and item.mode not in modes:
                         continue
                     yield item.mode, to_wire(item.mode, item.data)
                 else:
@@ -896,11 +921,24 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 normalize_final(failed, workflow_id=None, thread_id=thread_id),
             )
 
-    def _request_to_input(self, request: dict) -> Dict[str, Any]:  # type: ignore[type-arg]
+    def _request_to_input(
+        self,
+        request: dict,  # type: ignore[type-arg]
+        *,
+        streaming: bool = False,
+    ) -> Dict[str, Any]:
+        """Map a ``POST /agent/run`` body to the graph's input.
+
+        ``stream`` and ``stream_mode`` are transport keys of a streaming
+        request and are removed from it (before an ``input_mapper`` sees it, or
+        not) so they never reach the graph. On a plain request they are left
+        alone: a graph may have a state key of that name.
+        """
+        if streaming:
+            request = {k: v for k, v in request.items() if k not in _TRANSPORT_KEYS}
         input_mapper = getattr(self, "_input_mapper", None)
         if input_mapper:
             return input_mapper(request)  # type: ignore[no-any-return]
-        request = {k: v for k, v in request.items() if k not in _TRANSPORT_KEYS}
         if "messages" not in request:
             task = request.get("task")
             if task:
