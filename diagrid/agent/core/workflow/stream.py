@@ -48,12 +48,13 @@ class StreamSink(Protocol):
 
 
 class StreamClosed:
-    """Last item a sink hands its consumer: the run is over."""
+    """Last item a sink hands its consumer: the run is over.
 
-    def __init__(
-        self, error: Optional[str] = None, final: Optional[Dict[str, Any]] = None
-    ) -> None:
-        self.error = error
+    ``final`` is the run's terminal event (``workflow_completed`` or
+    ``workflow_failed`` with its payload).
+    """
+
+    def __init__(self, final: Optional[Dict[str, Any]] = None) -> None:
         self.final: Dict[str, Any] = final or {}
 
 
@@ -112,14 +113,12 @@ class InProcessSink:
                 self._finished[key] = event.attempt_id
             self._enqueue(event)
 
-    def close(
-        self, error: Optional[str] = None, final: Optional[Dict[str, Any]] = None
-    ) -> None:
+    def close(self, final: Optional[Dict[str, Any]] = None) -> None:
         """Mark the run finished; the consumer stops after draining."""
         with self._lock:
             if self._closed:
                 return
-            self._enqueue(StreamClosed(error, final))
+            self._enqueue(StreamClosed(final))
             self._closed = True
 
     async def get(self) -> Any:

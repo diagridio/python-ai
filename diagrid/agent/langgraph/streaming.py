@@ -11,7 +11,7 @@ every task. Chunks go to a :class:`StreamSink` wrapped in a ``StreamEvent``.
 
 import itertools
 import uuid
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.load import dumpd
 
@@ -169,3 +169,67 @@ def to_wire(mode: str, data: Any) -> Any:
     if mode in (MESSAGES, UPDATES):
         return dumpd(data)
     return data
+
+
+# A finished workflow whose output says it did not get to the end of the graph.
+FAILED_STATUSES = ("error", "max_steps_reached")
+NO_RESULT_MESSAGE = "run ended without a result"
+
+
+def failure_message(final: Dict[str, Any]) -> str:
+    """The human-readable reason a ``workflow_failed`` event carries."""
+    error = final.get("error")
+    if isinstance(error, dict):
+        return str(error.get("message") or "Workflow failed")
+    return str(error) if error else "Workflow failed"
+
+
+class GraphRunError(RuntimeError):
+    """A streamed run ended in failure; ``final`` is its terminal event."""
+
+    def __init__(self, final: Dict[str, Any]) -> None:
+        super().__init__(failure_message(final))
+        self.final = final
+
+
+def _failed(final: Dict[str, Any], message: str, error_type: str) -> Dict[str, Any]:
+    return {
+        **final,
+        "type": "workflow_failed",
+        "error": {"message": message, "error_type": error_type},
+    }
+
+
+def normalize_final(
+    final: Dict[str, Any], *, workflow_id: Optional[str], thread_id: str
+) -> Dict[str, Any]:
+    """Turn whatever ended ``run_async`` into one terminal event.
+
+    The result is a ``workflow_completed`` or ``workflow_failed`` event that
+    names the run. The workflow reports some failures as a completed run
+    (``status`` of ``error`` for a missing node or a failed condition,
+    ``max_steps_reached``); a run can also end terminated, errored, or with no
+    final event at all. None of those is a success.
+    """
+    kind = final.get("type")
+    status = final.get("status")
+    if not final:
+        out = _failed({}, NO_RESULT_MESSAGE, "NoResult")
+    elif kind == "workflow_completed" and status in FAILED_STATUSES:
+        out = _failed(
+            final,
+            str(final.get("error") or f"Workflow ended with status {status!r}"),
+            "WorkflowStatus",
+        )
+    elif kind == "workflow_error":
+        out = _failed(
+            final, str(final.get("error") or "Workflow error"), "WorkflowError"
+        )
+    elif kind == "workflow_terminated":
+        out = _failed(final, "Workflow was terminated", "WorkflowTerminated")
+    else:
+        out = dict(final)
+    if workflow_id:
+        out.setdefault("workflow_id", workflow_id)
+    out.setdefault("thread_id", thread_id)
+    return out

@@ -15,6 +15,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     TYPE_CHECKING,
 )
 
@@ -27,7 +28,6 @@ from diagrid.agent.core.workflow.stream import (
     StreamClosed,
     StreamEvent,
     StreamSinkRegistry,
-    format_sse,
 )
 from .models import (
     ChannelState,
@@ -37,7 +37,12 @@ from .models import (
     GraphWorkflowOutput,
     NodeConfig,
 )
-from .streaming import normalize_stream_mode, to_wire
+from .streaming import (
+    GraphRunError,
+    normalize_final,
+    normalize_stream_mode,
+    to_wire,
+)
 from .workflow import (
     agent_workflow,
     evaluate_condition_activity,
@@ -66,17 +71,6 @@ _FINAL_EVENTS = (
     "workflow_terminated",
     "workflow_error",
 )
-
-
-def _final_error(final: Dict[str, Any]) -> Optional[str]:
-    if final.get("type") == "workflow_failed":
-        err = final.get("error")
-        return (err or {}).get("message") if isinstance(err, dict) else str(err)
-    if final.get("type") == "workflow_error":
-        return str(final.get("error") or "Workflow error")
-    if final.get("type") == "workflow_terminated":
-        return "Workflow was terminated"
-    return None
 
 
 _TRANSPORT_KEYS = ("stream", "stream_mode")
@@ -661,6 +655,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     "output": output.output,
                     "steps": output.steps,
                     "status": output.status,
+                    **({"error": output.error} if output.error else {}),
                 }
 
             async for event in self._poll_workflow(
@@ -727,6 +722,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     yield (NODE_RESET, item.data)
                 elif item.mode in modes:
                     yield (item.mode, item.data) if is_list else item.data
+            elif item.get("type") == "workflow_failed":
+                raise GraphRunError(item)
 
     async def _stream_events(
         self,
@@ -737,10 +734,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         workflow_id: Optional[str],
         poll_interval: float,
     ) -> AsyncIterator[Any]:
-        """Yield ``StreamEvent`` chunks, then the final control event dict."""
+        """Yield ``StreamEvent`` chunks, then the terminal event dict.
+
+        The terminal event is always the last item: ``workflow_completed`` or
+        ``workflow_failed`` (see :func:`normalize_final`), carrying the run's
+        ``workflow_id`` and ``thread_id``.
+        """
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
         sink = self._stream_registry.open(workflow_id)
+        task: Optional["asyncio.Task[None]"] = None
 
         async def _pump() -> None:
             final: Dict[str, Any] = {}
@@ -755,23 +758,34 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     if event["type"] in _FINAL_EVENTS:
                         final = event
             except Exception as e:
-                sink.close(error=str(e))
-                return
-            sink.close(error=_final_error(final), final=final)
+                logger.exception("Streamed run %s failed", workflow_id)
+                final = {
+                    "type": "workflow_failed",
+                    "error": {"message": str(e), "error_type": type(e).__name__},
+                }
+            sink.close(
+                normalize_final(final, workflow_id=workflow_id, thread_id=thread_id)
+            )
 
-        task = asyncio.create_task(_pump())
         try:
+            task = asyncio.create_task(_pump())
             while True:
                 item = await sink.get()
                 if isinstance(item, StreamClosed):
-                    if item.error:
-                        raise RuntimeError(item.error)
+                    # Unregister before handing over the result: chunks a late
+                    # activity attempt writes from here on are dropped.
+                    self._stream_registry.close(workflow_id, sink)
                     yield item.final
                     return
                 yield item
         finally:
-            task.cancel()
+            # Also reached when the consumer goes away (client disconnect,
+            # abandoned generator). That stops this stream only: the Dapr
+            # workflow itself keeps running to completion.
             self._stream_registry.close(workflow_id, sink)
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
     def _serialize_input(self, input: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize input values for storage."""
@@ -844,25 +858,20 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self,
         request: dict,  # type: ignore[type-arg]
         session_id: str,
-    ) -> AsyncIterator[str]:
-        """Run the graph and frame its stream as Server-Sent Events.
+    ) -> AsyncIterator[Tuple[str, Any]]:
+        """Run the graph and yield its stream as ``(event_name, data)`` pairs.
 
         ``stream_mode`` in the request (a mode or list of modes) selects what
         is sent; the default is all of ``messages``, ``updates`` and ``custom``.
-        Ends with ``workflow_completed`` or ``workflow_failed``.
+        Ends with ``workflow_completed`` or ``workflow_failed``, whose data is
+        the run's full terminal event. The base runner frames the pairs.
         """
         thread_id = request.get("thread_id") or request.get("session_id") or session_id
-        graph_input = self._request_to_input(request)
         try:
             modes, _ = normalize_stream_mode(
                 request.get("stream_mode") or ["messages", "updates", "custom"]
             )
-        except ValueError as e:
-            yield format_sse("workflow_failed", {"error": str(e)})
-            return
-
-        event_id = 0
-        try:
+            graph_input = self._request_to_input(request)
             async for item in self._stream_events(
                 graph_input,
                 config=None,
@@ -873,14 +882,19 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 if isinstance(item, StreamEvent):
                     if item.mode != NODE_RESET and item.mode not in modes:
                         continue
-                    name, data = item.mode, to_wire(item.mode, item.data)
+                    yield item.mode, to_wire(item.mode, item.data)
                 else:
-                    name, data = item.get("type", "workflow_completed"), item
-                event_id += 1
-                yield format_sse(name, data, event_id)
+                    yield item["type"], item
         except Exception as e:
             logger.exception("Streaming run failed")
-            yield format_sse("workflow_failed", {"error": str(e)})
+            failed = {
+                "type": "workflow_failed",
+                "error": {"message": str(e), "error_type": type(e).__name__},
+            }
+            yield (
+                "workflow_failed",
+                normalize_final(failed, workflow_id=None, thread_id=thread_id),
+            )
 
     def _request_to_input(self, request: dict) -> Dict[str, Any]:  # type: ignore[type-arg]
         input_mapper = getattr(self, "_input_mapper", None)

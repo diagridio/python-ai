@@ -10,7 +10,7 @@ import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from importlib import metadata
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, Tuple
 
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
 from dapr_agents.utils.signal.mixin import SignalMixin
@@ -19,6 +19,7 @@ from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
 from diagrid.agent.core.observability import resolve_observability_config
 from diagrid.agent.core.workflow.naming import build_workflow_name
+from diagrid.agent.core.workflow.stream import format_sse
 
 # ``diagrid-core`` ships the reporter. This distribution only pins
 # ``diagrid-core>=0.1.0`` (through ``diagrid-cli``), so an application holding
@@ -52,20 +53,8 @@ _FRAMEWORK_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
 }
 
 
-_FINAL_SSE_EVENTS = ("event: workflow_completed", "event: workflow_failed")
-
-
-def _final_event_data(frame: str) -> Optional[dict[str, Any]]:
-    """Payload of a ``workflow_completed``/``workflow_failed`` SSE frame."""
-    lines = frame.strip().split("\n")
-    if not any(line in _FINAL_SSE_EVENTS for line in lines):
-        return None
-    data = "\n".join(line[6:] for line in lines if line.startswith("data: "))
-    try:
-        parsed = json.loads(data)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
+#: Event names that end a streamed run; the data of the last one is the result.
+_TERMINAL_EVENTS = ("workflow_completed", "workflow_failed")
 
 
 def _framework_version(framework: str) -> Optional[str]:
@@ -451,6 +440,8 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             ):
                 if event["type"] == "workflow_started":
                     result["instance_id"] = event["workflow_id"]
+                    if event.get("thread_id"):
+                        result["thread_id"] = event["thread_id"]
                 elif event["type"] == "workflow_completed":
                     result.update(event)
                     break
@@ -470,15 +461,32 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 except Exception as e:
                     logger.error("Failed to publish result: %s", str(e))
 
-        async def _stream_and_publish(frames: AsyncIterator[str]) -> AsyncIterator[str]:
-            """Forward SSE frames, then publish the terminal event's data."""
-            result: dict[str, Any] = {}
-            async for frame in frames:
-                yield frame
-                final = _final_event_data(frame)
-                if final is not None:
-                    result.update(final)
-            if result:
+        async def _frame_and_publish(
+            events: AsyncIterator[Tuple[str, Any]],
+        ) -> AsyncIterator[str]:
+            """Frame ``(event, data)`` pairs as SSE; publish the terminal one.
+
+            The only place a streamed run is turned into SSE frames and into
+            the published result, so a runner just yields pairs.
+            """
+            final: Optional[dict[str, Any]] = None
+            event_id = 0
+            try:
+                async for name, data in events:
+                    event_id += 1
+                    yield format_sse(name, data, event_id)
+                    if name in _TERMINAL_EVENTS and isinstance(data, dict):
+                        final = data
+            finally:
+                # A client that disconnects ends the generator at a yield; close
+                # the runner's stream now rather than when it is collected.
+                aclose = getattr(events, "aclose", None)
+                if aclose is not None:
+                    await aclose()
+            if final is not None:
+                result = dict(final)
+                if final.get("workflow_id"):
+                    result["instance_id"] = final["workflow_id"]
                 _publish_result(result)
 
         @app.post("/agent/run")
@@ -489,7 +497,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                     request.get("thread_id", uuid.uuid4().hex[:8]),
                 )
                 return StreamingResponse(
-                    _stream_and_publish(self._serve_stream(request, session_id)),
+                    _frame_and_publish(self._serve_stream(request, session_id)),
                     media_type="text/event-stream",
                 )
             return await _run_and_collect(request)
@@ -581,8 +589,13 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         self,
         request: dict,  # type: ignore[type-arg]
         session_id: str,
-    ) -> AsyncIterator[str]:
-        """Yield SSE-framed strings for a run. Opt-in per runner."""
+    ) -> AsyncIterator[Tuple[str, Any]]:
+        """Yield ``(event_name, data)`` pairs for a run. Opt-in per runner.
+
+        The last pair is ``workflow_completed`` or ``workflow_failed`` with the
+        run's terminal event as data. Framing as SSE and publishing the result
+        are done by ``serve()``, not here.
+        """
         raise NotImplementedError
 
     @abstractmethod
