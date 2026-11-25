@@ -27,13 +27,9 @@ from dapr.ext.workflow import WorkflowStatus
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 from diagrid.agent.core.workflow.runner import fold_run_event
-from diagrid.agent.core.workflow import stream as stream_module
 from diagrid.agent.core.workflow.stream import (
     CONTROL_MODES,
     KEEPALIVE_EVENT,
-    NODE_RESET,
-    STREAM_DROPPED,
-    STREAM_UNAVAILABLE,
     WORKFLOW_STARTED,
     InProcessSink,
     StreamClosed,
@@ -53,12 +49,10 @@ from .streaming import (
     EXECUTED_KEY,
     STREAM_RUN_KEY,
     UPDATES,
-    GraphRunError,
+    StaticConfig,
     StreamControl,
-    stream_unavailable_event,
     normalize_final,
     normalize_stream_mode,
-    to_wire,
 )
 from .stream_events import (
     FINAL_EVENTS,
@@ -74,14 +68,16 @@ from .stream_events import (
 )
 from .workflow import (
     agent_workflow,
-    evaluate_condition_activity,
+    make_condition_activity,
     GENERIC_NODE_ACTIVITY,
     make_node_activity,
     node_activity_name,
     register_node,
+    register_node_static_config,
     register_node_triggers,
     register_condition,
     register_channel_reducer,
+    register_state_channels,
     set_default_graph_config,
     set_serializer,
     clear_registries,
@@ -97,6 +93,67 @@ logger = logging.getLogger(__name__)
 _TRANSPORT_KEYS = ("stream", "stream_mode")
 
 
+# What a reducer channel holds before its first write; LangGraph's own marker
+# when the channel type has no empty value.
+_NO_DEFAULT: Any = object()
+try:
+    from langgraph.channels.binop import MISSING as _LANGGRAPH_MISSING
+except ImportError:  # pragma: no cover - a LangGraph without the marker
+    _LANGGRAPH_MISSING = _NO_DEFAULT
+
+
+def _check_run_config(config: Optional[Dict[str, Any]]) -> None:
+    """Refuse a LangGraph config the workflow cannot carry, before a run starts.
+
+    The config travels to the activities as JSON, so ``callbacks`` (handler
+    objects) and any other value that is not JSON cannot be passed; an
+    invalid ``recursion_limit`` is refused too. Raises ``ValueError``.
+    """
+    if not config:
+        return
+    if config.get("callbacks"):
+        raise ValueError(
+            "config['callbacks'] is not supported: the config travels to the "
+            "workflow as JSON. Attach handlers to the models inside the nodes."
+        )
+    limit = config.get("recursion_limit")
+    if limit is not None and (
+        isinstance(limit, bool) or not isinstance(limit, int) or limit < 1
+    ):
+        raise ValueError(
+            f"config['recursion_limit'] must be a positive integer, got {limit!r}"
+        )
+    for key, value in config.items():
+        items = (
+            value.items()
+            if key == "configurable" and isinstance(value, dict)
+            else [(key, value)]
+        )
+        for name, item in items:
+            try:
+                json.dumps(item)
+            except (TypeError, ValueError) as e:
+                where = (
+                    f"config['configurable'][{name!r}]"
+                    if key == "configurable"
+                    else f"config[{name!r}]"
+                )
+                raise ValueError(
+                    f"{where} is not JSON serializable, and the config travels to "
+                    f"the workflow as JSON: {e}"
+                ) from e
+
+
+def _max_steps_for(config: Optional[Dict[str, Any]], default: int) -> int:
+    """The workflow's step bound: ``config['recursion_limit']`` as LangGraph counts it.
+
+    LangGraph allows ``recursion_limit - 1`` node steps (its input is the
+    first), so a graph of N sequential nodes needs a limit of N + 1.
+    """
+    limit = (config or {}).get("recursion_limit")
+    return limit - 1 if isinstance(limit, int) else default
+
+
 def _run_identity(
     config: Optional[Dict[str, Any]],
     thread_id: Optional[str],
@@ -108,6 +165,7 @@ def _run_identity(
     else new. The config handed to the run carries that one id, so the id the
     run reports is the one its nodes see.
     """
+    _check_run_config(config)
     configurable = (config or {}).get("configurable") or {}
     thread = str(thread_id or configurable.get("thread_id") or uuid.uuid4())
     run_config = {
@@ -262,7 +320,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             name=GENERIC_NODE_ACTIVITY,
         )
         self._workflow_runtime.register_activity(
-            evaluate_condition_activity, name="evaluate_condition_activity"
+            make_condition_activity(self._stream_registry),
+            name="evaluate_condition_activity",
         )
 
     def _register_node_activities(self) -> None:
@@ -300,6 +359,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 )
 
             register_node_triggers(node_name, triggers)
+            register_node_static_config(node_name, self._static_config(node_spec))
             nodes.append(
                 NodeConfig(
                     name=node_name,
@@ -400,6 +460,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             waiting_edges=waiting_edges,
         )
 
+    def _static_config(self, node_spec: Any) -> StaticConfig:
+        """The metadata and tags the compiled graph and this node give its tasks."""
+        graph_config = getattr(self._graph, "config", None) or {}
+        return StaticConfig(
+            graph_metadata=dict(graph_config.get("metadata") or {}),
+            graph_tags=tuple(graph_config.get("tags") or ()),
+            node_metadata=dict(getattr(node_spec, "metadata", None) or {}),
+            node_tags=tuple(getattr(node_spec, "tags", None) or ()),
+        )
+
     def _register_graph_components(self) -> None:
         """Register graph nodes and other components in the global registries."""
         clear_registries()
@@ -435,8 +505,21 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 channel, "operator", None
             )
             if reducer:
-                register_channel_reducer(channel_name, reducer)
+                default = getattr(channel, "value", _NO_DEFAULT)
+                if default is _NO_DEFAULT or default is _LANGGRAPH_MISSING:
+                    register_channel_reducer(channel_name, reducer)
+                else:
+                    register_channel_reducer(channel_name, reducer, default)
                 logger.info(f"Registered reducer for channel: {channel_name}")
+
+        # A node's keys that are not state channels are dropped, as LangGraph
+        # does (CompiledStateGraph's ``_get_updates``).
+        state_channels = getattr(
+            getattr(self._graph, "builder", None), "channels", None
+        )
+        if isinstance(state_channels, dict):
+            managed = getattr(self._graph.builder, "managed", None) or {}
+            register_state_channels([*state_channels, *managed])
 
         try:
             from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -494,6 +577,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
+        _check_run_config(config)
         config = config or {}
         config["thread_id"] = thread_id
 
@@ -541,7 +625,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             graph_config=self._graph_config,
             channel_state=channel_state,
             step=0,
-            max_steps=self._max_steps,
+            max_steps=_max_steps_for(config, self._max_steps),
             pending_nodes=[],
             config=config,
             thread_id=thread_id,
@@ -637,6 +721,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
 
+        _check_run_config(config)
         config = config or {}
         config["thread_id"] = thread_id
 
@@ -683,7 +768,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             graph_config=self._graph_config,
             channel_state=channel_state,
             step=0,
-            max_steps=self._max_steps,
+            max_steps=_max_steps_for(config, self._max_steps),
             pending_nodes=[],
             config=config,
             thread_id=thread_id,
@@ -801,6 +886,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         reserved) until it is closed or garbage collected. Closing does not
         cancel the Dapr workflow, which runs to completion.
 
+        ``config`` is a LangGraph config that travels to the workflow as JSON:
+        ``tags``, ``metadata``, ``configurable`` and ``recursion_limit`` work
+        (the limit bounds the run's steps as LangGraph counts them; the
+        runner's ``max_steps`` applies when it is absent). ``callbacks`` and any
+        value that is not JSON raise ``ValueError`` before a run starts.
+
         Chunks have the shape ``CompiledStateGraph.astream`` yields:
         ``messages`` are ``(message_chunk, metadata)`` and ``updates`` are
         ``{node: update}`` with the values exactly as the node returned them
@@ -824,8 +915,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             )
         ) as events:
             async for item in events:
-                for out in route_astream_item(item, modes, is_list, on_control):
+                outs, error = route_astream_item(item, modes, is_list, on_control)
+                for out in outs:
                     yield out
+                if error is not None:
+                    raise error
 
     async def _stream_events(
         self,

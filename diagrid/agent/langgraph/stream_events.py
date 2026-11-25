@@ -146,11 +146,13 @@ def route_astream_item(
     modes: List[str],
     is_list: bool,
     on_control: Optional[Callable[[StreamControl], None]],
-) -> List[Any]:
-    """What ``astream`` yields for one item of the event stream.
+) -> Tuple[List[Any], Optional[GraphRunError]]:
+    """What ``astream`` yields for one item of the event stream, and its error.
 
-    Hands control events to ``on_control``, and raises :class:`GraphRunError`
-    for a terminal ``workflow_failed``.
+    Hands control events to ``on_control``. The error is a
+    :class:`GraphRunError` for a terminal ``workflow_failed``: the caller
+    yields what came with it (a ``stream_dropped`` of a failed run, say) and
+    then raises it.
     """
     out: List[Any] = []
     if isinstance(item, StreamEvent):
@@ -166,7 +168,7 @@ def route_astream_item(
                 warn_reset_unseen(item.workflow_id, control.data)
         elif item.mode in modes:
             out.append((item.mode, item.data) if is_list else item.data)
-        return out
+        return out, None
     if item.get("dropped"):
         control = StreamControl(STREAM_DROPPED, {"dropped": item["dropped"]})
         if on_control is not None:
@@ -174,8 +176,8 @@ def route_astream_item(
         if is_list:
             out.append((control.kind, control.data))
     if item.get("type") == "workflow_failed":
-        raise GraphRunError(item)
-    return out
+        return out, GraphRunError(item)
+    return out, None
 
 
 def closing_events(

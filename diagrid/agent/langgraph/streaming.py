@@ -14,7 +14,7 @@ import itertools
 import logging
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from langchain_core.load import dumpd
@@ -101,6 +101,30 @@ def _own_node_handler_class() -> Any:
     return OwnNodeMessagesHandler
 
 
+@dataclass(frozen=True)
+class StaticConfig:
+    """The metadata and tags the graph itself gives a node's tasks.
+
+    LangGraph merges the compiled graph's own config (``with_config``) under
+    the caller's, and the node's ``add_node(metadata=...)`` over both. They
+    are fixed by the graph, so a runner registers them once per node.
+    """
+
+    graph_metadata: Dict[str, Any] = field(default_factory=dict)
+    graph_tags: Tuple[str, ...] = ()
+    node_metadata: Dict[str, Any] = field(default_factory=dict)
+    node_tags: Tuple[str, ...] = ()
+
+    def metadata(self, caller: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """graph, then the caller's, then the node's own: later wins."""
+        return {**self.graph_metadata, **(caller or {}), **self.node_metadata}
+
+    def tags(self, caller: Optional[Sequence[str]]) -> List[str]:
+        """The graph's tags, the caller's, the node's, without repeats."""
+        merged = [*self.graph_tags, *(caller or ()), *self.node_tags]
+        return list(dict.fromkeys(merged))
+
+
 class NodeStreamer:
     """Streams one activity attempt of one node into a sink."""
 
@@ -118,7 +142,9 @@ class NodeStreamer:
         task_id: Any,
         thread_id: Optional[str] = None,
         triggers: Optional[Sequence[str]] = None,
+        static: Optional[StaticConfig] = None,
     ) -> None:
+        self._static = static or StaticConfig()
         self._sink = sink
         self._thread_id = thread_id
         self._workflow_id = workflow_id
@@ -231,7 +257,7 @@ class NodeStreamer:
         metadata = {
             **self._configurable_metadata(config),
             "ls_integration": "langgraph",
-            **(config.get("metadata") or {}),
+            **self._static.metadata(config.get("metadata")),
             **{k: v for k, v in self.metadata.items() if k != "checkpoint_ns"},
         }
         handler.on_chain_start(
@@ -240,7 +266,7 @@ class NodeStreamer:
             run_id=self._run_id,
             name=self._node,
             metadata=metadata,
-            tags=list(config.get("tags") or []),
+            tags=self._static.tags(config.get("tags")),
         )
 
     def node_finished(self, output: Any) -> None:
@@ -295,9 +321,12 @@ class NodeStreamer:
         patched["callbacks"] = callbacks
         patched["metadata"] = {
             **self._configurable_metadata(patched),
-            **(patched.get("metadata") or {}),
+            **self._static.metadata(patched.get("metadata")),
             **self.metadata,
         }
+        tags = self._static.tags(patched.get("tags"))
+        if tags or "tags" in patched:
+            patched["tags"] = tags
         return patched
 
     def _configurable_metadata(self, config: Dict[str, Any]) -> Dict[str, Any]:

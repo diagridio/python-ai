@@ -247,6 +247,7 @@ class StreamSinkRegistry:
         """True the first time it is asked about ``workflow_id``.
 
         Lets an activity log a problem once per run instead of once per node.
+        Any other key works the same way (the Send warning uses one per edge).
         Remembers the most recent runs only, so it cannot grow without limit.
         """
         with self._lock:
@@ -256,6 +257,11 @@ class StreamSinkRegistry:
             while len(self._reported) > _MAX_REPORTED_RUNS:
                 self._reported.popitem(last=False)
             return True
+
+    def clear_reports(self) -> None:
+        """Forget what :meth:`first_report` was asked, so it reports again."""
+        with self._lock:
+            self._reported.clear()
 
     def get(self, workflow_id: Optional[str]) -> Optional[InProcessSink]:
         """The open sink for ``workflow_id``, or ``None``."""
@@ -289,5 +295,6 @@ def format_sse(event: str, data: Any, event_id: Optional[int] = None) -> str:
         lines.append(f"id: {event_id}")
     lines.append(f"event: {event}")
     payload = json.dumps(data, default=str)
-    lines.extend(f"data: {part}" for part in payload.split("\n"))
+    # json.dumps escapes newlines, so the payload is always one line.
+    lines.append(f"data: {payload}")
     return "\n".join(lines) + "\n\n"

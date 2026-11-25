@@ -211,6 +211,11 @@ they are left alone.
 - **`Send` payloads.** A node run through `Send("node", arg)` (or `goto=Send(...)`)
   reads the channel state, not `arg`; this is logged once per edge. A node that
   reads the argument gets different data than under LangGraph.
+- **The `config` of `astream` travels as JSON.** `tags`, `metadata`,
+  `configurable` and `recursion_limit` work; `recursion_limit` bounds the run's
+  steps as LangGraph counts them (N sequential nodes need a limit of N + 1) and
+  the runner's `max_steps` applies when it is absent. `callbacks` and any value
+  that is not JSON raise `ValueError` before a run starts.
 
 ## Architecture
 
