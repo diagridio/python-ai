@@ -62,13 +62,34 @@ pip install "diagrid[holmesgpt]"
 
 ## Usage analytics
 
-Every agent runner reports one anonymous usage event when it is constructed, once per package per process. PyPI publishes aggregate download counts only, so this is how Diagrid sees which package versions run on which platforms. Because it is one event per process, a Kubernetes deployment produces one event per replica per restart: the numbers count process starts, not deployments or users.
+Diagrid reports anonymous usage events to two services, [Scarf](https://scarf.sh) and [Reo](https://www.reo.dev). PyPI publishes aggregate download counts only, so these events show which package versions run on which platforms. Both services derive coarse company and location information from the request IP. How they handle that data is described in [Scarf's privacy policy](https://about.scarf.sh/privacy-policy) and [Reo's privacy policy](https://www.reo.dev/privacy-policy).
 
-**What is sent:** the package name and version, the `diagrid-core` version, operating system, architecture, Python version, the agent framework and the installed version of its library (`framework`, `framework_version`), `kind=agent`, whether the process points at Catalyst or at a plain Dapr sidecar (`target`), and whether it runs under a CI variable (`ci`). Nothing else: no application data, configuration, app IDs, prompts, or hostnames. The receiving service is [Scarf](https://scarf.sh). It derives coarse company and location information from the request IP. How Scarf handles that data is described in [Scarf's privacy policy](https://about.scarf.sh/privacy-policy).
+Every agent runner reports one event when it is constructed, once per package per process. It goes to Scarf and Reo. Because it is one event per process, a Kubernetes deployment produces one event per replica per restart: the numbers count process starts, not deployments or users.
 
-**It never gets in the way:** the request runs on a background daemon thread with a one second socket timeout, every failure is swallowed, and the calling thread never waits. Blocked egress and air-gapped clusters behave normally. Nothing is written to your application's output; a `DEBUG` line on the `diagrid.core.analytics` logger records whether the event was sent or skipped, for operators who want to confirm an opt-out.
+`diagridpy`, the console script for `diagrid-cli`, reports to Reo only. It sends one event per invocation, including `--help` and `--version`. The send blocks the command for at most about one second in total, a hard cap that includes DNS resolution. A send still running at the cap is abandoned. Shell completion requests are not reported.
 
-To opt out, set any of these environment variables before starting your application:
+The first time `diagridpy` is about to report, it prints a short notice to stderr that names the opt-out variables, and records that it did in `~/.diagrid/telemetry-notice-shown` (or under `$DIAGRID_HOME` when set). Delete that file to see the notice again. Nothing is printed when reporting is skipped.
+
+**What is sent:** the package name and version, the `diagrid-core` version, operating system, architecture, Python version, and, for agent runners, the agent framework and the installed version of its library. Nothing else: no prompts, application data, configuration, app IDs, hostnames, or file paths.
+
+| | Scarf | Reo |
+|---|---|---|
+| Sent by | agent runners | agent runners and `diagridpy` |
+| Fields | `package`, `version`, `core_version`, `os`, `arch`, `python_version`, `target`, `ci`, plus `kind` (`agent`), `framework` and `framework_version` from agent runners only | `activity_type=pypi_download`, `product`, `version`, `python`, `platform`, `arch`, `core_version`, plus `kind` (`agent`), `framework` and `framework_version` from agent runners only |
+| `target` and `ci` | sent | not sent |
+
+`target` says whether the process points at Catalyst or at a plain Dapr sidecar. `ci` says whether a CI variable is set.
+
+**When Reo is skipped:** Reo is not contacted from Kubernetes, from CI, or when the process points at Catalyst. Scarf is still contacted in those cases, so the two services report different totals. Reo is skipped when any of these is true:
+
+- you set an opt-out variable (see below)
+- `KUBERNETES_SERVICE_HOST` is set
+- `DAPR_GRPC_ENDPOINT` or `DAPR_HTTP_ENDPOINT` points at a host under `diagrid.io`, or `DAPR_API_TOKEN` is set
+- a CI variable is set, such as `CI`, `GITHUB_ACTIONS` or `GITLAB_CI`
+
+**It never gets in the way:** agent runners send on a background daemon thread with a one second socket timeout, every failure is swallowed, and the calling thread never waits. Blocked egress and air-gapped clusters behave normally. Nothing is written to your application's output. A `DEBUG` line on the `diagrid.core.analytics` logger records whether each event was sent or skipped, for operators who want to confirm an opt-out.
+
+To opt out of both services, set any of these environment variables before starting your application or running `diagridpy`:
 
 ```bash
 export DO_NOT_TRACK=1
