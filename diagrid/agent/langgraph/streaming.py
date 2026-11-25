@@ -23,6 +23,7 @@ from langgraph.errors import GraphRecursionError
 
 from diagrid.agent.core.workflow.stream import (
     STREAM_UNAVAILABLE,
+    UPDATES,
     StreamEvent,
     StreamSink,
     display_step,
@@ -31,7 +32,6 @@ from diagrid.agent.core.workflow.stream import (
 logger = logging.getLogger(__name__)
 
 MESSAGES = "messages"
-UPDATES = "updates"
 CUSTOM = "custom"
 SUPPORTED_MODES = (MESSAGES, UPDATES, CUSTOM)
 
@@ -146,8 +146,11 @@ class NodeStreamer:
         static: Optional[StaticConfig] = None,
         sink_node: Optional[str] = None,
         path: Optional[Sequence[Any]] = None,
+        branch: Optional[str] = None,
     ) -> None:
         self._path = tuple(path) if path else None
+        # The conditional edge whose function this streamer serves, if any.
+        self._branch = branch
         # ``sink_node`` is the name chunks are keyed under in the sink when it
         # is not the node's own: a conditional edge's function streams as its
         # source node but must not share that node's attempts and ``updates``.
@@ -197,6 +200,7 @@ class NodeStreamer:
                     data=data,
                     display_node=self._node,
                     path=self._path,
+                    branch=self._branch,
                 )
             )
 
@@ -310,6 +314,9 @@ class NodeStreamer:
         channels = [ch for ch, _ in writes]
         if not writes:
             update = None
+        elif channels == ["__root__"]:
+            # a graph whose whole state is one value: LangGraph reports the value
+            update = writes[0][1]
         elif len(set(channels)) == len(channels):
             update = dict(writes)
         else:
@@ -447,7 +454,10 @@ def run_error(final: Dict[str, Any]) -> GraphRunError:
     return GraphRunError(final)
 
 
-def _failed(final: Dict[str, Any], message: str, error_type: str) -> Dict[str, Any]:
+def workflow_failed(
+    final: Dict[str, Any], message: str, error_type: str
+) -> Dict[str, Any]:
+    """``final`` turned into a ``workflow_failed`` event with this error."""
     return {
         **final,
         "type": "workflow_failed",
@@ -469,19 +479,19 @@ def normalize_final(
     kind = final.get("type")
     status = final.get("status")
     if not final:
-        out = _failed({}, NO_RESULT_MESSAGE, "NoResult")
+        out = workflow_failed({}, NO_RESULT_MESSAGE, "NoResult")
     elif kind == "workflow_completed" and status in FAILED_STATUSES:
-        out = _failed(
+        out = workflow_failed(
             final,
             str(final.get("error") or f"Workflow ended with status {status!r}"),
             "WorkflowStatus",
         )
     elif kind == "workflow_error":
-        out = _failed(
+        out = workflow_failed(
             final, str(final.get("error") or "Workflow error"), "WorkflowError"
         )
     elif kind == "workflow_terminated":
-        out = _failed(final, "Workflow was terminated", "WorkflowTerminated")
+        out = workflow_failed(final, "Workflow was terminated", "WorkflowTerminated")
     else:
         out = dict(final)
     if workflow_id:
@@ -506,8 +516,8 @@ def stream_unavailable_event(
     ``seen`` holds the ``(step, node)`` pairs whose ``updates`` chunk arrived;
     every node that runs here sends one when it finishes, so an executed node
     without one had its activity (or its last attempt) elsewhere, even when
-    other nodes of its step streamed here. A final without ``executed`` (a run
-    started before the workflow reported it) is judged per step instead. A run
+    other nodes of its step streamed here. A final without ``executed`` is
+    judged per step instead. A run
     that failed is just a failure, and one with no step count has nothing to
     report.
     """

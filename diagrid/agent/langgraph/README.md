@@ -120,7 +120,7 @@ objects (`kind`, `data`):
 | `kind` | `data` | Meaning |
 |---|---|---|
 | `workflow_started` | `{"workflow_id", "thread_id"}` | Always the first event: the ids to use with `terminate_workflow` or `get_workflow_status`. Delivered only to `on_control`, never yielded. |
-| `node_reset` | `{"node", "step"}`, plus `"path"` for a `Send` task | A node was retried; drop its partial output. `node` and `step` are the `langgraph_node` and `langgraph_step` of that node's `messages` metadata (`step` is numbered from 1). A task started by a `Send` also carries `path`, the `langgraph_path` of its chunks (`["__pregel_push", index, false]`), which tells apart the tasks of one node in a step. |
+| `node_reset` | `{"node", "step"}`, plus `"path"` for a `Send` task | A node was retried; drop its partial output. `node` and `step` are the `langgraph_node` and `langgraph_step` of that node's `messages` metadata (`step` is numbered from 1). A task started by a `Send` also carries `path`, the `langgraph_path` of its chunks (`["__pregel_push", index, false]`), which tells apart the tasks of one node in a step. A retry of a conditional edge's function (the function runs in its own activity, after the node's) also carries `branch`, the edge's function name: only what that function sent since the node's `updates` chunk is stale, not the node's own output. |
 | `stream_unavailable` | `{"workflow_id", "reason", "missing_steps", "missing_nodes"}` | The run finished but a node's chunks never arrived (see the limit below). `missing_nodes` is a list of `{"step", "node"}`, one per node of a step that streamed nothing, even when other nodes of that step did. Steps are numbered from 1, like `langgraph_step`. A `Send` task is named `node#k` there (`k` is its position among the step's `Send` tasks). |
 | `stream_dropped` | `{"dropped": n}` | The consumer fell behind and `n` token or custom chunks were dropped. `updates` are never dropped. |
 
@@ -202,15 +202,12 @@ they are left alone.
   activity logs a warning once per run and the stream sends `stream_unavailable`
   before it ends. The run and its result are not affected. Delivery across
   replicas is not implemented yet.
-- **A disconnect does not cancel the run.** When the client goes away the stream
-  is closed, but the Dapr workflow keeps running to completion. Terminate it with
-  `terminate_workflow` if you need it stopped. The first event of every stream is
-  `workflow_started` with the `workflow_id` and `thread_id`, so a client that
-  loses its connection can still `GET /agent/run/{workflow_id}` or ask for the
-  run to be terminated. With `astream`, `on_control` receives the same event.
-  When `publish_topic` is set, the server keeps following the run after the
-  client left and publishes its result when it ends, as it does for a client
-  that stays.
+- **A disconnect does not cancel the run.** The stream closes but the Dapr
+  workflow runs to completion; `terminate_workflow` stops it, and the ids in
+  `workflow_started` let a client that lost its connection `GET
+  /agent/run/{workflow_id}` or terminate the run. When `publish_topic` is set,
+  the server keeps following the run after the client left and publishes its
+  result when it ends.
 
 - **`Send` tasks.** Every `Send("node", arg)` (from a conditional edge or
   `goto=Send(...)`) runs the node once, as its own activity, with `arg` as its
@@ -220,6 +217,12 @@ they are left alone.
   the step's `Send` tasks. The
   `arg` travels through the workflow as the checkpoint serializer's bytes, so it
   must be something that serializer handles.
+- **State values keep their types between nodes.** A value of a state channel
+  that is not plain JSON (a message, a `datetime`, a `set`, a pydantic object) is
+  stored with the checkpoint serializer, so the next node and router read what
+  was written, as in LangGraph. It must be something that serializer handles.
+  A run's output (the `invoke` result and the final event) is JSON: such a value
+  appears there as its dump (a `set` as a sorted list, a `datetime` as a string).
 - **Routers stream after their node's update.** The LLM tokens and
   `get_stream_writer()` events of a conditional edge's function are sent as its
   source node's (`langgraph_node` and step), as LangGraph does, but the router
@@ -227,10 +230,13 @@ they are left alone.
   where LangGraph sends them before it.
 - **The `config` of `astream`, `invoke` and `run_async` travels as JSON.**
   `tags`, `metadata`, `configurable` and `recursion_limit` work; `recursion_limit`
-  bounds the run's steps as LangGraph counts them (N sequential nodes need a limit
-  of N + 1) and the runner's `max_steps` applies when it is absent. A
+  bounds the run's steps as LangGraph counts them: that many node steps run and
+  then the run fails with `GraphRecursionError` (N sequential nodes need a limit
+  of N + 1 to complete). The runner's `max_steps` applies when it is absent. A
   `recursion_limit` and `configurable` bound with `compiled.with_config(...)`
-  apply unless the call sets its own. `callbacks` and any value that is not JSON
+  apply unless the call sets its own; a `max_steps` you pass to the runner
+  still caps a limit that is only bound to the graph (`create_agent` binds
+  9999), so it stays a guard against a runaway loop. `callbacks` and any value that is not JSON
   raise `ValueError` before a run starts.
 
 ## Architecture

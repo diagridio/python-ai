@@ -215,6 +215,32 @@ def _framework_version(framework: str) -> Optional[str]:
     return None
 
 
+async def _next_state(
+    client: Any, workflow_id: str, poll_interval: float, retry_failed_polls: bool
+) -> Any:
+    """The workflow's state after ``poll_interval``, retrying a failed poll.
+
+    The poll failed, not the workflow (a sidecar restart, a dropped call):
+    retry, and give up only on a poll that keeps failing, so the caller learns
+    the run's fate is unknown.
+    """
+    failed_polls = 0
+    while True:
+        await asyncio.sleep(poll_interval)
+        try:
+            # A blocking gRPC call: off the loop, or every other run's
+            # tokens (and all HTTP handling) wait for the sidecar.
+            return await asyncio.to_thread(
+                client.get_workflow_state, instance_id=workflow_id
+            )
+        except Exception as e:
+            failed_polls += 1
+            delay = _poll_retry_delay(e, failed_polls, retry_failed_polls, workflow_id)
+            if delay is None:
+                raise
+            await asyncio.sleep(delay)
+
+
 class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
     """Base class for all framework workflow runners.
 
@@ -410,49 +436,18 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
     ) -> AsyncIterator[dict[str, Any]]:
         """Poll a running workflow and yield status/completion events.
 
-        Args:
-            workflow_id: The workflow instance ID.
-            session_id: Session identifier for event metadata.
-            poll_interval: Seconds between polls.
-            parse_output: Optional callable to parse serialized output
-                into a completion event dict. If None, raw output is
-                returned.
-            retry_failed_polls: Ride out a failed poll when it looks transient
-                (see ``POLL_MAX_ERRORS``) instead of raising at once. Off by
-                default: a runner opts in when it can tell its caller that the
-                run's fate is unknown.
-
-        Yields:
-            Event dictionaries with workflow progress updates.
+        ``parse_output`` turns the serialized output into a completion event
+        dict (the raw output is returned without one). ``retry_failed_polls``
+        rides out a failed poll that looks transient (see ``POLL_MAX_ERRORS``)
+        instead of raising at once; a runner opts in when it can tell its
+        caller that the run's fate is unknown.
         """
         assert self._workflow_client is not None
-
         previous_status = None
-        failed_polls = 0
-
         while True:
-            await asyncio.sleep(poll_interval)
-
-            try:
-                # A blocking gRPC call: off the loop, or every other run's
-                # tokens (and all HTTP handling) wait for the sidecar.
-                state = await asyncio.to_thread(
-                    self._workflow_client.get_workflow_state, instance_id=workflow_id
-                )
-            except Exception as e:
-                # The poll failed, not the workflow (a sidecar restart, a
-                # dropped call). Retry; only a poll that keeps failing is given
-                # up on, and the caller learns the run's fate is unknown.
-                failed_polls += 1
-                delay = _poll_retry_delay(
-                    e, failed_polls, retry_failed_polls, workflow_id
-                )
-                if delay is None:
-                    raise
-                await asyncio.sleep(delay)
-                continue
-            failed_polls = 0
-
+            state = await _next_state(
+                self._workflow_client, workflow_id, poll_interval, retry_failed_polls
+            )
             if state is None:
                 yield {
                     "type": "workflow_error",

@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # (the workflow_started event is sent once).
 MAX_BUFFERED_EVENTS = 10_000
 
+UPDATES = "updates"
 NODE_RESET = "node_reset"
 STREAM_UNAVAILABLE = "stream_unavailable"
 STREAM_DROPPED = "stream_dropped"
@@ -34,6 +35,9 @@ STREAM_DROPPED = "stream_dropped"
 WORKFLOW_STARTED = "workflow_started"
 # Events about the stream itself, delivered whatever stream modes were asked for.
 CONTROL_MODES = (WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE)
+# What a full buffer never drops: the control events and node updates, which are
+# a stream mode of their own but cannot be re-sent either.
+_KEPT_WHEN_FULL = (*CONTROL_MODES, UPDATES)
 
 #: Seconds an idle SSE stream waits before it sends a keepalive comment, so a
 #: proxy or load balancer does not cut it during a long tool call or LLM gap.
@@ -43,7 +47,6 @@ KEEPALIVE_EVENT = "keepalive"
 
 # Runs remembered by StreamSinkRegistry.first_report; older ones are forgotten.
 _MAX_REPORTED_RUNS = 1024
-UPDATES = "updates"
 
 
 def display_step(step: int) -> int:
@@ -73,6 +76,9 @@ class StreamEvent:
     display_node: Optional[str] = None
     #: The task's ``langgraph_path`` when it is not the node's own (a ``Send``).
     path: Optional[Tuple[Any, ...]] = None
+    #: The conditional edge whose function sent the chunk, so a retry of that
+    #: function is not taken for a retry of the node itself.
+    branch: Optional[str] = None
 
     def reset_data(self) -> Dict[str, Any]:
         """The ``node_reset`` payload for a retry of this event's task.
@@ -86,6 +92,8 @@ class StreamEvent:
         }
         if self.path:
             data["path"] = list(self.path)
+        if self.branch:
+            data["branch"] = self.branch
         return data
 
 
@@ -181,7 +189,9 @@ class InProcessSink:
                         self.workflow_id,
                         self._dropped,
                     )
-            elif self._queue.qsize() >= MAX_BUFFERED_EVENTS and not _is_control(item):
+            elif self._queue.qsize() >= MAX_BUFFERED_EVENTS and not _is_kept_when_full(
+                item
+            ):
                 if not self._dropped:
                     logger.warning(
                         "Stream buffer for %s is full; dropping chunks",
@@ -197,13 +207,17 @@ class InProcessSink:
             self._closed = True
 
 
-def _is_control(item: Any) -> bool:
+def _is_kept_when_full(item: Any) -> bool:
     """Chunks that must not be dropped: they cannot be re-sent."""
-    return isinstance(item, StreamEvent) and item.mode in (
-        UPDATES,
-        NODE_RESET,
-        WORKFLOW_STARTED,
-    )
+    return isinstance(item, StreamEvent) and item.mode in _KEPT_WHEN_FULL
+
+
+def _remember(runs: "OrderedDict[str, None]", workflow_id: str) -> None:
+    """Record ``workflow_id`` as the latest run, forgetting the oldest past the bound."""
+    runs[workflow_id] = None
+    runs.move_to_end(workflow_id)
+    while len(runs) > _MAX_REPORTED_RUNS:
+        runs.popitem(last=False)
 
 
 class StreamSinkRegistry:
@@ -246,10 +260,7 @@ class StreamSinkRegistry:
             if current is None or (sink is not None and current is not sink):
                 return
             del self._sinks[workflow_id]
-            self._closed[workflow_id] = None
-            self._closed.move_to_end(workflow_id)
-            while len(self._closed) > _MAX_REPORTED_RUNS:
-                self._closed.popitem(last=False)
+            _remember(self._closed, workflow_id)
         current.close()
 
     def was_closed(self, workflow_id: str) -> bool:
@@ -271,9 +282,7 @@ class StreamSinkRegistry:
         with self._lock:
             if workflow_id in self._reported:
                 return False
-            self._reported[workflow_id] = None
-            while len(self._reported) > _MAX_REPORTED_RUNS:
-                self._reported.popitem(last=False)
+            _remember(self._reported, workflow_id)
             return True
 
     def get(self, workflow_id: Optional[str]) -> Optional[InProcessSink]:

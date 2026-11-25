@@ -124,6 +124,8 @@ class GraphConfig:
             evaluated before it. ``None`` for a config written before this
             field existed: then ``entry_point`` alone starts the run.
         waiting_edges: Joins; a node waits until all their sources have run.
+        deferred: Nodes added with ``defer=True``: one that is triggered waits
+            until no other node or ``Send`` task is pending, then runs.
     """
 
     name: str
@@ -135,6 +137,7 @@ class GraphConfig:
     output_channels: List[str] = field(default_factory=list)
     entry_points: Optional[List[str]] = None
     waiting_edges: List[WaitingEdgeConfig] = field(default_factory=list)
+    deferred: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -147,6 +150,7 @@ class GraphConfig:
             "output_channels": self.output_channels,
             "entry_points": self.entry_points,
             "waiting_edges": [w.to_dict() for w in self.waiting_edges],
+            "deferred": self.deferred,
         }
 
     @classmethod
@@ -163,6 +167,7 @@ class GraphConfig:
             waiting_edges=[
                 WaitingEdgeConfig.from_dict(w) for w in data.get("waiting_edges") or []
             ],
+            deferred=list(data.get("deferred") or []),
         )
 
 
@@ -233,11 +238,15 @@ class ExecuteNodeInput:
         thread_id: Thread identifier for the execution. Propagated into the
             LangGraph ``Runtime`` so sandbox/state backends can resolve which
             workflow owns a given tool call.
-        send: Set when the node runs for a ``Send``: ``{"arg": ..., "index": i,
-            "slot": k}``, the argument the node takes as its input, the
-            ``Send``'s position in the list its source returned, and its
-            position among the step's ``Send`` tasks. ``None`` for a node
-            that runs on the channel state.
+        send: Set when the node runs for a ``Send``: ``{"arg": ..., "slot": k}``,
+            the argument the node takes as its input and the ``Send``'s
+            position among all of the step's ``Send`` tasks (LangGraph numbers
+            its push tasks over the whole step, and that number is in each
+            task's ``langgraph_path``). ``None`` for a node that runs on the
+            channel state.
+        recursion_limit: The run's step limit as a LangGraph ``recursion_limit``
+            (what ``RemainingSteps`` and ``IsLastStep`` count against), or
+            ``None`` for a workflow that did not send it.
     """
 
     node_name: str
@@ -246,6 +255,7 @@ class ExecuteNodeInput:
     thread_id: Optional[str] = None
     step: Optional[int] = None
     send: Optional[Dict[str, Any]] = None
+    recursion_limit: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -258,6 +268,8 @@ class ExecuteNodeInput:
             data["step"] = self.step
         if self.send is not None:
             data["send"] = self.send
+        if self.recursion_limit is not None:
+            data["recursion_limit"] = self.recursion_limit
         return data
 
     @classmethod
@@ -269,6 +281,7 @@ class ExecuteNodeInput:
             thread_id=data.get("thread_id"),
             step=data.get("step"),
             send=data.get("send"),
+            recursion_limit=data.get("recursion_limit"),
         )
 
 
@@ -332,6 +345,11 @@ class EvaluateConditionInput:
             so a streamed run can give the condition's chunks that node's
             step. ``None`` (an older workflow): the condition's chunks are not
             streamed.
+        send_slot: Set when the source task ran for a ``Send``: its position
+            among the step's ``Send`` tasks. The condition then streams as that
+            task, apart from the node's other tasks of the step.
+        recursion_limit: The run's step limit as a LangGraph ``recursion_limit``
+            (see ``ExecuteNodeInput``).
     """
 
     source_node: str
@@ -341,6 +359,8 @@ class EvaluateConditionInput:
     thread_id: Optional[str] = None
     path_map: Optional[Dict[str, str]] = None
     step: Optional[int] = None
+    send_slot: Optional[int] = None
+    recursion_limit: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -353,6 +373,10 @@ class EvaluateConditionInput:
         }
         if self.step is not None:
             data["step"] = self.step
+        if self.send_slot is not None:
+            data["send_slot"] = self.send_slot
+        if self.recursion_limit is not None:
+            data["recursion_limit"] = self.recursion_limit
         return data
 
     @classmethod
@@ -365,6 +389,8 @@ class EvaluateConditionInput:
             thread_id=data.get("thread_id"),
             path_map=data.get("path_map"),
             step=data.get("step"),
+            send_slot=data.get("send_slot"),
+            recursion_limit=data.get("recursion_limit"),
         )
 
 
@@ -410,6 +436,10 @@ class GraphWorkflowInput:
         channel_state: Initial/current channel state
         step: Current step number
         max_steps: Maximum steps before stopping
+        strict_limit: ``max_steps`` is a LangGraph ``recursion_limit``: a run
+            that has taken that many steps fails, even if nothing is pending
+            after them. Without it, a run that needs exactly ``max_steps``
+            steps completes.
         pending_nodes: Nodes pending execution
         config: Optional LangGraph config dict
         thread_id: Thread identifier for the execution
@@ -419,12 +449,13 @@ class GraphWorkflowInput:
     channel_state: ChannelState
     step: int = 0
     max_steps: int = 100
+    strict_limit: bool = False
     pending_nodes: List[str] = field(default_factory=list)
     config: Optional[Dict[str, Any]] = None
     thread_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "graph_config": self.graph_config.to_dict(),
             "channel_state": self.channel_state.to_dict(),
             "step": self.step,
@@ -433,6 +464,9 @@ class GraphWorkflowInput:
             "config": self.config,
             "thread_id": self.thread_id,
         }
+        if self.strict_limit:
+            data["strict_limit"] = True
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GraphWorkflowInput":
@@ -441,6 +475,7 @@ class GraphWorkflowInput:
             channel_state=ChannelState.from_dict(data["channel_state"]),
             step=data.get("step", 0),
             max_steps=data.get("max_steps", 100),
+            strict_limit=bool(data.get("strict_limit", False)),
             pending_nodes=data.get("pending_nodes", []),
             config=data.get("config"),
             thread_id=data.get("thread_id"),

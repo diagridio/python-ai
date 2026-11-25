@@ -24,6 +24,7 @@ from .streaming import (
     run_error,
     stream_unavailable_event,
     to_wire,
+    workflow_failed,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,8 +66,8 @@ def encode_chunk(event: StreamEvent) -> Tuple[Any, bool]:
 def warn_reset_unseen(workflow_id: str, data: Dict[str, Any]) -> None:
     """Say that a retried node's earlier chunks stay in a stream that cannot show it.
 
-    A single-mode ``astream`` yields bare chunks, as native ``astream`` does, so
-    a node reset has no place in it; with no ``on_control`` either, the
+    A single-mode ``astream`` yields bare chunks, so a node reset has no place
+    in it; with no ``on_control`` either, the
     consumer is never told and its text for that node holds both attempts.
     """
     logger.warning(
@@ -91,7 +92,7 @@ def count_unencodable(final: Dict[str, Any], unencodable: int) -> Dict[str, Any]
 KEEPALIVE = object()
 
 
-def started_event(event: Dict[str, Any], workflow_id: str, thread_id: str) -> Any:
+def started_event(workflow_id: str, thread_id: str) -> Any:
     """The stream's first event: the ids a client needs to find or stop its run."""
     return StreamEvent(
         workflow_id=workflow_id,
@@ -101,10 +102,7 @@ def started_event(event: Dict[str, Any], workflow_id: str, thread_id: str) -> An
         seq=0,
         ns=(),
         mode=WORKFLOW_STARTED,
-        data={
-            "workflow_id": event.get("workflow_id") or workflow_id,
-            "thread_id": event.get("thread_id") or thread_id,
-        },
+        data={"workflow_id": workflow_id, "thread_id": thread_id},
     )
 
 
@@ -133,12 +131,24 @@ def failure_event(
     ``error_type`` replaces the exception's own type name; it is how a stream
     failure says it is not the run's (see ``PollError`` and ``StreamError``).
     """
+    return workflow_failed({}, str(error), error_type or type(error).__name__)
+
+
+def stream_failure_event(
+    error: BaseException, stream_error_type: str, started: bool
+) -> Dict[str, Any]:
+    """A ``workflow_failed`` event for a failure of the stream, not necessarily the run.
+
+    Once the workflow ``started``, the run goes on and may well succeed, so the
+    event is typed ``stream_error_type`` and says it is still running, and it
+    must not be published: a failure published for a run that then succeeds is
+    a lie. Before that, the run itself failed to start.
+    """
+    if not started:
+        return failure_event(error)
     return {
-        "type": "workflow_failed",
-        "error": {
-            "message": str(error),
-            "error_type": error_type or type(error).__name__,
-        },
+        **failure_event(error, stream_error_type),
+        "workflow_still_running": True,
     }
 
 

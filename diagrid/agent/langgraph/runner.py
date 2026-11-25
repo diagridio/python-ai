@@ -9,6 +9,7 @@ import logging
 import time
 import uuid
 from contextlib import aclosing
+from dataclasses import dataclass
 from typing import (
     Any,
     AsyncGenerator,
@@ -32,6 +33,7 @@ from diagrid.agent.core.workflow.stream import (
     CONTROL_MODES,
     KEEPALIVE_EVENT,
     WORKFLOW_STARTED,
+    UPDATES,
     InProcessSink,
     StreamClosed,
     StreamEvent,
@@ -49,7 +51,6 @@ from .models import (
 from .streaming import (
     EXECUTED_KEY,
     STREAM_RUN_KEY,
-    UPDATES,
     StaticConfig,
     FAILED_STATUSES,
     StreamControl,
@@ -63,13 +64,17 @@ from .stream_events import (
     closing_events,
     count_unencodable,
     encode_chunk,
-    failure_event,
+    stream_failure_event,
     next_item,
     route_astream_item,
     started_event,
     without_executed,
 )
+from .langsmith_trace import ParentTrace, start_parent_trace
+from .limits import StepBound, step_bound
 from .workflow import (
+    IS_LAST_STEP,
+    REMAINING_STEPS,
     agent_workflow,
     make_condition_activity,
     GENERIC_NODE_ACTIVITY,
@@ -82,12 +87,15 @@ from .workflow import (
     register_node_triggers,
     register_condition,
     register_channel_reducer,
+    _NO_DEFAULT,
+    register_managed_channel,
     register_state_channels,
     set_default_graph_config,
     set_serializer,
     clear_registries,
     START,
     END,
+    ROOT,
 )
 
 if TYPE_CHECKING:
@@ -97,14 +105,38 @@ logger = logging.getLogger(__name__)
 
 _TRANSPORT_KEYS = ("stream", "stream_mode")
 
+#: The runner's step bound when it is given none (see ``max_steps``).
+DEFAULT_MAX_STEPS = 100
+
 
 # What a reducer channel holds before its first write; LangGraph's own marker
 # when the channel type has no empty value.
-_NO_DEFAULT: Any = object()
 try:
     from langgraph.channels.binop import MISSING as _LANGGRAPH_MISSING
 except ImportError:  # pragma: no cover - a LangGraph without the marker
     _LANGGRAPH_MISSING = _NO_DEFAULT
+
+
+def _managed_kinds(managed: Dict[str, Any]) -> Dict[str, str]:
+    """The state keys that are LangGraph's ``RemainingSteps`` or ``IsLastStep``.
+
+    Any other managed value (one a library defines) is not supplied.
+    """
+    try:
+        from langgraph.managed.is_last_step import (
+            IsLastStepManager,
+            RemainingStepsManager,
+        )
+    except ImportError:  # pragma: no cover - a LangGraph without them
+        return {}
+    kinds: Dict[str, str] = {}
+    for name, spec in managed.items():
+        cls = getattr(spec, "cls", spec)
+        if isinstance(cls, type) and issubclass(cls, RemainingStepsManager):
+            kinds[name] = REMAINING_STEPS
+        elif isinstance(cls, type) and issubclass(cls, IsLastStepManager):
+            kinds[name] = IS_LAST_STEP
+    return kinds
 
 
 def _check_run_config(config: Optional[Dict[str, Any]]) -> None:
@@ -178,36 +210,45 @@ def _merge_graph_config(
     return merged
 
 
-def _max_steps_for(config: Optional[Dict[str, Any]], default: int) -> int:
-    """The workflow's step bound: ``config['recursion_limit']`` as LangGraph counts it.
-
-    LangGraph allows ``recursion_limit - 1`` node steps (its input is the
-    first), so a graph of N sequential nodes needs a limit of N + 1.
-    """
-    limit = (config or {}).get("recursion_limit")
-    return limit - 1 if isinstance(limit, int) else default
-
-
 def _run_identity(
     config: Optional[Dict[str, Any]],
+    merged: Dict[str, Any],
     thread_id: Optional[str],
     workflow_id: Optional[str],
 ) -> Tuple[str, str, Dict[str, Any]]:
-    """``(thread_id, workflow_id, config)`` for a streamed run.
+    """``(thread_id, workflow_id, config)`` for a run, whichever way it is started.
 
-    The thread id is the one given, else ``config["configurable"]["thread_id"]``,
-    else new. The config handed to the run carries that one id, so the id the
-    run reports is the one its nodes see.
+    The thread id is the one given, else ``configurable["thread_id"]`` of
+    ``merged`` (the caller's config over the graph's own, already checked), else
+    new. The config handed to the run is the caller's ``config``, which the run
+    merges with the graph's own again, carrying that one id so the id the run
+    reports is the one its nodes see.
     """
-    _check_run_config(config)
-    configurable = (config or {}).get("configurable") or {}
-    thread = str(thread_id or configurable.get("thread_id") or uuid.uuid4())
+    thread = str(
+        thread_id or (merged.get("configurable") or {}).get("thread_id") or uuid.uuid4()
+    )
     run_config = {
         **(config or {}),
-        "configurable": {**configurable, "thread_id": thread},
-        STREAM_RUN_KEY: True,
+        "configurable": {
+            **((config or {}).get("configurable") or {}),
+            "thread_id": thread,
+        },
     }
     return thread, workflow_id or f"graph-{thread}-{uuid.uuid4().hex[:8]}", run_config
+
+
+@dataclass(frozen=True)
+class _RunSetup:
+    """What a run needs once its identity, config and input are settled."""
+
+    workflow_id: str
+    thread_id: str
+    #: The config the workflow runs with, ``langsmith_*`` keys included.
+    config: Dict[str, Any]
+    #: The LangSmith parent trace to close if the run is abandoned.
+    trace: Optional[ParentTrace]
+    #: The workflow's input, as scheduled.
+    workflow_input: Dict[str, Any]
 
 
 class DaprWorkflowGraphRunner(BaseWorkflowRunner):
@@ -270,7 +311,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         name: str,
         host: Optional[str] = None,
         port: Optional[str] = None,
-        max_steps: int = 100,
+        max_steps: Optional[int] = None,
         role: Optional[str] = None,
         goal: Optional[str] = None,
         instructions: Optional[str] = None,
@@ -284,7 +325,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             name: Required name for the graph
             host: Dapr sidecar host (default: localhost)
             port: Dapr sidecar port (default: 50001)
-            max_steps: Maximum number of steps before stopping (default: 100)
+            max_steps: Maximum number of steps before stopping (default: 100).
+                A ``recursion_limit`` bound to the graph (``with_config``) takes
+                over when this is not given; when it is, it caps that limit.
             role: Optional role description for registry (e.g. "Schedule Planner")
             goal: Optional goal description for registry
             instructions: Optional system prompt for registry, also used as the
@@ -296,7 +339,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 new registry owned by this runner.
         """
         self._graph = graph
-        self._max_steps = max_steps
+        self._max_steps = DEFAULT_MAX_STEPS if max_steps is None else max_steps
+        self._max_steps_given = max_steps is not None
         self._stream_registry = (
             stream_registry if stream_registry is not None else StreamSinkRegistry()
         )
@@ -309,10 +353,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             framework=self._REGISTRY_FRAMEWORK,
             host=host,
             port=port,
-            max_iterations=max_steps,
+            max_iterations=self._max_steps,
         )
 
-        # Attach metadata hints for the registry mapper
         if name:
             self._graph._diagrid_name = name  # type: ignore[attr-defined]
         if role:
@@ -323,9 +366,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             self._graph._diagrid_instructions = instructions  # type: ignore[attr-defined]
         # Surface the runner's step budget so the registry reflects the actual
         # max_iterations instead of a hardcoded default (read by DeepAgentsMapper).
-        self._graph._diagrid_max_steps = max_steps  # type: ignore[attr-defined]
+        self._graph._diagrid_max_steps = self._max_steps  # type: ignore[attr-defined]
 
-        # Register metadata
         self._register_agent_metadata(
             agent=self._graph,
             framework=self._REGISTRY_FRAMEWORK,
@@ -333,7 +375,6 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             name=self._name,
         )
 
-        # Register workflow and activities
         self._register_workflow_components()
 
         # Register graph components (nodes, channels, serializer) first.
@@ -498,6 +539,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             output_channels=output_channels,
             entry_points=entry_points,
             waiting_edges=waiting_edges,
+            deferred=sorted(
+                name
+                for name, spec in (getattr(builder, "nodes", None) or {}).items()
+                if getattr(spec, "defer", False)
+            ),
         )
 
     def _run_config(self, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -508,6 +554,57 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         merged = _merge_graph_config(getattr(self._graph, "config", None), config)
         _check_run_config(merged)
         return merged
+
+    def _step_bound(self, caller_config: Optional[Dict[str, Any]]) -> StepBound:
+        """The step limit of a run started with ``caller_config``."""
+        return step_bound(
+            caller_config,
+            getattr(self._graph, "config", None),
+            self._max_steps,
+            max_steps_given=self._max_steps_given,
+        )
+
+    def _prepare_run(
+        self,
+        input: Any,
+        thread_id: Optional[str],
+        config: Optional[Dict[str, Any]],
+        workflow_id: Optional[str],
+    ) -> _RunSetup:
+        """Everything ``invoke`` and ``run_async`` settle before scheduling the run."""
+        if not self._started:
+            raise RuntimeError("Runner not started. Call start() first.")
+        thread_id, workflow_id, caller_config = _run_identity(
+            config, self._run_config(config), thread_id, workflow_id
+        )
+        bound = self._step_bound(config)
+        run_config = self._run_config(caller_config)
+        run_config["thread_id"] = thread_id
+
+        # The parent trace is passed to the activities via config. The caller's
+        # finally closes it if the run is abandoned; on normal completion
+        # workflow.py closes it too (a benign double close).
+        trace = start_parent_trace(input, thread_id)
+        if trace:
+            run_config.update(trace.config)
+
+        channels = self._channel_input(input)
+        workflow_input = GraphWorkflowInput(
+            graph_config=self._graph_config,
+            channel_state=ChannelState(
+                values=self._serialize_input(channels),
+                versions={k: 1 for k in channels.keys()},
+                updated_channels=list(channels.keys()),
+            ),
+            step=0,
+            max_steps=bound.max_steps,
+            strict_limit=bound.strict,
+            pending_nodes=[],
+            config=run_config,
+            thread_id=thread_id,
+        ).to_dict()
+        json.dumps(workflow_input)
+        return _RunSetup(workflow_id, thread_id, run_config, trace, workflow_input)
 
     def _register_condition_input(
         self, condition_name: str, source: str, branch_spec: Any
@@ -581,20 +678,21 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             )
             if reducer:
                 default = getattr(channel, "value", _NO_DEFAULT)
-                if default is _NO_DEFAULT or default is _LANGGRAPH_MISSING:
-                    register_channel_reducer(channel_name, reducer)
-                else:
-                    register_channel_reducer(channel_name, reducer, default)
+                if default is _LANGGRAPH_MISSING:
+                    default = _NO_DEFAULT
+                register_channel_reducer(channel_name, reducer, default)
                 logger.info(f"Registered reducer for channel: {channel_name}")
 
-        # A node's keys that are not state channels are dropped, as LangGraph
-        # does (CompiledStateGraph's ``_get_updates``).
+        # A node's keys that are not state channels are dropped
+        # (CompiledStateGraph's ``_get_updates``).
         state_channels = getattr(
             getattr(self._graph, "builder", None), "channels", None
         )
         if isinstance(state_channels, dict):
             managed = getattr(self._graph.builder, "managed", None) or {}
             register_state_channels([*state_channels, *managed])
+            for name, kind in _managed_kinds(managed).items():
+                register_managed_channel(name, kind)
 
         try:
             from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -624,14 +722,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
     def invoke(
         self,
-        input: Dict[str, Any],
+        input: Any,
         *,
         thread_id: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
         workflow_id: Optional[str] = None,
         poll_interval: float = 0.5,
         timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         """Run the graph synchronously and return the final output.
 
         Args:
@@ -657,73 +755,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             GraphRunError: The run failed (a node or a condition raised).
             RuntimeError: The workflow failed or was terminated.
         """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-        assert self._workflow_client is not None
-
-        thread_id = thread_id or str(uuid.uuid4())
-        workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
-
-        config = self._run_config(config)
-        config["thread_id"] = thread_id
-
-        # Create LangSmith parent trace and pass dotted_order to activities via config.
-        # The finally on the polling loop below closes the trace on FAILED/TERMINATED.
-        # On normal completion, _close_langsmith_parent_trace_async in workflow.py also
-        # closes it (benign double-close since update_run is idempotent).
-        _ls_run_id = None
-        _ls_client = None
-        try:
-            import os as _os
-
-            if _os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1"):
-                from langsmith import Client as _LsClient
-                from datetime import datetime, timezone
-
-                _ls_client = _LsClient()
-                _ls_run_id = str(uuid.uuid4())
-                _now = datetime.now(timezone.utc)
-                _ts = _now.strftime("%Y%m%dT%H%M%S") + f"{_now.microsecond:06d}Z"
-                _dotted_order = f"{_ts}{_ls_run_id}"
-                _ls_client.create_run(
-                    id=_ls_run_id,
-                    name="LangGraph",
-                    run_type="chain",
-                    inputs=input,
-                    dotted_order=_dotted_order,
-                    trace_id=_ls_run_id,
-                    extra={"metadata": {"thread_id": thread_id}},
-                )
-                config["langsmith_dotted_order"] = _dotted_order
-                config["langsmith_run_id"] = _ls_run_id
-        except Exception as e:
-            logger.debug(f"LangSmith parent trace creation failed: {e}")
-            _ls_run_id = None
-            _ls_client = None
-
-        channel_state = ChannelState(
-            values=self._serialize_input(input),
-            versions={k: 1 for k in input.keys()},
-            updated_channels=list(input.keys()),
-        )
-
-        workflow_input = GraphWorkflowInput(
-            graph_config=self._graph_config,
-            channel_state=channel_state,
-            step=0,
-            max_steps=_max_steps_for(config, self._max_steps),
-            pending_nodes=[],
-            config=config,
-            thread_id=thread_id,
-        )
-
-        workflow_input_dict = workflow_input.to_dict()
-        json.dumps(workflow_input_dict)
+        run = self._prepare_run(input, thread_id, config, workflow_id)
+        workflow_id, thread_id, trace = run.workflow_id, run.thread_id, run.trace
 
         logger.info(f"Starting workflow: {workflow_id}")
+        assert self._workflow_client is not None
         self._workflow_client.schedule_new_workflow(
             workflow=agent_workflow,
-            input=workflow_input_dict,
+            input=run.workflow_input,
             instance_id=workflow_id,
         )
 
@@ -746,7 +785,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
                 if state.runtime_status == WorkflowStatus.COMPLETED:
                     # Workflow completed normally; workflow.py already closes the trace.
-                    _ls_run_id = None
+                    trace = None
                     if state.serialized_output:
                         output_dict = (
                             json.loads(state.serialized_output)
@@ -756,7 +795,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                         output = GraphWorkflowOutput.from_dict(output_dict)
                         if output.status in FAILED_STATUSES:
                             # Not a result: a run that hit its step limit or
-                            # failed in a node raises, as native invoke does.
+                            # failed in a node raises.
                             raise run_error(
                                 normalize_final(
                                     {
@@ -769,6 +808,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                                     thread_id=thread_id,
                                 )
                             )
+                        if self._is_root_state() and ROOT in output.output:
+                            return output.output[ROOT]
                         return output.output
                     return {}
 
@@ -783,20 +824,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 elif state.runtime_status == WorkflowStatus.TERMINATED:
                     raise RuntimeError(f"Workflow {workflow_id} was terminated")
         finally:
-            if _ls_run_id and _ls_client:
-                try:
-                    from datetime import datetime, timezone
-
-                    _ls_client.update_run(
-                        _ls_run_id, end_time=datetime.now(timezone.utc)
-                    )
-                    _ls_client.flush()
-                except Exception as e:
-                    logger.debug(f"LangSmith parent trace close failed: {e}")
+            if trace:
+                trace.end()
 
     async def run_async(
         self,
-        input: Dict[str, Any],
+        input: Any,
         *,
         thread_id: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
@@ -817,74 +850,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         Yields:
             Event dictionaries with workflow progress updates
         """
-        if not self._started:
-            raise RuntimeError("Runner not started. Call start() first.")
-        assert self._workflow_client is not None
-
-        thread_id = thread_id or str(uuid.uuid4())
-        workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
-
-        config = self._run_config(config)
-        config["thread_id"] = thread_id
-
-        # Create LangSmith parent trace and pass dotted_order to activities via config.
-        # The trace is closed by _close_langsmith_parent_trace_async in workflow.py on
-        # normal completion. The finally below closes it if the caller abandons the generator.
-        _ls_run_id = None
-        _ls_client = None
-        try:
-            import os as _os
-
-            if _os.environ.get("LANGSMITH_TRACING", "").lower() in ("true", "1"):
-                from langsmith import Client as _LsClient
-                from datetime import datetime, timezone
-
-                _ls_client = _LsClient()
-                _ls_run_id = str(uuid.uuid4())
-                _now = datetime.now(timezone.utc)
-                _ts = _now.strftime("%Y%m%dT%H%M%S") + f"{_now.microsecond:06d}Z"
-                _dotted_order = f"{_ts}{_ls_run_id}"
-                _ls_client.create_run(
-                    id=_ls_run_id,
-                    name="LangGraph",
-                    run_type="chain",
-                    inputs=input,
-                    dotted_order=_dotted_order,
-                    trace_id=_ls_run_id,
-                    extra={"metadata": {"thread_id": thread_id}},
-                )
-                config["langsmith_dotted_order"] = _dotted_order
-                config["langsmith_run_id"] = _ls_run_id
-        except Exception as e:
-            logger.debug(f"LangSmith parent trace creation failed: {e}")
-            _ls_run_id = None
-            _ls_client = None
-
-        channel_state = ChannelState(
-            values=self._serialize_input(input),
-            versions={k: 1 for k in input.keys()},
-            updated_channels=list(input.keys()),
-        )
-
-        workflow_input = GraphWorkflowInput(
-            graph_config=self._graph_config,
-            channel_state=channel_state,
-            step=0,
-            max_steps=_max_steps_for(config, self._max_steps),
-            pending_nodes=[],
-            config=config,
-            thread_id=thread_id,
-        )
-
-        workflow_input_dict = workflow_input.to_dict()
-        json.dumps(workflow_input_dict)
+        run = self._prepare_run(input, thread_id, config, workflow_id)
+        workflow_id, thread_id, trace = run.workflow_id, run.thread_id, run.trace
 
         logger.info(f"Starting workflow: {workflow_id}")
+        assert self._workflow_client is not None
         # Off the loop: this is a blocking gRPC call (see _poll_workflow).
         await asyncio.to_thread(
             self._workflow_client.schedule_new_workflow,
             workflow=agent_workflow,
-            input=workflow_input_dict,
+            input=run.workflow_input,
             instance_id=workflow_id,
         )
 
@@ -898,7 +873,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
             # Which nodes ran in each step is for the stream (stream_unavailable),
             # not for a caller of run_async: only a streamed run asks for it.
-            streamed = bool(config.get(STREAM_RUN_KEY))
+            streamed = bool(run.config.get(STREAM_RUN_KEY))
 
             def _parse_output(wf_id: str, output_dict: dict) -> dict:  # type: ignore[type-arg]
                 output = GraphWorkflowOutput.from_dict(output_dict)
@@ -925,20 +900,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 yield event
 
         finally:
-            if _ls_run_id and _ls_client:
-                try:
-                    from datetime import datetime, timezone
-
-                    _ls_client.update_run(
-                        _ls_run_id, end_time=datetime.now(timezone.utc)
-                    )
-                    _ls_client.flush()
-                except Exception as e:
-                    logger.debug(f"LangSmith parent trace close failed: {e}")
+            if trace:
+                trace.end()
 
     async def astream(
         self,
-        input: Dict[str, Any],
+        input: Any,
         config: Optional[Dict[str, Any]] = None,
         *,
         thread_id: Optional[str] = None,
@@ -950,57 +917,28 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
     ) -> AsyncIterator[Any]:
         """Stream a run like ``CompiledStateGraph.astream``.
 
-        ``config`` is positional or keyword, as in LangGraph. The run's thread
-        id is ``thread_id`` if given, else ``config["configurable"]["thread_id"]``,
-        else a new one; the same id is in the ``workflow_started`` control, the
-        ``messages`` metadata and the run's config.
+        ``messages``, ``updates`` and ``custom`` are supported; one mode yields
+        bare chunks, a list of modes yields ``(mode, chunk)``. The chunks have
+        the shape native ``astream`` yields: ``messages`` are
+        ``(message_chunk, metadata)``, ``updates`` are ``{node: update}`` with
+        the values as the node returned them (``None`` for a node that wrote
+        nothing), and a parallel step yields one ``updates`` chunk per node.
+        ``config`` follows the rules of :meth:`invoke`, and the run's thread id
+        is ``thread_id``, else ``config["configurable"]["thread_id"]``, else
+        new: the same id is in ``workflow_started``, the ``messages`` metadata
+        and the run's config.
 
-        Supports ``messages``, ``updates`` and ``custom``. A single mode
-        yields bare chunks, as native ``astream`` does, and a list of modes
-        yields ``(mode, chunk)`` tuples.
-
-        Events about the stream itself are :class:`StreamControl` objects:
-        ``node_reset`` (a node was retried; discard its partial output),
-        ``stream_unavailable`` (the run finished but chunks for some of its
-        nodes never arrived: streaming works only when the node activities run
-        in this process, i.e. a single replica) and ``stream_dropped`` (the
-        consumer fell behind; ``{"dropped": n}``). Pass ``on_control`` to
-        receive them. A list of modes also yields them as ``(kind, data)``
-        tuples; a single mode never does, so a consumer written against native
-        ``astream`` (``async for message, metadata in ...``) cannot trip over
-        one. ``on_control`` also gets a ``workflow_started`` control first, with
-        the ``workflow_id`` and ``thread_id`` to use with ``terminate_workflow``
-        or ``get_workflow_status``; it is never yielded. A run that fails raises
+        Events about the stream itself (retries, missing chunks, a consumer that
+        fell behind) are :class:`StreamControl` objects, given to ``on_control``
+        and, in list mode only, yielded as ``(kind, data)``. Dapr retries a
+        failed node activity and its partial chunks cannot be taken back: a
+        single-mode consumer without ``on_control`` logs a warning for each
+        ``node_reset`` and sees the partial text. A run that fails raises
         :class:`GraphRunError`.
 
-        Dapr retries a failed node activity, and the chunks the failed attempt
-        already sent cannot be taken back. Native ``astream`` has no retries,
-        so a single-mode consumer that passes no ``on_control`` would see the
-        partial text of the failed attempt followed by the retry's. It is not
-        left unaware: a warning is logged for each such ``node_reset``. To
-        discard the partial output, pass ``on_control`` or use a list of modes
-        and drop what the node sent before its ``node_reset``.
-
-        To stop early, close the stream: ``await stream.aclose()``, or iterate
-        inside ``async with contextlib.aclosing(runner.astream(...)) as stream``.
-        A bare ``break`` does not close an async generator that is still
-        referenced, so the run's stream stays open (and its ``workflow_id``
-        reserved) until it is closed or garbage collected. Closing does not
-        cancel the Dapr workflow, which runs to completion.
-
-        ``config`` is a LangGraph config that travels to the workflow as JSON:
-        ``tags``, ``metadata``, ``configurable`` and ``recursion_limit`` work
-        (the limit bounds the run's steps as LangGraph counts them; the
-        runner's ``max_steps`` applies when it is absent). ``callbacks`` and any
-        value that is not JSON raise ``ValueError`` before a run starts.
-
-        Chunks have the shape ``CompiledStateGraph.astream`` yields:
-        ``messages`` are ``(message_chunk, metadata)`` and ``updates`` are
-        ``{node: update}`` with the values exactly as the node returned them
-        (``None`` for a node that wrote nothing); like LangGraph, a parallel
-        step yields one ``updates`` chunk per node. Over HTTP
-        (``"stream": true``) the same chunks are serialized with
-        ``langchain_core.load.dumpd``.
+        Close the stream to stop early (``async with aclosing(...)``): a bare
+        ``break`` leaves it open and its ``workflow_id`` reserved. Closing does
+        not cancel the Dapr workflow, which runs to completion.
         """
         if subgraphs:
             raise NotImplementedError("subgraphs=True is not supported yet")
@@ -1025,7 +963,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
     async def _stream_events(
         self,
-        input: Dict[str, Any],
+        input: Any,
         *,
         config: Optional[Dict[str, Any]],
         thread_id: Optional[str],
@@ -1049,15 +987,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         whenever nothing arrived for ``SSE_KEEPALIVE_SECONDS``.
         """
         thread_id, workflow_id, run_config = _run_identity(
-            self._run_config(config), thread_id, workflow_id
+            config, self._run_config(config), thread_id, workflow_id
         )
+        run_config = {**run_config, STREAM_RUN_KEY: True}
         sink = self._stream_registry.open(workflow_id)
         task: Optional["asyncio.Task[None]"] = None
         seen_nodes: Set[Tuple[int, str]] = set()
         try:
             # Before the pump schedules the workflow: an activity can write the
             # moment it is scheduled, and the event must come before its chunks.
-            sink.put(started_event({}, workflow_id, thread_id))
+            sink.put(started_event(workflow_id, thread_id))
             task = asyncio.create_task(
                 self._pump_run(
                     sink,
@@ -1091,7 +1030,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
     async def _pump_run(
         self,
         sink: InProcessSink,
-        input: Dict[str, Any],
+        input: Any,
         thread_id: str,
         workflow_id: str,
         run_config: Dict[str, Any],
@@ -1116,14 +1055,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 await asyncio.to_thread(on_result, result)
         except Exception as e:
             logger.exception("Streamed run %s failed", workflow_id)
-            # If the workflow was started this is the stream failing (its
-            # status polls gave out), not the workflow: it may still complete.
-            # Say so, and publish nothing: a failure published for a run that
-            # then succeeds is a lie.
-            started = bool(result.get("instance_id"))
-            final = failure_event(e, "PollError" if started else None)
-            if started:
-                final["workflow_still_running"] = True
+            final = stream_failure_event(
+                e, "PollError", bool(result.get("instance_id"))
+            )
         sink.close(normalize_final(final, workflow_id=workflow_id, thread_id=thread_id))
 
     async def _release_pump(
@@ -1140,6 +1074,23 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         else:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+    def _is_root_state(self) -> bool:
+        """Whether the graph's whole state is one ``__root__`` channel."""
+        channels = getattr(getattr(self._graph, "builder", None), "channels", None)
+        return isinstance(channels, dict) and list(channels) == [ROOT]
+
+    def _channel_input(self, input: Any) -> Dict[str, Any]:
+        """``input`` as values of channels.
+
+        A graph whose state is one value takes that value as its input, so it is
+        the value of the ``__root__`` channel.
+        """
+        if self._is_root_state() and not (
+            isinstance(input, dict) and set(input) == {ROOT}
+        ):
+            return {ROOT: input}
+        return input  # type: ignore[no-any-return]
 
     def _serialize_input(self, input: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize input values for storage."""
@@ -1161,26 +1112,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         subscribe_topic: Optional[str] = None,
         publish_topic: Optional[str] = None,
     ) -> None:
-        """Start an HTTP server exposing /agent/run endpoints.
+        """Start an HTTP server exposing ``/agent/run``.
 
-        ``POST /agent/run`` with ``"stream": true`` answers as server-sent
-        events: ``workflow_started`` first, then the ``messages``, ``updates``
-        and ``custom`` chunks picked by ``stream_mode``, then
-        ``workflow_completed`` or ``workflow_failed``. The keys ``stream`` and
-        ``stream_mode`` are reserved on such a request. Streaming works only on
-        a single replica: chunks reach the connection through an in-process
-        queue, so a node activity that runs in another process streams nothing
-        and the stream ends with ``stream_unavailable``. A client that
-        disconnects ends the stream, not the workflow; with ``publish_topic``
-        set its result is still published when the run ends.
+        ``POST /agent/run`` with ``"stream": true`` answers as server-sent events
+        (``workflow_started``, the chunks ``stream_mode`` picks, then
+        ``workflow_completed`` or ``workflow_failed``); the streaming README
+        has the details. Streaming works only on a single replica. A client that
+        disconnects ends the stream, not the workflow, and with ``publish_topic``
+        set the result is still published when the run ends.
 
-        Args:
-            port: Port to listen on (default: 5001)
-            host: Host to bind to (default: 0.0.0.0)
-            input_mapper: Optional function to map request dict to graph input.
-            pubsub_name: Dapr pub/sub component name.
-            subscribe_topic: Topic to subscribe to for incoming tasks.
-            publish_topic: Topic to publish results to.
+        ``input_mapper`` maps the request dict to the graph's input.
         """
         self._input_mapper = input_mapper
         super().serve(
@@ -1199,10 +1140,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
     def _setup_serve_defaults(self) -> None:
         input_mapper = getattr(self, "_input_mapper", None)
+        # A run an orchestrator starts has no caller config: it gets the graph's
+        # own, as every entry point of this runner gives it.
+        run_config = self._run_config(None)
+        bound = self._step_bound(None)
         set_default_graph_config(
             self._graph_config,
             input_mapper=input_mapper,
-            max_steps=self._max_steps,
+            max_steps=bound.max_steps,
+            strict_limit=bound.strict,
+            run_config=run_config,
         )
 
     async def _serve_run(
@@ -1272,11 +1219,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                         yield item["type"], count_unencodable(item, unencodable)
         except Exception as e:
             logger.exception("Streaming run failed")
-            # Once the workflow has started this is the stream failing, not the
-            # run: it goes on, and may well succeed (see _pump_run).
-            failed = failure_event(e, "StreamError" if workflow_id else None)
-            if workflow_id:
-                failed["workflow_still_running"] = True
+            failed = stream_failure_event(e, "StreamError", bool(workflow_id))
             yield (
                 "workflow_failed",
                 normalize_final(failed, workflow_id=workflow_id, thread_id=thread_id),
