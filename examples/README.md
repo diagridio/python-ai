@@ -57,8 +57,22 @@ Clone this repo and run any of these directly. Each subdirectory has its own REA
 Most examples need:
 
 - **Dapr CLI** initialized: `dapr init` ([install](https://docs.dapr.io/getting-started/install-dapr-cli/))
+- **Dapr runtime 1.17 or later.** The SDK uses workflow patching, which arrived in Dapr 1.17. On an older runtime a workflow starts, then fails on replay with a history mismatch. Check the `Runtime version` line:
+  ```bash
+  dapr --version
+  ```
+  If it is older than 1.17, reinstall the runtime:
+  ```bash
+  dapr uninstall
+  dapr init
+  ```
 - **Redis** on `localhost:6379` (handled by `dapr init`, or `docker run -d --name redis -p 6379:6379 redis:latest`)
 - **An LLM API key** in your env — `OPENAI_API_KEY`, `GOOGLE_API_KEY` (ADK), or `ANTHROPIC_API_KEY` (HolmesGPT) depending on the example
 - **Dependencies** installed from the repo root: `uv sync --all-packages --extra <framework>`
+- **The repo's virtual environment active.** `uv sync` installs into `.venv` at the repo root. The `dapr run ... -- python3 ...` commands use whatever `python3` is on your `PATH`, so activate the venv first, in the same shell:
+  ```bash
+  source .venv/bin/activate
+  ```
+  Without it, `python3` fails with `ModuleNotFoundError` (for example `No module named 'langgraph'`).
 
 The per-framework READMEs spell out exactly which are required.
