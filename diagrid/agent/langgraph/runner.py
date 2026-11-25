@@ -35,6 +35,7 @@ from diagrid.agent.core.workflow.stream import (
     STREAM_DROPPED,
     STREAM_UNAVAILABLE,
     WORKFLOW_STARTED,
+    InProcessSink,
     StreamClosed,
     StreamEvent,
     StreamSinkRegistry,
@@ -46,6 +47,7 @@ from .models import (
     GraphWorkflowInput,
     GraphWorkflowOutput,
     NodeConfig,
+    WaitingEdgeConfig,
 )
 from .streaming import (
     EXECUTED_KEY,
@@ -58,6 +60,18 @@ from .streaming import (
     normalize_stream_mode,
     to_wire,
 )
+from .stream_events import (
+    FINAL_EVENTS,
+    KEEPALIVE,
+    closing_events,
+    count_unencodable,
+    encode_chunk,
+    failure_event,
+    next_item,
+    route_astream_item,
+    started_event,
+    without_executed,
+)
 from .workflow import (
     agent_workflow,
     evaluate_condition_activity,
@@ -65,6 +79,7 @@ from .workflow import (
     make_node_activity,
     node_activity_name,
     register_node,
+    register_node_triggers,
     register_condition,
     register_channel_reducer,
     set_default_graph_config,
@@ -79,105 +94,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-_FINAL_EVENTS = (
-    "workflow_completed",
-    "workflow_failed",
-    "workflow_terminated",
-    "workflow_error",
-)
-
-
 _TRANSPORT_KEYS = ("stream", "stream_mode")
 
 
-def _encode_chunk(event: StreamEvent) -> Tuple[Any, bool]:
-    """``(wire form, ok)`` of a chunk; a chunk that cannot be encoded is replaced.
+def _run_identity(
+    config: Optional[Dict[str, Any]],
+    thread_id: Optional[str],
+    workflow_id: Optional[str],
+) -> Tuple[str, str, Dict[str, Any]]:
+    """``(thread_id, workflow_id, config)`` for a streamed run.
 
-    ``to_wire`` runs arbitrary ``to_dict`` / ``model_dump`` on whatever a node
-    wrote to ``custom``, so it can raise. That is a problem with one chunk, not
-    with the run: the stream carries on with a placeholder.
+    The thread id is the one given, else ``config["configurable"]["thread_id"]``,
+    else new. The config handed to the run carries that one id, so the id the
+    run reports is the one its nodes see.
     """
-    try:
-        return to_wire(event.mode, event.data), True
-    except Exception as e:
-        try:
-            text = repr(event.data)[:200]
-        except Exception:
-            text = f"<{type(event.data).__name__}>"
-        logger.warning(
-            "Run %s: a %r chunk of node %r could not be encoded (%s: %s); "
-            "sending a placeholder",
-            event.workflow_id,
-            event.mode,
-            event.node,
-            type(e).__name__,
-            e,
-        )
-        return {"unserializable": text}, False
-
-
-def _warn_reset_unseen(workflow_id: str, data: Dict[str, Any]) -> None:
-    """Say that a retried node's earlier chunks stay in a stream that cannot show it.
-
-    A single-mode ``astream`` yields bare chunks, as native ``astream`` does, so
-    a node reset has no place in it; with no ``on_control`` either, the
-    consumer is never told and its text for that node holds both attempts.
-    """
-    logger.warning(
-        "Run %s: node %r was retried (step %s) and its first attempt's chunks "
-        "were already yielded. This astream has no way to tell you: pass "
-        "on_control, or a list of stream modes, to receive node_reset and "
-        "discard the partial output.",
-        workflow_id,
-        data.get("node"),
-        data.get("step"),
-    )
-
-
-def _count_unencodable(final: Dict[str, Any], unencodable: int) -> Dict[str, Any]:
-    """``final`` with the chunks lost to encoding added to its ``dropped`` count."""
-    if not unencodable:
-        return final
-    return {**final, "dropped": int(final.get("dropped") or 0) + unencodable}
-
-
-#: Yielded by ``_stream_events`` (when asked) after an idle stretch.
-KEEPALIVE = object()
-
-
-def _started_event(event: Dict[str, Any], workflow_id: str, thread_id: str) -> Any:
-    """The stream's first event: the ids a client needs to find or stop its run."""
-    return StreamEvent(
-        workflow_id=workflow_id,
-        step=-1,
-        node="",
-        attempt_id="",
-        seq=0,
-        ns=(),
-        mode=WORKFLOW_STARTED,
-        data={
-            "workflow_id": event.get("workflow_id") or workflow_id,
-            "thread_id": event.get("thread_id") or thread_id,
-        },
-    )
-
-
-def _without_executed(event: Dict[str, Any]) -> Dict[str, Any]:
-    """``event`` minus the per-step node list, which is for the stream only."""
-    if EXECUTED_KEY not in event:
-        return event
-    return {k: v for k, v in event.items() if k != EXECUTED_KEY}
-
-
-async def _next_item(sink: Any, keepalive: bool) -> Any:
-    """The next item of ``sink``, or :data:`KEEPALIVE` after an idle stretch."""
-    if not keepalive:
-        return await sink.get()
-    try:
-        return await asyncio.wait_for(sink.get(), stream_module.SSE_KEEPALIVE_SECONDS)
-    except asyncio.TimeoutError:
-        return KEEPALIVE
+    configurable = (config or {}).get("configurable") or {}
+    thread = str(thread_id or configurable.get("thread_id") or uuid.uuid4())
+    run_config = {
+        **(config or {}),
+        "configurable": {**configurable, "thread_id": thread},
+        STREAM_RUN_KEY: True,
+    }
+    return thread, workflow_id or f"graph-{thread}-{uuid.uuid4().hex[:8]}", run_config
 
 
 class DaprWorkflowGraphRunner(BaseWorkflowRunner):
@@ -341,7 +279,6 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         """Extract configuration from the compiled graph."""
         nodes = []
         edges = []
-        entry_point = None
         finish_points = []
 
         graph_nodes = getattr(self._graph, "nodes", {})
@@ -362,6 +299,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     else list(node_spec.channels or [])
                 )
 
+            register_node_triggers(node_name, triggers)
             nodes.append(
                 NodeConfig(
                     name=node_name,
@@ -379,8 +317,6 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 source_name = source if source != "__start__" else START
                 target_name = target if target != "__end__" else END
 
-                if source_name == START:
-                    entry_point = target_name
                 if target_name == END:
                     if source_name not in finish_points:
                         finish_points.append(source_name)
@@ -419,8 +355,23 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                             )
                         )
 
-        if not entry_point and nodes:
-            entry_point = nodes[0].name
+        entry_points = sorted(
+            {e.target for e in edges if e.source == START and not e.condition}
+        )
+        has_start_branch = any(e.source == START and e.condition for e in edges)
+        if not entry_points and not has_start_branch and nodes:
+            entry_points = [nodes[0].name]
+        entry_point = (
+            entry_points[0] if entry_points else (nodes[0].name if nodes else "")
+        )
+
+        waiting_edges = [
+            WaitingEdgeConfig(sources=sorted(sources), target=target)
+            for sources, target in sorted(
+                getattr(builder, "waiting_edges", None) or (),
+                key=lambda w: (sorted(w[0]), w[1]),
+            )
+        ]
 
         input_channels = []
         output_channels = []
@@ -441,10 +392,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             name=self._name,
             nodes=nodes,
             edges=edges,
-            entry_point=entry_point or (nodes[0].name if nodes else ""),
+            entry_point=entry_point,
             finish_points=finish_points,
             input_channels=input_channels,
             output_channels=output_channels,
+            entry_points=entry_points,
+            waiting_edges=waiting_edges,
         )
 
     def _register_graph_components(self) -> None:
@@ -871,34 +824,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             )
         ) as events:
             async for item in events:
-                if isinstance(item, StreamEvent):
-                    if item.mode in CONTROL_MODES:
-                        control = StreamControl(item.mode, item.data)
-                        if on_control is not None:
-                            on_control(control)
-                        # workflow_started only informs on_control: it is not
-                        # something the stream modes of native astream have.
-                        if is_list and item.mode != WORKFLOW_STARTED:
-                            yield (control.kind, control.data)
-                        elif (
-                            item.mode == NODE_RESET
-                            and not is_list
-                            and on_control is None
-                        ):
-                            _warn_reset_unseen(item.workflow_id, control.data)
-                    elif item.mode in modes:
-                        yield (item.mode, item.data) if is_list else item.data
-                else:
-                    if item.get("dropped"):
-                        control = StreamControl(
-                            STREAM_DROPPED, {"dropped": item["dropped"]}
-                        )
-                        if on_control is not None:
-                            on_control(control)
-                        if is_list:
-                            yield (control.kind, control.data)
-                    if item.get("type") == "workflow_failed":
-                        raise GraphRunError(item)
+                for out in route_astream_item(item, modes, is_list, on_control):
+                    yield out
 
     async def _stream_events(
         self,
@@ -925,81 +852,37 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         ``thread_id``). With ``keepalive`` set, :data:`KEEPALIVE` is yielded
         whenever nothing arrived for ``SSE_KEEPALIVE_SECONDS``.
         """
-        configurable = (config or {}).get("configurable") or {}
-        thread_id = str(thread_id or configurable.get("thread_id") or uuid.uuid4())
-        workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
-        # One thread id per run: the one the run reports is the one its nodes see.
-        run_config = {
-            **(config or {}),
-            "configurable": {**configurable, "thread_id": thread_id},
-            STREAM_RUN_KEY: True,
-        }
+        thread_id, workflow_id, run_config = _run_identity(
+            config, thread_id, workflow_id
+        )
         sink = self._stream_registry.open(workflow_id)
         task: Optional["asyncio.Task[None]"] = None
         seen_nodes: Set[Tuple[int, str]] = set()
-
-        async def _pump() -> None:
-            final: Dict[str, Any] = {}
-            result: Dict[str, Any] = {}
-            try:
-                async for event in self.run_async(
-                    input,
-                    thread_id=thread_id,
-                    config=run_config,
-                    workflow_id=workflow_id,
-                    poll_interval=poll_interval,
-                ):
-                    fold_run_event(result, _without_executed(event))
-                    if event["type"] in _FINAL_EVENTS:
-                        final = event
-                if on_result is not None:
-                    await asyncio.to_thread(on_result, result)
-            except Exception as e:
-                logger.exception("Streamed run %s failed", workflow_id)
-                final = {
-                    "type": "workflow_failed",
-                    "error": {"message": str(e), "error_type": type(e).__name__},
-                }
-                if result.get("instance_id"):
-                    # The workflow was started and this is the stream failing
-                    # (its status polls gave out), not the workflow: it may
-                    # still complete. Say so, and publish nothing: a failure
-                    # published for a run that then succeeds is a lie.
-                    final["error"]["error_type"] = "PollError"
-                    final["workflow_still_running"] = True
-            sink.close(
-                normalize_final(final, workflow_id=workflow_id, thread_id=thread_id)
-            )
-
         try:
             # Before the pump schedules the workflow: an activity can write the
             # moment it is scheduled, and the event must come before its chunks.
-            sink.put(_started_event({}, workflow_id, thread_id))
-            task = asyncio.create_task(_pump())
+            sink.put(started_event({}, workflow_id, thread_id))
+            task = asyncio.create_task(
+                self._pump_run(
+                    sink,
+                    input,
+                    thread_id,
+                    workflow_id,
+                    run_config,
+                    poll_interval,
+                    on_result,
+                )
+            )
             while True:
-                item = await _next_item(sink, keepalive)
-                if item is KEEPALIVE:
-                    yield item
-                    continue
+                item = await next_item(sink, keepalive)
                 if isinstance(item, StreamClosed):
                     # Unregister before handing over the result: chunks a late
                     # activity attempt writes from here on are dropped.
                     self._stream_registry.close(workflow_id, sink)
-                    unavailable = stream_unavailable_event(
-                        item.final, seen_nodes, workflow_id
-                    )
-                    if unavailable is not None:
-                        logger.warning(
-                            "Streamed run %s: no chunks for steps %s (nodes %s)",
-                            workflow_id,
-                            unavailable.data["missing_steps"],
-                            [m["node"] for m in unavailable.data["missing_nodes"]],
-                        )
-                        yield unavailable
-                    final = _without_executed(item.final)
-                    yield {**final, "dropped": item.dropped} if item.dropped else final
+                    for event in closing_events(item, seen_nodes, workflow_id):
+                        yield event
                     return
-                if item.mode == UPDATES:
+                if isinstance(item, StreamEvent) and item.mode == UPDATES:
                     seen_nodes.add((item.step, item.node))
                 yield item
         finally:
@@ -1007,21 +890,66 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             # abandoned generator). That stops this stream only: the Dapr
             # workflow itself keeps running to completion.
             self._stream_registry.close(workflow_id, sink)
-            if task is not None and not task.done():
-                if on_result is not None:
-                    # Someone is waiting for the result on a topic: let the
-                    # pump finish the run and hand it over, with no consumer.
-                    self._detached_pumps.add(task)
-                    task.add_done_callback(self._detached_pumps.discard)
-                else:
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
+            await self._release_pump(task, detach=on_result is not None)
+
+    async def _pump_run(
+        self,
+        sink: InProcessSink,
+        input: Dict[str, Any],
+        thread_id: str,
+        workflow_id: str,
+        run_config: Dict[str, Any],
+        poll_interval: float,
+        on_result: Optional[Callable[[Dict[str, Any]], None]],
+    ) -> None:
+        """Follow the run, publish its result, and close ``sink`` with the final."""
+        final: Dict[str, Any] = {}
+        result: Dict[str, Any] = {}
+        try:
+            async for event in self.run_async(
+                input,
+                thread_id=thread_id,
+                config=run_config,
+                workflow_id=workflow_id,
+                poll_interval=poll_interval,
+            ):
+                fold_run_event(result, without_executed(event))
+                if event["type"] in FINAL_EVENTS:
+                    final = event
+            if on_result is not None:
+                await asyncio.to_thread(on_result, result)
+        except Exception as e:
+            logger.exception("Streamed run %s failed", workflow_id)
+            # If the workflow was started this is the stream failing (its
+            # status polls gave out), not the workflow: it may still complete.
+            # Say so, and publish nothing: a failure published for a run that
+            # then succeeds is a lie.
+            started = bool(result.get("instance_id"))
+            final = failure_event(e, "PollError" if started else None)
+            if started:
+                final["workflow_still_running"] = True
+        sink.close(normalize_final(final, workflow_id=workflow_id, thread_id=thread_id))
+
+    async def _release_pump(
+        self, task: Optional["asyncio.Task[None]"], *, detach: bool
+    ) -> None:
+        """Let a pump whose consumer left finish (``detach``) or stop it."""
+        if task is None or task.done():
+            return
+        if detach:
+            # Someone is waiting for the result on a topic: let the pump finish
+            # the run and hand it over, with no consumer.
+            self._detached_pumps.add(task)
+            task.add_done_callback(self._detached_pumps.discard)
+        else:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     def _serialize_input(self, input: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize input values for storage."""
-        from .workflow import _serialize_value
+        from .workflow import _serialize_input
 
-        return {k: _serialize_value(v) for k, v in input.items()}
+        return _serialize_input(input)
 
     # ------------------------------------------------------------------
     # Serve overrides
@@ -1141,22 +1069,17 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                             continue
                         if item.mode == WORKFLOW_STARTED:
                             workflow_id = item.data["workflow_id"]
-                        wire, ok = _encode_chunk(item)
+                        wire, ok = encode_chunk(item)
                         unencodable += 0 if ok else 1
                         yield item.mode, wire
                     else:
-                        yield item["type"], _count_unencodable(item, unencodable)
+                        yield item["type"], count_unencodable(item, unencodable)
         except Exception as e:
             logger.exception("Streaming run failed")
-            failed: Dict[str, Any] = {
-                "type": "workflow_failed",
-                "error": {"message": str(e), "error_type": type(e).__name__},
-            }
+            # Once the workflow has started this is the stream failing, not the
+            # run: it goes on, and may well succeed (see _pump_run).
+            failed = failure_event(e, "StreamError" if workflow_id else None)
             if workflow_id:
-                # The workflow started and this is the stream failing, not the
-                # run: it goes on, and may well succeed. Say so, as _pump does
-                # for a failed status poll, rather than report it as failed.
-                failed["error"]["error_type"] = "StreamError"
                 failed["workflow_still_running"] = True
             yield (
                 "workflow_failed",

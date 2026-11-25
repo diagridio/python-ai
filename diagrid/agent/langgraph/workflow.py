@@ -4,10 +4,13 @@
 """Dapr Workflow definitions for durable LangGraph execution."""
 
 import contextlib
+import dataclasses
+import functools
 import logging
+import uuid
 from datetime import timedelta
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Tuple
 
 from dapr.ext.workflow import (
     DaprWorkflowContext,
@@ -16,7 +19,8 @@ from dapr.ext.workflow import (
     when_all,
 )
 
-from langchain_core.runnables.config import set_config_context
+from langchain_core.runnables.config import run_in_executor, set_config_context
+from pydantic import BaseModel
 from langgraph.runtime import Runtime
 from langgraph.types import Command, Send
 
@@ -63,6 +67,8 @@ _serializer: Optional[Any] = None
 _default_graph_config: Optional["GraphConfig"] = None
 _default_input_mapper: Optional[Callable] = None
 _default_max_steps: int = 100
+# Every trigger channel of each node, as LangGraph lists them in a task's metadata.
+_node_triggers: Dict[str, Tuple[str, ...]] = {}
 # (source, node) edges whose Send payload was already warned about; cleared with
 # the other registries so a second runner in the process hears it too.
 _WARNED_SENDS: set = set()
@@ -114,6 +120,16 @@ def make_node_activity(
 def register_node(name: str, func: Callable) -> None:
     """Register a node function for use by the execute_node activity."""
     _node_registry[name] = func
+
+
+def register_node_triggers(name: str, triggers: List[str]) -> None:
+    """Record the channels that trigger a node (for ``langgraph_triggers``)."""
+    _node_triggers[name] = tuple(sorted(triggers))
+
+
+def get_node_triggers(name: str) -> Optional[Tuple[str, ...]]:
+    """The trigger channels of a node, sorted as LangGraph reports them."""
+    return _node_triggers.get(name)
 
 
 def get_registered_node(name: str) -> Optional[Callable]:
@@ -230,6 +246,7 @@ def clear_registries() -> None:
     _condition_registry.clear()
     _channel_reducers.clear()
     _WARNED_SENDS.clear()
+    _node_triggers.clear()
     global _serializer, _default_graph_config, _default_input_mapper, _default_max_steps
     _serializer = None
     _default_graph_config = None
@@ -306,12 +323,34 @@ def agent_workflow(
         max_retry_interval=timedelta(seconds=30),
     )
 
-    # Start with entry point
-    pending_nodes = [graph_config.entry_point]
     step = 0
     # The nodes that ran in each step, reported on the output so a streaming
     # consumer can tell which node's chunks never arrived.
     executed: List[List[str]] = []
+
+    # Start with the nodes the START edges lead to; a conditional START edge is
+    # evaluated on the input, as LangGraph does.
+    if graph_config.entry_points is None:  # a config from before entry_points
+        pending_nodes = [graph_config.entry_point]
+    else:
+        pending_nodes = list(graph_config.entry_points)
+        for edge in graph_config.edges:
+            if edge.source != START or not edge.condition:
+                continue
+            cond_output = yield from _evaluate_edge(
+                ctx, edge, START, channel_state, config, thread_id, retry_policy
+            )
+            if cond_output.error:
+                if not ctx.is_replaying:
+                    _close_langsmith_parent_trace_async(config)
+                return _condition_failed(
+                    graph_config, channel_state, step, executed, cond_output.error
+                )
+            for n in cond_output.next_nodes:
+                if n not in pending_nodes:
+                    pending_nodes.append(n)
+    # Joins: how many of each waiting edge's sources have run since it last fired.
+    joined: List[Set[str]] = [set() for _ in graph_config.waiting_edges]
 
     # Main execution loop
     while step < max_steps:
@@ -321,19 +360,8 @@ def agent_workflow(
                 f"  [WORKFLOW] Step {step}, pending_nodes={pending_nodes}", flush=True
             )
 
-        # Check if END is reached
-        if END in pending_nodes or not pending_nodes:
-            if not ctx.is_replaying:
-                _close_langsmith_parent_trace_async(config)
-            return GraphWorkflowOutput(
-                output=_extract_output(channel_state, graph_config.output_channels),
-                channel_state=channel_state,
-                steps=step,
-                executed=executed,
-                status="completed",
-            ).to_dict()
-
-        # Filter out END from nodes to execute
+        # END ends the run only when nothing else is pending: another branch of
+        # the step may still have nodes to run, as in LangGraph.
         nodes_to_execute = [n for n in pending_nodes if n != END]
         if not nodes_to_execute:
             if not ctx.is_replaying:
@@ -405,33 +433,25 @@ def agent_workflow(
                 if edge.source == node_name:
                     if edge.condition:
                         # Evaluate conditional edge (as activity)
-                        cond_input = EvaluateConditionInput(
-                            source_node=node_name,
-                            condition_name=edge.condition,
-                            channel_state=channel_state,
-                            config=config,
-                            thread_id=thread_id,
-                            path_map=edge.path_map,
+                        cond_output = yield from _evaluate_edge(
+                            ctx,
+                            edge,
+                            node_name,
+                            channel_state,
+                            config,
+                            thread_id,
+                            retry_policy,
                         )
-                        cond_result = yield ctx.call_activity(
-                            evaluate_condition_activity,
-                            input=cond_input.to_dict(),
-                            retry_policy=retry_policy,
-                        )
-                        cond_output = EvaluateConditionOutput.from_dict(cond_result)
                         if cond_output.error:
                             if not ctx.is_replaying:
                                 _close_langsmith_parent_trace_async(config)
-                            return GraphWorkflowOutput(
-                                output=_extract_output(
-                                    channel_state, graph_config.output_channels
-                                ),
-                                channel_state=channel_state,
-                                steps=step,
-                                executed=executed,
-                                status="error",
-                                error=f"Condition evaluation failed: {cond_output.error}",
-                            ).to_dict()
+                            return _condition_failed(
+                                graph_config,
+                                channel_state,
+                                step,
+                                executed,
+                                cond_output.error,
+                            )
                         for n in cond_output.next_nodes:
                             if n not in next_nodes:
                                 next_nodes.append(n)
@@ -439,6 +459,14 @@ def agent_workflow(
                         # Direct edge
                         if edge.target not in next_nodes:
                             next_nodes.append(edge.target)
+
+        # A join fires, once, in the step after the last of its sources ran.
+        for seen, join in zip(joined, graph_config.waiting_edges):
+            seen.update(n for n in nodes_to_execute if n in join.sources)
+            if seen.issuperset(join.sources):
+                seen.clear()
+                if join.target not in next_nodes:
+                    next_nodes.append(join.target)
 
         # Nodes a Command(goto=...) asked for run next as well, as in LangGraph.
         for output in node_outputs:
@@ -460,6 +488,50 @@ def agent_workflow(
         executed=executed,
         status="max_steps_reached",
         error=f"Max steps ({max_steps}) reached",
+    ).to_dict()
+
+
+def _evaluate_edge(
+    ctx: DaprWorkflowContext,
+    edge: Any,
+    source_node: str,
+    channel_state: ChannelState,
+    config: Optional[Dict[str, Any]],
+    thread_id: Optional[str],
+    retry_policy: RetryPolicy,
+) -> Generator[Any, Any, EvaluateConditionOutput]:
+    """Evaluate a conditional edge as an activity; ``yield from`` it."""
+    cond_input = EvaluateConditionInput(
+        source_node=source_node,
+        condition_name=edge.condition,
+        channel_state=channel_state,
+        config=config,
+        thread_id=thread_id,
+        path_map=edge.path_map,
+    )
+    cond_result = yield ctx.call_activity(
+        evaluate_condition_activity,
+        input=cond_input.to_dict(),
+        retry_policy=retry_policy,
+    )
+    return EvaluateConditionOutput.from_dict(cond_result)
+
+
+def _condition_failed(
+    graph_config: GraphConfig,
+    channel_state: ChannelState,
+    step: int,
+    executed: List[List[str]],
+    error: str,
+) -> Dict[str, Any]:
+    """The workflow output for a conditional edge that could not be evaluated."""
+    return GraphWorkflowOutput(
+        output=_extract_output(channel_state, graph_config.output_channels),
+        channel_state=channel_state,
+        steps=step,
+        executed=executed,
+        status="error",
+        error=f"Condition evaluation failed: {error}",
     ).to_dict()
 
 
@@ -513,6 +585,20 @@ def _is_async_only(runnable: Any) -> bool:
         getattr(runnable, "func", None) is None
         and getattr(runnable, "afunc", None) is not None
     )
+
+
+def _has_async_entry(runnable: Any) -> bool:
+    """Whether ``runnable`` has a real async entry point, which a node should use.
+
+    ``ToolNode`` has a sync ``func`` and an ``afunc``; its sync one cannot run
+    an ``async def`` tool (MCP adapter tools are such), its async one runs both,
+    as native ``astream`` does. A plain sync node also gets an ``afunc``, but
+    only a ``run_in_executor`` wrapper around its function: that is not one.
+    """
+    afunc = getattr(runnable, "afunc", None)
+    if afunc is None:
+        return False
+    return not (isinstance(afunc, functools.partial) and afunc.func is run_in_executor)
 
 
 @dataclass
@@ -633,8 +719,8 @@ def _runnable_config(call: _NodeCall) -> Dict[str, Any]:
 
 
 def _invoke_runnable(call: _NodeCall, config: Dict[str, Any]) -> Any:
-    """Call a Runnable node; an async-only one returns a coroutine to await."""
-    if _is_async_only(call.node_func):
+    """Call a Runnable node; one with an async entry returns a coroutine to await."""
+    if _has_async_entry(call.node_func):
         return call.node_func.ainvoke(call.state, config=config)  # type: ignore[attr-defined]
     return call.node_func.invoke(call.state, config=config)  # type: ignore[attr-defined]
 
@@ -720,6 +806,83 @@ def _warn_stream_sink_missing(
     )
 
 
+def _make_streamer(
+    ctx: WorkflowActivityContext,
+    node_input: ExecuteNodeInput,
+    config: Dict[str, Any],
+    registry: Optional[StreamSinkRegistry],
+) -> Optional[NodeStreamer]:
+    """The streamer for this attempt of the node, or ``None`` when not streaming.
+
+    Chunks are streamed only when a consumer registered a sink for this run;
+    otherwise nothing about the node's execution changes.
+    """
+    node_name = node_input.node_name
+    sink = get_stream_sink(getattr(ctx, "workflow_id", None), registry=registry)
+    if sink is None:
+        if config.get(STREAM_RUN_KEY):
+            _warn_stream_sink_missing(
+                registry or default_registry, str(ctx.workflow_id), node_name
+            )
+        return None
+    return NodeStreamer(
+        sink,
+        workflow_id=str(ctx.workflow_id),
+        step=node_input.step or 0,
+        node=node_name,
+        task_id=getattr(ctx, "task_id", ""),
+        thread_id=node_input.thread_id or config.get("thread_id"),
+        triggers=get_node_triggers(node_name),
+    )
+
+
+def _run_with_stream_hooks(call: _NodeCall, parent: Optional[str]) -> Any:
+    """Run the node, telling its streamer when it starts, finishes or fails.
+
+    ``parent`` is the LangSmith parent trace to nest the node's run under.
+    """
+    streamer = call.streamer
+    if streamer:
+        streamer.node_started(call.state, call.config)
+    try:
+        if parent:
+            import langsmith as ls
+
+            with ls.trace(
+                name=call.node_name,
+                run_type="chain",
+                parent=parent,
+                inputs={"step": call.node_name},
+            ):
+                result = _run_node(call)
+        else:
+            result = _run_node(call)
+    except BaseException as exc:
+        if streamer:
+            streamer.node_failed(exc)
+        raise
+    if streamer:
+        streamer.node_finished(result)
+    return result
+
+
+def _node_output(call: _NodeCall, result: Any) -> Dict[str, Any]:
+    """The activity's output for a node that returned ``result``.
+
+    Converts the result to writes, appends any side-channel writes queued via
+    CONFIG_KEY_SEND (e.g. StateBackend writing to the "files" channel from
+    sandbox tools), and streams the node's update.
+    """
+    raw_writes = [*_result_to_raw_writes(result), *call.pending_sends]
+    if call.streamer:
+        call.streamer.updates(raw_writes)
+    return ExecuteNodeOutput(
+        node_name=call.node_name,
+        writes=_serialize_writes(raw_writes),
+        goto=_result_to_gotos(result, call.node_name),
+    ).to_dict()
+
+
 def execute_node_activity(
     ctx: WorkflowActivityContext,
     input_data: Dict[str, Any],
@@ -757,31 +920,8 @@ def execute_node_activity(
             error=f"Node '{node_name}' not found in registry",
         ).to_dict()
 
-    # Reconstruct state from channel values
-    state = _reconstruct_state(node_input.channel_state)
-
     # Extract tracing config
     config = node_input.config or {}
-
-    # Stream chunks only when a consumer registered a sink for this run;
-    # otherwise nothing below changes.
-    sink = get_stream_sink(getattr(ctx, "workflow_id", None), registry=stream_registry)
-    if sink is None and config.get(STREAM_RUN_KEY):
-        _warn_stream_sink_missing(
-            stream_registry or default_registry, str(ctx.workflow_id), node_name
-        )
-    streamer = (
-        NodeStreamer(
-            sink,
-            workflow_id=str(ctx.workflow_id),
-            step=node_input.step or 0,
-            node=node_name,
-            task_id=getattr(ctx, "task_id", ""),
-            thread_id=node_input.thread_id or config.get("thread_id"),
-        )
-        if sink is not None
-        else None
-    )
 
     # Collect side-channel writes from CONFIG_KEY_SEND (used by StateBackend
     # to write to the "files" channel from sandbox tools).
@@ -789,51 +929,17 @@ def execute_node_activity(
         ctx=ctx,
         node_input=node_input,
         node_func=node_func,
-        state=state,
+        state=_reconstruct_state(node_input.channel_state),
         config=config,
-        streamer=streamer,
+        streamer=_make_streamer(ctx, node_input, config, stream_registry),
         pending_sends=[],
     )
 
-    # Set up LangSmith child trace so LLM calls nest under the parent
+    # Run under the LangSmith child trace so LLM calls nest under the parent
     # "LangGraph" trace created by runner.invoke().
-    parent = _langsmith_parent(config)
-    if streamer:
-        streamer.node_started(state, config)
-    try:
-        if parent:
-            import langsmith as ls
+    result = _run_with_stream_hooks(call, _langsmith_parent(config))
 
-            with ls.trace(
-                name=node_name,
-                run_type="chain",
-                parent=parent,
-                inputs={"step": node_name},
-            ):
-                result = _run_node(call)
-        else:
-            result = _run_node(call)
-    except BaseException as exc:
-        if streamer:
-            streamer.node_failed(exc)
-        raise
-    if streamer:
-        streamer.node_finished(result)
-
-    # Convert result to writes, then append any side-channel writes queued via
-    # CONFIG_KEY_SEND (e.g. StateBackend writing to the "files" channel from
-    # sandbox tools).
-    raw_writes = [*_result_to_raw_writes(result), *call.pending_sends]
-    writes = _serialize_writes(raw_writes)
-
-    if streamer:
-        streamer.updates(raw_writes)
-
-    return ExecuteNodeOutput(
-        node_name=node_name,
-        writes=writes,
-        goto=_result_to_gotos(result, node_name),
-    ).to_dict()
+    return _node_output(call, result)
 
 
 def evaluate_condition_activity(
@@ -967,8 +1073,24 @@ def _get_triggered_nodes(
 
 
 def _serialize_input(input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Serialize input values for channel storage."""
-    return {k: _serialize_value(v) for k, v in input_data.items()}
+    """Serialize input values for channel storage.
+
+    Messages given as dicts get an id, as the ``add_messages`` reducer gives
+    them when LangGraph writes the input. A node that returns the messages it
+    was handed (a subgraph does) is then understood to return the same
+    messages, not new ones: the stream does not send them again and the state
+    does not hold them twice.
+    """
+    values = {k: _serialize_value(v) for k, v in input_data.items()}
+    messages = values.get("messages")
+    if isinstance(messages, list):
+        values["messages"] = [
+            {**m, "id": str(uuid.uuid4())}
+            if isinstance(m, dict) and m.get("id") is None
+            else m
+            for m in messages
+        ]
+    return values
 
 
 def _extract_output(
@@ -1101,8 +1223,36 @@ def _result_to_raw_writes(result: Any) -> List[Tuple[str, Any]]:
     if isinstance(result, dict):
         return list(result.items())
 
+    # An instance of a state schema (a Pydantic model or a dataclass): LangGraph
+    # writes its fields.
+    fields = _state_object_writes(result)
+    if fields is not None:
+        return fields
+
     # Non-dict results - write to a default channel
     return [("__result__", result)]
+
+
+def _state_object_writes(result: Any) -> Optional[List[Tuple[str, Any]]]:
+    """``(field, value)`` pairs of a Pydantic model or dataclass instance.
+
+    The rule LangGraph applies to a node that returns an instance of its state
+    schema (``get_update_as_tuples``): every field is a write, except that for a
+    Pydantic model a field whose value and default are both ``None`` is left out
+    unless the node set it. ``None`` for anything else.
+    """
+    if isinstance(result, BaseModel):
+        model = type(result)
+        keep = result.model_fields_set
+        return [
+            (name, value)
+            for name, info in model.model_fields.items()
+            for value in [getattr(result, name, None)]
+            if value is not None or info.default is not None or name in keep
+        ]
+    if dataclasses.is_dataclass(result) and not isinstance(result, type):
+        return [(f.name, getattr(result, f.name)) for f in dataclasses.fields(result)]
+    return None
 
 
 def _warn_send_payload(source: str, send: Any) -> None:

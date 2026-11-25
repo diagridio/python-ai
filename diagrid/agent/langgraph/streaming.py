@@ -9,12 +9,13 @@ Reuses what ``CompiledStateGraph.astream`` uses natively: LangGraph's
 every task. Chunks go to a :class:`StreamSink` wrapped in a ``StreamEvent``.
 """
 
+import functools
 import itertools
 import logging
 import threading
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from langchain_core.load import dumpd
 from langchain_core.load.serializable import Serializable
@@ -61,6 +62,45 @@ class StreamControl:
     data: Dict[str, Any]
 
 
+@functools.lru_cache(maxsize=None)
+def _own_node_handler_class() -> Any:
+    """``StreamMessagesHandler`` limited to the node the activity runs.
+
+    Native LangGraph (``subgraphs=False``) tells a nested graph's runs by their
+    checkpoint namespace having more than one segment. Here a node that is a
+    compiled subgraph runs as a plain call inside the activity, so the nested
+    graph's namespace has a single segment and the stock handler would stream
+    its inner nodes' tokens under their own names. Everything whose
+    ``langgraph_checkpoint_ns`` is not this node's belongs to a nested graph and
+    is ignored; the node's own output message is still sent when it finishes,
+    as native does.
+    """
+    from langgraph.pregel._messages import StreamMessagesHandler
+
+    class OwnNodeMessagesHandler(StreamMessagesHandler):  # type: ignore[misc]
+        def __init__(self, *args: Any, own_checkpoint_ns: str, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._own_checkpoint_ns = own_checkpoint_ns
+
+        def _nested(self, metadata: Optional[Dict[str, Any]]) -> bool:
+            if not metadata:
+                return False
+            ns = metadata.get("langgraph_checkpoint_ns")
+            return ns is not None and ns != self._own_checkpoint_ns
+
+        def on_chat_model_start(self, *args: Any, **kwargs: Any) -> Any:
+            if self._nested(kwargs.get("metadata")):
+                return None
+            return super().on_chat_model_start(*args, **kwargs)
+
+        def on_chain_start(self, *args: Any, **kwargs: Any) -> Any:
+            if self._nested(kwargs.get("metadata")):
+                return None
+            return super().on_chain_start(*args, **kwargs)
+
+    return OwnNodeMessagesHandler
+
+
 class NodeStreamer:
     """Streams one activity attempt of one node into a sink."""
 
@@ -77,6 +117,7 @@ class NodeStreamer:
         node: str,
         task_id: Any,
         thread_id: Optional[str] = None,
+        triggers: Optional[Sequence[str]] = None,
     ) -> None:
         self._sink = sink
         self._thread_id = thread_id
@@ -84,6 +125,7 @@ class NodeStreamer:
         self._step = step
         self._node = node
         self._task_id = task_id
+        self._triggers = tuple(triggers) if triggers else None
         self._attempt_id = uuid.uuid4().hex
         self._seq = itertools.count()
         # A node may emit from several threads (parallel tool calls); seq is
@@ -100,7 +142,8 @@ class NodeStreamer:
             # Pregel numbers the first node after START as step 1.
             "langgraph_step": display_step(self._step),
             "langgraph_node": self._node,
-            "langgraph_triggers": (f"branch:to:{self._node}",),
+            # Every trigger channel of the node, sorted, as Pregel lists them.
+            "langgraph_triggers": self._triggers or (f"branch:to:{self._node}",),
             "langgraph_path": ("__pregel_pull", self._node),
             "langgraph_checkpoint_ns": f"{self._node}:{self._task_id}",
             "checkpoint_ns": f"{self._node}:{self._task_id}",
@@ -137,9 +180,11 @@ class NodeStreamer:
         """
         if self._handler is None and not self._handler_unusable:
             try:
-                from langgraph.pregel._messages import StreamMessagesHandler
-
-                self._handler = StreamMessagesHandler(self._on_chunk, False)
+                self._handler = _own_node_handler_class()(
+                    self._on_chunk,
+                    False,
+                    own_checkpoint_ns=self.metadata["langgraph_checkpoint_ns"],
+                )
             except (ImportError, TypeError, AttributeError) as e:
                 self._handler_unusable = True
                 NodeStreamer._log_handler_failure(e)

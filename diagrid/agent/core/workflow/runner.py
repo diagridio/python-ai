@@ -64,20 +64,45 @@ POLL_RETRY_BASE_SECONDS = 0.5
 POLL_RETRY_MAX_SECONDS = 10.0
 
 
-def _is_transient_poll_error(error: BaseException) -> bool:
-    """A failed poll worth retrying: the call failed to get through.
+def _transient_grpc_codes() -> frozenset:  # type: ignore[type-arg]
+    import grpc
 
-    A gRPC error or a connection/OS-level one (a sidecar restarting, a dropped
-    connection). A programming or credentials error is not transient and
-    surfaces at once.
+    return frozenset(
+        {
+            grpc.StatusCode.UNAVAILABLE,
+            grpc.StatusCode.DEADLINE_EXCEEDED,
+            grpc.StatusCode.ABORTED,
+            grpc.StatusCode.RESOURCE_EXHAUSTED,
+            grpc.StatusCode.CANCELLED,
+        }
+    )
+
+
+def _is_transient_poll_error(error: BaseException) -> bool:
+    """A failed poll worth retrying: the call may succeed if tried again.
+
+    A gRPC error with a status that says the sidecar was briefly unreachable
+    or busy (``UNAVAILABLE``, ``DEADLINE_EXCEEDED``, ``ABORTED``,
+    ``RESOURCE_EXHAUSTED``, ``CANCELLED``), or a connection or timeout error.
+    Anything else cannot get better by waiting and surfaces at once: a
+    permission, authentication or argument status, a bad socket path
+    (``FileNotFoundError``), a TLS failure, a programming error.
     """
-    if isinstance(error, OSError):  # ConnectionError, TimeoutError, ...
+    if isinstance(error, (ConnectionError, TimeoutError)):
         return True
     try:
         import grpc
     except ImportError:  # pragma: no cover - dapr depends on grpcio
         return False
-    return isinstance(error, grpc.RpcError)
+    if not isinstance(error, grpc.RpcError):
+        return False
+    code_of = getattr(error, "code", None)
+    if not callable(code_of):
+        return False
+    try:
+        return code_of() in _transient_grpc_codes()
+    except Exception:
+        return False
 
 
 def fold_run_event(result: dict, event: dict) -> bool:  # type: ignore[type-arg]

@@ -155,7 +155,9 @@ Closing the stream does not cancel the Dapr workflow, which runs to completion.
 
 ### Over HTTP
 
-`serve()` answers `POST /agent/run` with `"stream": true` as server-sent events.
+`serve()` answers `POST /agent/run` with `"stream": true` (the JSON boolean;
+any other value is a plain request and the key reaches the graph) as
+server-sent events.
 `stream_mode` (a mode or a list; default all three) picks the chunks; an
 unsupported one is refused with a `422` before the stream starts. The first
 event is `workflow_started`. An idle stream sends a `: keepalive` comment every
@@ -171,11 +173,18 @@ a non-streaming call returns and publishes for the same run, so a run that ends
 with `status: "error"` is published as that call reports it (`workflow_completed`
 with the error string) even though the stream's last event is `workflow_failed`.
 
-A failed status poll (the sidecar restarting, a dropped call) is retried for
-about a minute and does not fail the run. If the stream still cannot follow it,
-it ends with `workflow_failed` whose `error.error_type` is `PollError` and
+A failed status poll that looks transient (a gRPC or connection error: the
+sidecar restarting, a dropped call) is retried for about a minute and does not
+fail the run. If the stream still cannot follow it, it ends with
+`workflow_failed` whose `error.error_type` is `PollError` and
 `workflow_still_running` is `true`: the workflow may yet complete, nothing is
-published for it, and `GET /agent/run/{workflow_id}` tells how it ended.
+published for it, and `GET /agent/run/{workflow_id}` tells how it ended. A
+failure of the stream itself after `workflow_started` is reported the same way
+with `error_type` `StreamError`.
+
+A chunk that cannot be encoded (a `custom` value whose `to_dict` raises, say) is
+sent as `{"unserializable": "<its repr>"}`, counted in the final event's
+`dropped`, and does not end the stream.
 
 `stream` and `stream_mode` are reserved keys on a streaming request: they are
 removed before the graph (or your `input_mapper`) sees it. On a plain request

@@ -88,6 +88,26 @@ class EdgeConfig:
 
 
 @dataclass
+class WaitingEdgeConfig:
+    """A join: ``add_edge([a, b], target)`` runs ``target`` once every source ran.
+
+    Attributes:
+        sources: The nodes that must all have run
+        target: The node that runs after the last of them
+    """
+
+    sources: List[str]
+    target: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"sources": list(self.sources), "target": self.target}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WaitingEdgeConfig":
+        return cls(sources=list(data["sources"]), target=data["target"])
+
+
+@dataclass
 class GraphConfig:
     """Configuration for the entire LangGraph.
 
@@ -95,10 +115,15 @@ class GraphConfig:
         name: Graph name
         nodes: List of node configurations
         edges: List of edge configurations
-        entry_point: The entry node name
+        entry_point: The entry node name (the first of ``entry_points``)
         finish_points: Nodes that lead to END
         input_channels: Channels that accept input
         output_channels: Channels that produce output
+        entry_points: Every node a START edge leads to, which all run in the
+            first step. Conditional START edges are in ``edges`` and are
+            evaluated before it. ``None`` for a config written before this
+            field existed: then ``entry_point`` alone starts the run.
+        waiting_edges: Joins; a node waits until all their sources have run.
     """
 
     name: str
@@ -108,6 +133,8 @@ class GraphConfig:
     finish_points: List[str] = field(default_factory=list)
     input_channels: List[str] = field(default_factory=list)
     output_channels: List[str] = field(default_factory=list)
+    entry_points: Optional[List[str]] = None
+    waiting_edges: List[WaitingEdgeConfig] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -118,6 +145,8 @@ class GraphConfig:
             "finish_points": self.finish_points,
             "input_channels": self.input_channels,
             "output_channels": self.output_channels,
+            "entry_points": self.entry_points,
+            "waiting_edges": [w.to_dict() for w in self.waiting_edges],
         }
 
     @classmethod
@@ -130,6 +159,10 @@ class GraphConfig:
             finish_points=data.get("finish_points", []),
             input_channels=data.get("input_channels", []),
             output_channels=data.get("output_channels", []),
+            entry_points=data.get("entry_points"),
+            waiting_edges=[
+                WaitingEdgeConfig.from_dict(w) for w in data.get("waiting_edges") or []
+            ],
         )
 
 
