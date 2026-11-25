@@ -25,7 +25,6 @@ from diagrid.agent.langgraph.workflow import _result_to_raw_writes
 from .golden_harness import (
     ADD_INPUT,
     _both,
-    _canonical,
     _Golden,
     _Log,
     _Out,
@@ -568,11 +567,28 @@ def _tasks(items: List) -> List[str]:
     )
 
 
+def _canonical_by_task(items: List) -> List[str]:
+    """``_canonical`` with each token's message id named by its task's path.
+
+    Native runs the Send tasks at once, so which task's tokens get the first
+    message id depends on the order they happened to run in.
+    """
+    out = []
+    for mode, payload in _wire(items):
+        if mode == "messages":
+            chunk, md = payload
+            chunk = {**chunk, "kwargs": dict(chunk["kwargs"])}
+            chunk["kwargs"]["id"] = json.dumps(md["langgraph_path"], default=str)
+            payload = [chunk, md]
+        out.append(json.dumps((mode, payload), sort_keys=True, default=str))
+    return sorted(out)
+
+
 class TestRouterOfSendTasks(_Golden):
     async def test_each_router_streams_as_its_own_task_without_a_reset(self):
         native, ours = await _both(_send_router_graph(), "send-router", {"out": []})
         self.assertNotIn("node_reset", [m for m, _ in ours])
-        self.assertEqual(_canonical(ours), _canonical(native))
+        self.assertEqual(_canonical_by_task(ours), _canonical_by_task(native))
 
     async def test_a_pull_task_and_send_tasks_of_one_node(self):
         native, ours = await _both(
