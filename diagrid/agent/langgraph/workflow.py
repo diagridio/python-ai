@@ -6,7 +6,7 @@
 import contextlib
 import logging
 from datetime import timedelta
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 from dapr.ext.workflow import (
     DaprWorkflowContext,
@@ -15,6 +15,7 @@ from dapr.ext.workflow import (
     when_all,
 )
 
+from langchain_core.runnables.config import set_config_context
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
@@ -29,6 +30,9 @@ except ImportError:  # pragma: no cover - constant moved/renamed across versions
     CONFIG_KEY_RUNTIME = "__pregel_runtime"
     CONF = "configurable"
 
+from diagrid.agent.core.workflow.stream import StreamSinkRegistry, get_stream_sink
+
+from .streaming import NodeStreamer
 from .models import (
     ChannelState,
     ExecuteNodeInput,
@@ -82,17 +86,19 @@ def node_activity_name(node_name: str) -> str:
 
 def make_node_activity(
     node_name: str,
+    stream_registry: Optional[StreamSinkRegistry] = None,
 ) -> Callable[[WorkflowActivityContext, Dict[str, Any]], Dict[str, Any]]:
     """Build the activity registered for one node.
 
     Dapr registers each function object once, so every node gets its own
-    wrapper around ``execute_node_activity``.
+    wrapper around ``execute_node_activity``. ``stream_registry`` is where the
+    wrapper looks for the sink of a streamed run (default: the module's).
     """
 
     def node_activity(
         ctx: WorkflowActivityContext, input_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        return execute_node_activity(ctx, input_data)
+        return execute_node_activity(ctx, input_data, stream_registry=stream_registry)
 
     return node_activity
 
@@ -334,6 +340,7 @@ def agent_workflow(
                 channel_state=channel_state,
                 config=config,
                 thread_id=thread_id,
+                step=step,
             )
             activity: Any = execute_node_activity
             if node_activities_by_name:
@@ -435,6 +442,7 @@ def _build_node_runtime(
     thread_id: Optional[str],
     ctx: WorkflowActivityContext,
     node_name: str,
+    stream_writer: Optional[Callable[[Any], None]] = None,
 ) -> Runtime:
     """Build a LangGraph ``Runtime`` carrying execution info for the node.
 
@@ -449,12 +457,15 @@ def _build_node_runtime(
         thread_id: The execution thread identifier to expose to consumers.
         ctx: The workflow activity context (provides workflow/task ids).
         node_name: The node being executed (used as the checkpoint namespace).
+        stream_writer: Receives ``get_stream_writer()`` output; omitted when
+            the run is not streaming (the library no-op stays in place).
 
     Returns:
         A ``Runtime`` with ``execution_info`` populated, or a bare ``Runtime``.
     """
+    extra: Dict[str, Any] = {"stream_writer": stream_writer} if stream_writer else {}
     if ExecutionInfo is None:
-        return Runtime()
+        return Runtime(**extra)
     try:
         execution_info = ExecutionInfo(
             checkpoint_id=str(getattr(ctx, "workflow_id", "") or ""),
@@ -462,9 +473,9 @@ def _build_node_runtime(
             task_id=str(getattr(ctx, "task_id", "") or ""),
             thread_id=thread_id,
         )
-        return Runtime(execution_info=execution_info)
+        return Runtime(execution_info=execution_info, **extra)
     except Exception:  # pragma: no cover - signature drift / partial ctx
-        return Runtime()
+        return Runtime(**extra)
 
 
 def _is_async_only(runnable: Any) -> bool:
@@ -480,7 +491,10 @@ def _is_async_only(runnable: Any) -> bool:
 
 
 def execute_node_activity(
-    ctx: WorkflowActivityContext, input_data: Dict[str, Any]
+    ctx: WorkflowActivityContext,
+    input_data: Dict[str, Any],
+    *,
+    stream_registry: Optional[StreamSinkRegistry] = None,
 ) -> Dict[str, Any]:
     """Activity that executes a single LangGraph node.
 
@@ -493,6 +507,8 @@ def execute_node_activity(
     Args:
         ctx: The workflow activity context
         input_data: Dictionary containing ExecuteNodeInput data
+        stream_registry: Where to look up the sink of a streamed run
+            (default: the module's registry).
 
     Returns:
         ExecuteNodeOutput as a dictionary
@@ -517,6 +533,22 @@ def execute_node_activity(
 
     # Extract tracing config
     config = node_input.config or {}
+
+    # Stream chunks only when a consumer registered a sink for this run;
+    # otherwise nothing below changes.
+    sink = get_stream_sink(getattr(ctx, "workflow_id", None), registry=stream_registry)
+    streamer = (
+        NodeStreamer(
+            sink,
+            workflow_id=str(ctx.workflow_id),
+            step=node_input.step or 0,
+            node=node_name,
+            task_id=getattr(ctx, "task_id", ""),
+        )
+        if sink is not None
+        else None
+    )
+    stream_writer = streamer.writer if streamer else None
 
     # Collect side-channel writes from CONFIG_KEY_SEND (used by StateBackend
     # to write to the "files" channel from sandbox tools).
@@ -573,8 +605,10 @@ def execute_node_activity(
             # workflow owns a tool call via runtime.execution_info.thread_id.
             if CONFIG_KEY_RUNTIME not in _config[CONF]:
                 _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
-                    thread_id, ctx, node_name
+                    thread_id, ctx, node_name, stream_writer
                 )
+            if streamer:
+                _config = streamer.patch_config(_config)
 
             # Inject CONFIG_KEY_READ / CONFIG_KEY_SEND so that deepagents
             # StateBackend (sandbox tools) can read/write the "files"
@@ -590,20 +624,40 @@ def execute_node_activity(
             except ImportError:
                 pass
 
-            if _is_async_only(node_func):
-                # A coroutine; run to completion below.
-                r = node_func.ainvoke(state, config=_config)  # type: ignore[attr-defined]
+            def _invoke() -> Any:
+                if _is_async_only(node_func):
+                    # A coroutine; run to completion by the caller.
+                    return node_func.ainvoke(state, config=_config)  # type: ignore[attr-defined]
+                return node_func.invoke(state, config=_config)
+
+            if streamer is None:
+                r = _invoke()
             else:
-                r = node_func.invoke(state, config=_config)
+                # RunnableCallable.invoke only sets the ambient config when
+                # tracing; get_stream_writer() and the stream handler need it.
+                with set_config_context(_config) as ctx_:  # type: ignore[arg-type]
+                    return ctx_.run(lambda: _await_if_coroutine(_invoke()))
         else:
-            sig = inspect.signature(node_func)
-            params = list(sig.parameters.keys())
 
-            if len(params) >= 2 and "config" in params:
-                r = node_func(state, config=config)
-            else:
-                r = node_func(state)
+            def _call_plain() -> Any:
+                sig = inspect.signature(node_func)
+                params = list(sig.parameters.keys())
+                if len(params) >= 2 and "config" in params:
+                    out = node_func(state, config=config)
+                else:
+                    out = node_func(state)
+                return _await_if_coroutine(out)
 
+            if streamer is None:
+                return _call_plain()
+            # Plain callables get no config injected; expose the handler and
+            # writer through the ambient config instead.
+            with set_config_context(_plain_stream_config()) as ctx_:  # type: ignore[arg-type]
+                return ctx_.run(_call_plain)
+
+        return _await_if_coroutine(r)
+
+    def _await_if_coroutine(r: Any) -> Any:
         import asyncio
 
         if asyncio.iscoroutine(r):
@@ -615,9 +669,17 @@ def execute_node_activity(
                 loop.close()
         return r
 
+    def _plain_stream_config() -> Dict[str, Any]:
+        assert streamer is not None
+        thread_id = node_input.thread_id or getattr(ctx, "workflow_id", None)
+        runtime = _build_node_runtime(thread_id, ctx, node_name, stream_writer)
+        return streamer.patch_config({CONF: {CONFIG_KEY_RUNTIME: runtime}})
+
     # Set up LangSmith child trace so LLM calls nest under the parent
     # "LangGraph" trace created by runner.invoke().
     parent = _langsmith_parent(config)
+    if streamer:
+        streamer.node_started(state)
     if parent:
         import langsmith as ls
 
@@ -630,14 +692,17 @@ def execute_node_activity(
             result = _run_node()
     else:
         result = _run_node()
+    if streamer:
+        streamer.node_finished(result)
 
-    # Convert result to writes
-    writes = _result_to_writes(result)
+    # Convert result to writes, then append any side-channel writes queued via
+    # CONFIG_KEY_SEND (e.g. StateBackend writing to the "files" channel from
+    # sandbox tools).
+    raw_writes = [*_result_to_raw_writes(result), *pending_sends]
+    writes = _serialize_writes(raw_writes)
 
-    # Append any side-channel writes queued via CONFIG_KEY_SEND (e.g.
-    # StateBackend writing to the "files" channel from sandbox tools).
-    for ch, val in pending_sends:
-        writes.append(NodeWrite(channel=ch, value=_serialize_value(val)))
+    if streamer:
+        streamer.updates(raw_writes)
 
     return ExecuteNodeOutput(
         node_name=node_name,
@@ -878,8 +943,78 @@ def _reconstruct_state(channel_state: ChannelState) -> Dict[str, Any]:
     return state
 
 
+def _result_to_raw_writes(result: Any) -> List[Tuple[str, Any]]:
+    """Convert a node result to ``(channel, value)`` pairs, values untouched.
+
+    This is what LangGraph itself records as the node's channel writes (and
+    shows in ``stream_mode="updates"``); :func:`_result_to_writes` serializes
+    the same pairs for the workflow state.
+
+    Args:
+        result: The result from a node function
+
+    Returns:
+        ``(channel, value)`` pairs in write order
+    """
+    if result is None:
+        return []
+
+    # Handle LangGraph Command objects (used by Deep Agents and newer LangGraph)
+    # Single Command
+    if isinstance(result, Command):
+        return _command_to_raw_writes(result)
+
+    # List of Commands
+    if isinstance(result, list) and result and isinstance(result[0], Command):
+        writes: List[Tuple[str, Any]] = []
+        for cmd in result:
+            writes.extend(_command_to_raw_writes(cmd))
+        return writes
+
+    if isinstance(result, dict):
+        return list(result.items())
+
+    # Non-dict results - write to a default channel
+    return [("__result__", result)]
+
+
+def _command_to_raw_writes(cmd: Any) -> List[Tuple[str, Any]]:
+    """Extract ``(channel, value)`` pairs from the ``update`` of a Command.
+
+    This helper only inspects ``cmd.update``. Any ``goto`` / control-flow
+    information on the Command is ignored by this workflow runner.
+
+    Args:
+        cmd: A LangGraph Command instance whose ``update`` field encodes channel writes.
+
+    Returns:
+        ``(channel, value)`` pairs derived from ``cmd.update``
+    """
+    update = getattr(cmd, "update", None)
+    if update is None:
+        return []
+
+    if isinstance(update, dict):
+        return list(update.items())
+    if isinstance(update, (list, tuple)):
+        # update can be a list of (channel, value) tuples
+        return [
+            (item[0], item[1])
+            for item in update
+            if isinstance(item, tuple) and len(item) == 2
+        ]
+    return []
+
+
+def _serialize_writes(raw_writes: List[Tuple[str, Any]]) -> List[NodeWrite]:
+    return [
+        NodeWrite(channel=channel, value=_serialize_value(value))
+        for channel, value in raw_writes
+    ]
+
+
 def _result_to_writes(result: Any) -> List[NodeWrite]:
-    """Convert a node result to a list of writes.
+    """Convert a node result to a list of serialized writes.
 
     Args:
         result: The result from a node function
@@ -887,69 +1022,12 @@ def _result_to_writes(result: Any) -> List[NodeWrite]:
     Returns:
         List of NodeWrite objects
     """
-    writes: List[NodeWrite] = []
-
-    if result is None:
-        return writes
-
-    # Handle LangGraph Command objects (used by Deep Agents and newer LangGraph)
-    try:
-        # Single Command
-        if isinstance(result, Command):
-            return _command_to_writes(result)
-
-        # List of Commands
-        if isinstance(result, list) and result and isinstance(result[0], Command):
-            for cmd in result:
-                writes.extend(_command_to_writes(cmd))
-            return writes
-    except ImportError:
-        pass
-
-    if isinstance(result, dict):
-        for key, value in result.items():
-            # Serialize value if needed
-            serialized_value = _serialize_value(value)
-            writes.append(NodeWrite(channel=key, value=serialized_value))
-    else:
-        # Non-dict results - write to a default channel
-        serialized_value = _serialize_value(result)
-        writes.append(NodeWrite(channel="__result__", value=serialized_value))
-
-    return writes
+    return _serialize_writes(_result_to_raw_writes(result))
 
 
 def _command_to_writes(cmd: Any) -> List[NodeWrite]:
-    """Extract channel writes from the ``update`` field of a LangGraph Command.
-
-    This helper only inspects ``cmd.update`` to generate ``NodeWrite`` entries.
-    Any ``goto`` / control-flow information on the Command is ignored by this
-    workflow runner.
-
-    Args:
-        cmd: A LangGraph Command instance whose ``update`` field encodes channel writes.
-
-    Returns:
-        List of NodeWrite objects derived from ``cmd.update``
-    """
-    writes: List[NodeWrite] = []
-    update = getattr(cmd, "update", None)
-    if update is None:
-        return writes
-
-    if isinstance(update, dict):
-        for key, value in update.items():
-            serialized_value = _serialize_value(value)
-            writes.append(NodeWrite(channel=key, value=serialized_value))
-    elif isinstance(update, (list, tuple)):
-        # update can be a list of (channel, value) tuples
-        for item in update:
-            if isinstance(item, tuple) and len(item) == 2:
-                key, value = item
-                serialized_value = _serialize_value(value)
-                writes.append(NodeWrite(channel=key, value=serialized_value))
-
-    return writes
+    """Serialized form of :func:`_command_to_raw_writes`."""
+    return _serialize_writes(_command_to_raw_writes(cmd))
 
 
 def _serialize_value(value: Any) -> Any:

@@ -206,14 +206,18 @@ class ExecuteNodeInput:
     channel_state: ChannelState
     config: Optional[Dict[str, Any]] = None
     thread_id: Optional[str] = None
+    step: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "node_name": self.node_name,
             "channel_state": self.channel_state.to_dict(),
             "config": self.config,
             "thread_id": self.thread_id,
         }
+        if self.step is not None:
+            data["step"] = self.step
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ExecuteNodeInput":
@@ -222,6 +226,7 @@ class ExecuteNodeInput:
             channel_state=ChannelState.from_dict(data["channel_state"]),
             config=data.get("config"),
             thread_id=data.get("thread_id"),
+            step=data.get("step"),
         )
 
 

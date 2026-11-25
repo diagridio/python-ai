@@ -3,16 +3,32 @@
 
 """Runner for executing LangGraph graphs as Dapr Workflows."""
 
+import asyncio
 import json
 import logging
 import time
 import uuid
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TYPE_CHECKING,
+)
 
 from dapr.ext.workflow import WorkflowStatus
 
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
+from diagrid.agent.core.workflow.stream import (
+    NODE_RESET,
+    StreamClosed,
+    StreamEvent,
+    StreamSinkRegistry,
+    format_sse,
+)
 from .models import (
     ChannelState,
     EdgeConfig,
@@ -21,9 +37,9 @@ from .models import (
     GraphWorkflowOutput,
     NodeConfig,
 )
+from .streaming import normalize_stream_mode, to_wire
 from .workflow import (
     agent_workflow,
-    execute_node_activity,
     evaluate_condition_activity,
     GENERIC_NODE_ACTIVITY,
     make_node_activity,
@@ -42,6 +58,28 @@ if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
 
 logger = logging.getLogger(__name__)
+
+
+_FINAL_EVENTS = (
+    "workflow_completed",
+    "workflow_failed",
+    "workflow_terminated",
+    "workflow_error",
+)
+
+
+def _final_error(final: Dict[str, Any]) -> Optional[str]:
+    if final.get("type") == "workflow_failed":
+        err = final.get("error")
+        return (err or {}).get("message") if isinstance(err, dict) else str(err)
+    if final.get("type") == "workflow_error":
+        return str(final.get("error") or "Workflow error")
+    if final.get("type") == "workflow_terminated":
+        return "Workflow was terminated"
+    return None
+
+
+_TRANSPORT_KEYS = ("stream", "stream_mode")
 
 
 class DaprWorkflowGraphRunner(BaseWorkflowRunner):
@@ -109,6 +147,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         goal: Optional[str] = None,
         instructions: Optional[str] = None,
         registry_config: Optional[Any] = None,
+        stream_registry: Optional[StreamSinkRegistry] = None,
     ):
         """Initialize the runner.
 
@@ -124,9 +163,15 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 goal when ``goal`` is not given. Without it, the registry looks
                 for a module-level ``SystemMessage`` in node globals.
             registry_config: Optional registry configuration for metadata extraction
+            stream_registry: Where streamed runs register their sinks. The
+                activities this runner registers write into it. Defaults to a
+                new registry owned by this runner.
         """
         self._graph = graph
         self._max_steps = max_steps
+        self._stream_registry = (
+            stream_registry if stream_registry is not None else StreamSinkRegistry()
+        )
 
         super().__init__(
             name,
@@ -174,7 +219,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             agent_workflow, name=self.workflow_name
         )
         self._workflow_runtime.register_activity(
-            execute_node_activity, name="execute_node_activity"
+            make_node_activity(GENERIC_NODE_ACTIVITY, self._stream_registry),
+            name=GENERIC_NODE_ACTIVITY,
         )
         self._workflow_runtime.register_activity(
             evaluate_condition_activity, name="evaluate_condition_activity"
@@ -187,7 +233,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             if name == GENERIC_NODE_ACTIVITY:
                 continue
             self._workflow_runtime.register_activity(
-                make_node_activity(node.name), name=name
+                make_node_activity(node.name, self._stream_registry), name=name
             )
 
     def _extract_graph_config(self) -> GraphConfig:
@@ -637,6 +683,96 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 except Exception as e:
                     logger.debug(f"LangSmith parent trace close failed: {e}")
 
+    async def astream(
+        self,
+        input: Dict[str, Any],
+        *,
+        config: Optional[Dict[str, Any]] = None,
+        thread_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        stream_mode: Any = "updates",
+        subgraphs: bool = False,
+        poll_interval: float = 0.5,
+    ) -> AsyncIterator[Any]:
+        """Stream a run like ``CompiledStateGraph.astream``.
+
+        Supports ``messages``, ``updates`` and ``custom``. A single mode
+        yields bare chunks; a list of modes yields ``(mode, chunk)`` tuples.
+        When a retried node restarts, a ``("node_reset", {...})`` tuple is
+        yielded in either form; discard that node's partial output. Streaming
+        works when the node activities run in this process (single replica).
+
+        Chunks have the shape ``CompiledStateGraph.astream`` yields:
+        ``messages`` are ``(message_chunk, metadata)`` and ``updates`` are
+        ``{node: update}`` with the values exactly as the node returned them
+        (``None`` for a node that wrote nothing). One difference: LangGraph
+        merges the nodes of a parallel step into one ``updates`` chunk; here
+        each node yields its own. Over HTTP (``"stream": true``) the same
+        chunks are serialized with ``langchain_core.load.dumpd``.
+        """
+        if subgraphs:
+            raise NotImplementedError("subgraphs=True is not supported yet")
+        modes, is_list = normalize_stream_mode(stream_mode)
+        async for item in self._stream_events(
+            input,
+            config=config,
+            thread_id=thread_id,
+            workflow_id=workflow_id,
+            poll_interval=poll_interval,
+        ):
+            if isinstance(item, StreamEvent):
+                if item.mode == NODE_RESET:
+                    # Always delivered so a client can drop a failed attempt's
+                    # partial output; a single mode yields it as a tuple too.
+                    yield (NODE_RESET, item.data)
+                elif item.mode in modes:
+                    yield (item.mode, item.data) if is_list else item.data
+
+    async def _stream_events(
+        self,
+        input: Dict[str, Any],
+        *,
+        config: Optional[Dict[str, Any]],
+        thread_id: Optional[str],
+        workflow_id: Optional[str],
+        poll_interval: float,
+    ) -> AsyncIterator[Any]:
+        """Yield ``StreamEvent`` chunks, then the final control event dict."""
+        thread_id = thread_id or str(uuid.uuid4())
+        workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
+        sink = self._stream_registry.open(workflow_id)
+
+        async def _pump() -> None:
+            final: Dict[str, Any] = {}
+            try:
+                async for event in self.run_async(
+                    input,
+                    thread_id=thread_id,
+                    config=dict(config) if config else None,
+                    workflow_id=workflow_id,
+                    poll_interval=poll_interval,
+                ):
+                    if event["type"] in _FINAL_EVENTS:
+                        final = event
+            except Exception as e:
+                sink.close(error=str(e))
+                return
+            sink.close(error=_final_error(final), final=final)
+
+        task = asyncio.create_task(_pump())
+        try:
+            while True:
+                item = await sink.get()
+                if isinstance(item, StreamClosed):
+                    if item.error:
+                        raise RuntimeError(item.error)
+                    yield item.final
+                    return
+                yield item
+        finally:
+            task.cancel()
+            self._stream_registry.close(workflow_id, sink)
+
     def _serialize_input(self, input: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize input values for storage."""
         from .workflow import _serialize_value
@@ -697,22 +833,74 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
     ) -> AsyncIterator[dict[str, Any]]:
         thread_id = request.get("thread_id") or request.get("session_id") or session_id
 
-        input_mapper = getattr(self, "_input_mapper", None)
-        if input_mapper:
-            graph_input = input_mapper(request)
-        else:
-            graph_input = request
-            if "messages" not in request:
-                task = request.get("task")
-                if task:
-                    graph_input = {"messages": [{"role": "user", "content": task}]}
+        graph_input = self._request_to_input(request)
 
         async for event in self.run_async(input=graph_input, thread_id=thread_id):
             yield event
 
+    _supports_serve_stream = True
+
+    async def _serve_stream(  # type: ignore[override]
+        self,
+        request: dict,  # type: ignore[type-arg]
+        session_id: str,
+    ) -> AsyncIterator[str]:
+        """Run the graph and frame its stream as Server-Sent Events.
+
+        ``stream_mode`` in the request (a mode or list of modes) selects what
+        is sent; the default is all of ``messages``, ``updates`` and ``custom``.
+        Ends with ``workflow_completed`` or ``workflow_failed``.
+        """
+        thread_id = request.get("thread_id") or request.get("session_id") or session_id
+        graph_input = self._request_to_input(request)
+        try:
+            modes, _ = normalize_stream_mode(
+                request.get("stream_mode") or ["messages", "updates", "custom"]
+            )
+        except ValueError as e:
+            yield format_sse("workflow_failed", {"error": str(e)})
+            return
+
+        event_id = 0
+        try:
+            async for item in self._stream_events(
+                graph_input,
+                config=None,
+                thread_id=thread_id,
+                workflow_id=None,
+                poll_interval=0.5,
+            ):
+                if isinstance(item, StreamEvent):
+                    if item.mode != NODE_RESET and item.mode not in modes:
+                        continue
+                    name, data = item.mode, to_wire(item.mode, item.data)
+                else:
+                    name, data = item.get("type", "workflow_completed"), item
+                event_id += 1
+                yield format_sse(name, data, event_id)
+        except Exception as e:
+            logger.exception("Streaming run failed")
+            yield format_sse("workflow_failed", {"error": str(e)})
+
+    def _request_to_input(self, request: dict) -> Dict[str, Any]:  # type: ignore[type-arg]
+        input_mapper = getattr(self, "_input_mapper", None)
+        if input_mapper:
+            return input_mapper(request)  # type: ignore[no-any-return]
+        request = {k: v for k, v in request.items() if k not in _TRANSPORT_KEYS}
+        if "messages" not in request:
+            task = request.get("task")
+            if task:
+                return {"messages": [{"role": "user", "content": task}]}
+        return request
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
+
+    @property
+    def stream_registry(self) -> StreamSinkRegistry:
+        """Where this runner's streamed runs register their sinks."""
+        return self._stream_registry
 
     @property
     def graph(self) -> "CompiledStateGraph":
