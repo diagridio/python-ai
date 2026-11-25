@@ -52,6 +52,22 @@ _FRAMEWORK_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
 }
 
 
+_FINAL_SSE_EVENTS = ("event: workflow_completed", "event: workflow_failed")
+
+
+def _final_event_data(frame: str) -> Optional[dict[str, Any]]:
+    """Payload of a ``workflow_completed``/``workflow_failed`` SSE frame."""
+    lines = frame.strip().split("\n")
+    if not any(line in _FINAL_SSE_EVENTS for line in lines):
+        return None
+    data = "\n".join(line[6:] for line in lines if line.startswith("data: "))
+    try:
+        parsed = json.loads(data)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _framework_version(framework: str) -> Optional[str]:
     """Return the installed version of the library behind ``framework``, or None."""
     for distribution in _FRAMEWORK_DISTRIBUTIONS.get(
@@ -401,6 +417,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         """
         try:
             from fastapi import FastAPI, HTTPException, Request
+            from fastapi.responses import StreamingResponse
             import uvicorn
         except ImportError:
             raise ImportError(
@@ -441,7 +458,11 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                     result.update(event)
                     break
 
-            # Publish result to topic if configured
+            _publish_result(result)
+            return result
+
+        def _publish_result(result: dict) -> None:  # type: ignore[type-arg]
+            """Publish a result to the configured topic, if any."""
             if pubsub_client and publish_topic:
                 try:
                     pubsub_client.publish(publish_topic, result)
@@ -449,10 +470,28 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 except Exception as e:
                     logger.error("Failed to publish result: %s", str(e))
 
-            return result
+        async def _stream_and_publish(frames: AsyncIterator[str]) -> AsyncIterator[str]:
+            """Forward SSE frames, then publish the terminal event's data."""
+            result: dict[str, Any] = {}
+            async for frame in frames:
+                yield frame
+                final = _final_event_data(frame)
+                if final is not None:
+                    result.update(final)
+            if result:
+                _publish_result(result)
 
         @app.post("/agent/run")
-        async def run_agent(request: dict) -> dict:  # type: ignore[type-arg]
+        async def run_agent(request: dict) -> Any:  # type: ignore[type-arg]
+            if request.get("stream") and self._supports_serve_stream:
+                session_id = request.get(
+                    "session_id",
+                    request.get("thread_id", uuid.uuid4().hex[:8]),
+                )
+                return StreamingResponse(
+                    _stream_and_publish(self._serve_stream(request, session_id)),
+                    media_type="text/event-stream",
+                )
             return await _run_and_collect(request)
 
         @app.get("/agent/run/{workflow_id}")
@@ -532,6 +571,19 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         ...
         # Make this an async generator
         yield  # type: ignore[misc]  # pragma: no cover
+
+    # Runners that can stream a run as Server-Sent Events set this and
+    # implement ``_serve_stream`` (used by ``POST /agent/run`` with
+    # ``"stream": true``).
+    _supports_serve_stream = False
+
+    def _serve_stream(
+        self,
+        request: dict,  # type: ignore[type-arg]
+        session_id: str,
+    ) -> AsyncIterator[str]:
+        """Yield SSE-framed strings for a run. Opt-in per runner."""
+        raise NotImplementedError
 
     @abstractmethod
     def _register_workflow_components(self) -> None:
