@@ -16,6 +16,7 @@ from diagrid.agent.core.types import SupportedFrameworks
 from diagrid.agent.langgraph.runner import DaprWorkflowGraphRunner
 
 if TYPE_CHECKING:
+    from diagrid.agent.core.workflow.stream import StreamSinkRegistry
     from langgraph.graph.state import CompiledStateGraph
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
         role: Optional[str] = None,
         goal: Optional[str] = None,
         registry_config: Optional[Any] = None,
+        stream_registry: Optional["StreamSinkRegistry"] = None,
     ):
         """Initialize the runner.
 
@@ -77,6 +79,9 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
             role: Optional role description for the agent registry.
             goal: Optional goal description for the agent registry.
             registry_config: Optional registry configuration for metadata.
+            stream_registry: Where streamed runs register their sinks (see
+                :class:`DaprWorkflowGraphRunner`); each runner owns one by
+                default.
         """
         super().__init__(
             graph=agent,
@@ -87,6 +92,7 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
             role=role,
             goal=goal,
             registry_config=registry_config,
+            stream_registry=stream_registry,
         )
 
     @property

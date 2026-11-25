@@ -10,6 +10,7 @@ every task. Chunks go to a :class:`StreamSink` wrapped in a ``StreamEvent``.
 """
 
 import itertools
+import logging
 import threading
 import uuid
 from dataclasses import dataclass
@@ -22,7 +23,10 @@ from diagrid.agent.core.workflow.stream import (
     STREAM_UNAVAILABLE,
     StreamEvent,
     StreamSink,
+    display_step,
 )
+
+logger = logging.getLogger(__name__)
 
 MESSAGES = "messages"
 UPDATES = "updates"
@@ -31,6 +35,10 @@ SUPPORTED_MODES = (MESSAGES, UPDATES, CUSTOM)
 
 # Configurable keys LangChain never copies into metadata (they are secrets).
 _UNTRACED_CONFIGURABLE = frozenset(("api_key",))
+
+# Key of the run_async terminal event that lists the nodes each step ran. It
+# serves the stream (see stream_unavailable_event) and is not part of a result.
+EXECUTED_KEY = "executed"
 
 # Set in the workflow config of a run someone is streaming, so an activity that
 # finds no sink to write to knows that is a problem and not just a plain run.
@@ -41,9 +49,12 @@ STREAM_RUN_KEY = "diagrid_streamed"
 class StreamControl:
     """An event about the stream itself rather than a chunk of the run.
 
-    ``kind`` is ``node_reset``, ``stream_unavailable`` or ``stream_dropped``;
+    ``kind`` is ``workflow_started`` (``{"workflow_id", "thread_id"}``, always
+    first), ``node_reset``, ``stream_unavailable`` or ``stream_dropped``;
     ``data`` is its payload. ``astream`` hands these to its ``on_control``
-    callback, and in list mode also yields them as ``(kind, data)``.
+    callback, and in list mode also yields them as ``(kind, data)``, except
+    ``workflow_started``, which is only ever given to ``on_control`` and never
+    yielded.
     """
 
     kind: str
@@ -52,6 +63,10 @@ class StreamControl:
 
 class NodeStreamer:
     """Streams one activity attempt of one node into a sink."""
+
+    # Logged once per process, not per node of every run.
+    _handler_failure_logged = False
+    _failure_lock = threading.Lock()
 
     def __init__(
         self,
@@ -75,6 +90,7 @@ class NodeStreamer:
         # taken and the chunk handed over under one lock so they stay in order.
         self._emit_lock = threading.Lock()
         self._handler: Any = None
+        self._handler_unusable = False
         self._run_id = uuid.uuid4()
 
     @property
@@ -82,7 +98,7 @@ class NodeStreamer:
         """The ``langgraph_*`` keys the Pregel loop sets on a task's config."""
         return {
             # Pregel numbers the first node after START as step 1.
-            "langgraph_step": self._step + 1,
+            "langgraph_step": display_step(self._step),
             "langgraph_node": self._node,
             "langgraph_triggers": (f"branch:to:{self._node}",),
             "langgraph_path": ("__pregel_pull", self._node),
@@ -112,38 +128,89 @@ class NodeStreamer:
         self._emit(ns, mode, (message, metadata))
 
     def _messages_handler(self) -> Any:
-        if self._handler is None:
-            from langgraph.pregel._messages import StreamMessagesHandler
+        """LangGraph's ``StreamMessagesHandler``, or ``None`` if it is unusable.
 
-            self._handler = StreamMessagesHandler(self._on_chunk, False)
+        It is a private class of langgraph, and the dependency is not pinned
+        below the release that may move or change it. When it cannot be built,
+        the node still runs and its ``updates`` and ``custom`` chunks still
+        stream; only ``messages`` is lost, and that is logged once.
+        """
+        if self._handler is None and not self._handler_unusable:
+            try:
+                from langgraph.pregel._messages import StreamMessagesHandler
+
+                self._handler = StreamMessagesHandler(self._on_chunk, False)
+            except (ImportError, TypeError, AttributeError) as e:
+                self._handler_unusable = True
+                NodeStreamer._log_handler_failure(e)
         return self._handler
 
+    @staticmethod
+    def _log_handler_failure(error: BaseException) -> None:
+        with NodeStreamer._failure_lock:
+            if NodeStreamer._handler_failure_logged:
+                return
+            NodeStreamer._handler_failure_logged = True
+        logger.error(
+            "Cannot stream 'messages': langgraph's StreamMessagesHandler is not "
+            "usable (%s: %s). Nodes run as usual and 'updates' and 'custom' "
+            "still stream, but no LLM tokens are sent. This is expected after a "
+            "langgraph release that moved or changed that private class.",
+            type(error).__name__,
+            error,
+        )
+
     def callbacks(self) -> List[Any]:
-        return [self._messages_handler()]
+        handler = self._messages_handler()
+        return [] if handler is None else [handler]
 
     # The activity calls the node's bound runnable directly, which never
     # starts the chain run Pregel's handler keys node-output messages on
     # (StateGraph nodes are built with trace=False). Drive those two
     # callbacks by hand so ToolNode / hand-built messages stream too.
-    def node_started(self, node_input: Any) -> None:
-        self._messages_handler().on_chain_start(
+    def node_started(
+        self, node_input: Any, config: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Open the chain run node-output messages are keyed on.
+
+        Native LangGraph gives that run the task's config metadata (the
+        caller's metadata, ``thread_id`` and the other configurable values,
+        ``ls_integration``, the ``langgraph_*`` keys), and every message a node
+        returns (a ``ToolNode``'s ``ToolMessage``) is sent with it. ``config``
+        is the caller's run config.
+        """
+        handler = self._messages_handler()
+        if handler is None:
+            return
+        config = config or {}
+        metadata = {
+            **self._configurable_metadata(config),
+            "ls_integration": "langgraph",
+            **(config.get("metadata") or {}),
+            **{k: v for k, v in self.metadata.items() if k != "checkpoint_ns"},
+        }
+        handler.on_chain_start(
             {},
             node_input,
             run_id=self._run_id,
             name=self._node,
-            metadata=self.metadata,
-            tags=[],
+            metadata=metadata,
+            tags=list(config.get("tags") or []),
         )
 
     def node_finished(self, output: Any) -> None:
-        self._messages_handler().on_chain_end(output, run_id=self._run_id)
+        handler = self._messages_handler()
+        if handler is not None:
+            handler.on_chain_end(output, run_id=self._run_id)
 
     def node_failed(self, error: BaseException) -> None:
         """Close the chain run :meth:`node_started` opened.
 
         Without it the message handler keeps that run's state for good.
         """
-        self._messages_handler().on_chain_error(error, run_id=self._run_id)
+        handler = self._messages_handler()
+        if handler is not None:
+            handler.on_chain_error(error, run_id=self._run_id)
 
     def writer(self, chunk: Any) -> None:
         """``Runtime.stream_writer``: what ``get_stream_writer()`` returns."""
@@ -325,32 +392,49 @@ def normalize_final(
 
 
 UNAVAILABLE_REASON = (
-    "No chunks arrived for the listed steps: their node activities ran in "
-    "another process (several replicas) or before this stream was opened. "
-    "Streaming only works while the activities run in the process that serves "
-    "the stream; the run's result is complete."
+    "No chunks arrived for the listed nodes: their activities ran in another "
+    "process (several replicas) or before this stream was opened. Streaming only "
+    "works while the activities run in the process that serves the stream; the "
+    "run's result is complete."
 )
 
 
 def stream_unavailable_event(
-    final: Dict[str, Any], seen_steps: Set[int], workflow_id: str
+    final: Dict[str, Any], seen: Set[Tuple[int, str]], workflow_id: str
 ) -> Optional[StreamEvent]:
     """The ``stream_unavailable`` event for a finished run, if it applies.
 
-    Every node that runs here sends at least its ``updates`` chunk, so a step
-    of a completed run from which nothing arrived had its activities elsewhere.
-    A run that failed is just a failure, and one with no step count (or none
-    run) has nothing to report.
+    ``seen`` holds the ``(step, node)`` pairs whose ``updates`` chunk arrived;
+    every node that runs here sends one when it finishes, so an executed node
+    without one had its activity (or its last attempt) elsewhere, even when
+    other nodes of its step streamed here. A final without ``executed`` (a run
+    started before the workflow reported it) is judged per step instead. A run
+    that failed is just a failure, and one with no step count has nothing to
+    report.
     """
     steps = final.get("steps")
     if final.get("type") != "workflow_completed" or not isinstance(steps, int):
         return None
-    missing = [step for step in range(steps) if step not in seen_steps]
+    executed = final.get("executed")
+    missing_nodes: List[Dict[str, Any]] = []
+    if isinstance(executed, list):
+        missing_nodes = [
+            {"step": display_step(step), "node": node}
+            for step, nodes in enumerate(executed)
+            for node in nodes
+            if (step, node) not in seen
+        ]
+        missing = sorted({m["step"] for m in missing_nodes})
+    else:
+        seen_steps = {step for step, _ in seen}
+        missing = [
+            display_step(step) for step in range(steps) if step not in seen_steps
+        ]
     if not missing:
         return None
     return StreamEvent(
         workflow_id=workflow_id,
-        step=missing[0],
+        step=missing[0] - 1,
         node="",
         attempt_id="",
         seq=0,
@@ -360,5 +444,6 @@ def stream_unavailable_event(
             "workflow_id": workflow_id,
             "reason": UNAVAILABLE_REASON,
             "missing_steps": missing,
+            "missing_nodes": missing_nodes,
         },
     )

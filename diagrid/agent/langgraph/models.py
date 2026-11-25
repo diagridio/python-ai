@@ -238,18 +238,24 @@ class ExecuteNodeOutput:
         node_name: Name of the executed node
         writes: List of writes produced by the node
         error: Optional error message
+        goto: Nodes the node asked to run next through ``Command(goto=...)``,
+            in addition to the nodes its edges lead to
     """
 
     node_name: str
     writes: List[NodeWrite] = field(default_factory=list)
     error: Optional[str] = None
+    goto: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "node_name": self.node_name,
             "writes": [w.to_dict() for w in self.writes],
             "error": self.error,
         }
+        if self.goto:
+            data["goto"] = list(self.goto)
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ExecuteNodeOutput":
@@ -257,6 +263,7 @@ class ExecuteNodeOutput:
             node_name=data["node_name"],
             writes=[NodeWrite.from_dict(w) for w in data.get("writes", [])],
             error=data.get("error"),
+            goto=list(data.get("goto") or []),
         )
 
 
@@ -386,6 +393,9 @@ class GraphWorkflowOutput:
         steps: Total number of steps executed
         status: Workflow status
         error: Optional error message
+        executed: The nodes that ran in each step, in order. Lets a streaming
+            consumer tell which node's chunks never arrived. ``None`` for an
+            output written before the field existed.
     """
 
     output: Dict[str, Any] = field(default_factory=dict)
@@ -393,9 +403,10 @@ class GraphWorkflowOutput:
     steps: int = 0
     status: str = "completed"
     error: Optional[str] = None
+    executed: Optional[List[List[str]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "output": self.output,
             "channel_state": self.channel_state.to_dict()
             if self.channel_state
@@ -404,6 +415,9 @@ class GraphWorkflowOutput:
             "status": self.status,
             "error": self.error,
         }
+        if self.executed is not None:
+            data["executed"] = self.executed
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GraphWorkflowOutput":
@@ -416,4 +430,5 @@ class GraphWorkflowOutput:
             steps=data.get("steps", 0),
             status=data.get("status", "completed"),
             error=data.get("error"),
+            executed=data.get("executed"),
         )

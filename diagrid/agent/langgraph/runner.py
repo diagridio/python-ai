@@ -27,10 +27,14 @@ from dapr.ext.workflow import WorkflowStatus
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 from diagrid.agent.core.workflow.runner import fold_run_event
+from diagrid.agent.core.workflow import stream as stream_module
 from diagrid.agent.core.workflow.stream import (
     CONTROL_MODES,
+    KEEPALIVE_EVENT,
+    NODE_RESET,
     STREAM_DROPPED,
     STREAM_UNAVAILABLE,
+    WORKFLOW_STARTED,
     StreamClosed,
     StreamEvent,
     StreamSinkRegistry,
@@ -44,7 +48,9 @@ from .models import (
     NodeConfig,
 )
 from .streaming import (
+    EXECUTED_KEY,
     STREAM_RUN_KEY,
+    UPDATES,
     GraphRunError,
     StreamControl,
     stream_unavailable_event,
@@ -83,6 +89,95 @@ _FINAL_EVENTS = (
 
 
 _TRANSPORT_KEYS = ("stream", "stream_mode")
+
+
+def _encode_chunk(event: StreamEvent) -> Tuple[Any, bool]:
+    """``(wire form, ok)`` of a chunk; a chunk that cannot be encoded is replaced.
+
+    ``to_wire`` runs arbitrary ``to_dict`` / ``model_dump`` on whatever a node
+    wrote to ``custom``, so it can raise. That is a problem with one chunk, not
+    with the run: the stream carries on with a placeholder.
+    """
+    try:
+        return to_wire(event.mode, event.data), True
+    except Exception as e:
+        try:
+            text = repr(event.data)[:200]
+        except Exception:
+            text = f"<{type(event.data).__name__}>"
+        logger.warning(
+            "Run %s: a %r chunk of node %r could not be encoded (%s: %s); "
+            "sending a placeholder",
+            event.workflow_id,
+            event.mode,
+            event.node,
+            type(e).__name__,
+            e,
+        )
+        return {"unserializable": text}, False
+
+
+def _warn_reset_unseen(workflow_id: str, data: Dict[str, Any]) -> None:
+    """Say that a retried node's earlier chunks stay in a stream that cannot show it.
+
+    A single-mode ``astream`` yields bare chunks, as native ``astream`` does, so
+    a node reset has no place in it; with no ``on_control`` either, the
+    consumer is never told and its text for that node holds both attempts.
+    """
+    logger.warning(
+        "Run %s: node %r was retried (step %s) and its first attempt's chunks "
+        "were already yielded. This astream has no way to tell you: pass "
+        "on_control, or a list of stream modes, to receive node_reset and "
+        "discard the partial output.",
+        workflow_id,
+        data.get("node"),
+        data.get("step"),
+    )
+
+
+def _count_unencodable(final: Dict[str, Any], unencodable: int) -> Dict[str, Any]:
+    """``final`` with the chunks lost to encoding added to its ``dropped`` count."""
+    if not unencodable:
+        return final
+    return {**final, "dropped": int(final.get("dropped") or 0) + unencodable}
+
+
+#: Yielded by ``_stream_events`` (when asked) after an idle stretch.
+KEEPALIVE = object()
+
+
+def _started_event(event: Dict[str, Any], workflow_id: str, thread_id: str) -> Any:
+    """The stream's first event: the ids a client needs to find or stop its run."""
+    return StreamEvent(
+        workflow_id=workflow_id,
+        step=-1,
+        node="",
+        attempt_id="",
+        seq=0,
+        ns=(),
+        mode=WORKFLOW_STARTED,
+        data={
+            "workflow_id": event.get("workflow_id") or workflow_id,
+            "thread_id": event.get("thread_id") or thread_id,
+        },
+    )
+
+
+def _without_executed(event: Dict[str, Any]) -> Dict[str, Any]:
+    """``event`` minus the per-step node list, which is for the stream only."""
+    if EXECUTED_KEY not in event:
+        return event
+    return {k: v for k, v in event.items() if k != EXECUTED_KEY}
+
+
+async def _next_item(sink: Any, keepalive: bool) -> Any:
+    """The next item of ``sink``, or :data:`KEEPALIVE` after an idle stretch."""
+    if not keepalive:
+        return await sink.get()
+    try:
+        return await asyncio.wait_for(sink.get(), stream_module.SSE_KEEPALIVE_SECONDS)
+    except asyncio.TimeoutError:
+        return KEEPALIVE
 
 
 class DaprWorkflowGraphRunner(BaseWorkflowRunner):
@@ -645,7 +740,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         json.dumps(workflow_input_dict)
 
         logger.info(f"Starting workflow: {workflow_id}")
-        self._workflow_client.schedule_new_workflow(
+        # Off the loop: this is a blocking gRPC call (see _poll_workflow).
+        await asyncio.to_thread(
+            self._workflow_client.schedule_new_workflow,
             workflow=agent_workflow,
             input=workflow_input_dict,
             instance_id=workflow_id,
@@ -659,8 +756,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 "graph_name": self._name,
             }
 
+            # Which nodes ran in each step is for the stream (stream_unavailable),
+            # not for a caller of run_async: only a streamed run asks for it.
+            streamed = bool(config.get(STREAM_RUN_KEY))
+
             def _parse_output(wf_id: str, output_dict: dict) -> dict:  # type: ignore[type-arg]
                 output = GraphWorkflowOutput.from_dict(output_dict)
+                with_executed = streamed and bool(output.executed)
                 return {
                     "type": "workflow_completed",
                     "workflow_id": wf_id,
@@ -668,6 +770,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     "steps": output.steps,
                     "status": output.status,
                     **({"error": output.error} if output.error else {}),
+                    **({EXECUTED_KEY: output.executed} if with_executed else {}),
                 }
 
             async for event in self._poll_workflow(
@@ -675,6 +778,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 thread_id,
                 poll_interval=poll_interval,
                 parse_output=_parse_output,
+                # A poll that fails is reported as such (PollError) while the
+                # run may still finish: ride out a restarting sidecar first.
+                retry_failed_polls=True,
             ):
                 yield event
 
@@ -693,8 +799,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
     async def astream(
         self,
         input: Dict[str, Any],
-        *,
         config: Optional[Dict[str, Any]] = None,
+        *,
         thread_id: Optional[str] = None,
         workflow_id: Optional[str] = None,
         stream_mode: Any = "updates",
@@ -703,6 +809,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         on_control: Optional[Callable[[StreamControl], None]] = None,
     ) -> AsyncIterator[Any]:
         """Stream a run like ``CompiledStateGraph.astream``.
+
+        ``config`` is positional or keyword, as in LangGraph. The run's thread
+        id is ``thread_id`` if given, else ``config["configurable"]["thread_id"]``,
+        else a new one; the same id is in the ``workflow_started`` control, the
+        ``messages`` metadata and the run's config.
 
         Supports ``messages``, ``updates`` and ``custom``. A single mode
         yields bare chunks, as native ``astream`` does, and a list of modes
@@ -717,18 +828,33 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         receive them. A list of modes also yields them as ``(kind, data)``
         tuples; a single mode never does, so a consumer written against native
         ``astream`` (``async for message, metadata in ...``) cannot trip over
-        one. A run that fails raises :class:`GraphRunError`.
+        one. ``on_control`` also gets a ``workflow_started`` control first, with
+        the ``workflow_id`` and ``thread_id`` to use with ``terminate_workflow``
+        or ``get_workflow_status``; it is never yielded. A run that fails raises
+        :class:`GraphRunError`.
 
-        Stopping early (``break``, ``aclose()``) closes the stream but does not
+        Dapr retries a failed node activity, and the chunks the failed attempt
+        already sent cannot be taken back. Native ``astream`` has no retries,
+        so a single-mode consumer that passes no ``on_control`` would see the
+        partial text of the failed attempt followed by the retry's. It is not
+        left unaware: a warning is logged for each such ``node_reset``. To
+        discard the partial output, pass ``on_control`` or use a list of modes
+        and drop what the node sent before its ``node_reset``.
+
+        To stop early, close the stream: ``await stream.aclose()``, or iterate
+        inside ``async with contextlib.aclosing(runner.astream(...)) as stream``.
+        A bare ``break`` does not close an async generator that is still
+        referenced, so the run's stream stays open (and its ``workflow_id``
+        reserved) until it is closed or garbage collected. Closing does not
         cancel the Dapr workflow, which runs to completion.
 
         Chunks have the shape ``CompiledStateGraph.astream`` yields:
         ``messages`` are ``(message_chunk, metadata)`` and ``updates`` are
         ``{node: update}`` with the values exactly as the node returned them
-        (``None`` for a node that wrote nothing). One difference: LangGraph
-        merges the nodes of a parallel step into one ``updates`` chunk; here
-        each node yields its own. Over HTTP (``"stream": true``) the same
-        chunks are serialized with ``langchain_core.load.dumpd``.
+        (``None`` for a node that wrote nothing); like LangGraph, a parallel
+        step yields one ``updates`` chunk per node. Over HTTP
+        (``"stream": true``) the same chunks are serialized with
+        ``langchain_core.load.dumpd``.
         """
         if subgraphs:
             raise NotImplementedError("subgraphs=True is not supported yet")
@@ -750,8 +876,16 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                         control = StreamControl(item.mode, item.data)
                         if on_control is not None:
                             on_control(control)
-                        if is_list:
+                        # workflow_started only informs on_control: it is not
+                        # something the stream modes of native astream have.
+                        if is_list and item.mode != WORKFLOW_STARTED:
                             yield (control.kind, control.data)
+                        elif (
+                            item.mode == NODE_RESET
+                            and not is_list
+                            and on_control is None
+                        ):
+                            _warn_reset_unseen(item.workflow_id, control.data)
                     elif item.mode in modes:
                         yield (item.mode, item.data) if is_list else item.data
                 else:
@@ -775,6 +909,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         workflow_id: Optional[str],
         poll_interval: float,
         on_result: Optional[Callable[[Dict[str, Any]], None]] = None,
+        keepalive: bool = False,
     ) -> AsyncGenerator[Any, None]:
         """Yield ``StreamEvent`` chunks, then the terminal event dict.
 
@@ -785,12 +920,23 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         ``on_result`` is called once, when the run ends, with the result a plain
         ``POST /agent/run`` would return for it (not the normalized terminal
         event), so a streamed run publishes exactly what a plain one does.
+
+        The first item is a ``workflow_started`` event (``workflow_id`` and
+        ``thread_id``). With ``keepalive`` set, :data:`KEEPALIVE` is yielded
+        whenever nothing arrived for ``SSE_KEEPALIVE_SECONDS``.
         """
-        thread_id = thread_id or str(uuid.uuid4())
+        configurable = (config or {}).get("configurable") or {}
+        thread_id = str(thread_id or configurable.get("thread_id") or uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
+        # One thread id per run: the one the run reports is the one its nodes see.
+        run_config = {
+            **(config or {}),
+            "configurable": {**configurable, "thread_id": thread_id},
+            STREAM_RUN_KEY: True,
+        }
         sink = self._stream_registry.open(workflow_id)
         task: Optional["asyncio.Task[None]"] = None
-        seen_steps: Set[int] = set()
+        seen_nodes: Set[Tuple[int, str]] = set()
 
         async def _pump() -> None:
             final: Dict[str, Any] = {}
@@ -799,50 +945,62 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 async for event in self.run_async(
                     input,
                     thread_id=thread_id,
-                    config={**(config or {}), STREAM_RUN_KEY: True},
+                    config=run_config,
                     workflow_id=workflow_id,
                     poll_interval=poll_interval,
                 ):
-                    fold_run_event(result, event)
+                    fold_run_event(result, _without_executed(event))
                     if event["type"] in _FINAL_EVENTS:
                         final = event
                 if on_result is not None:
-                    on_result(result)
+                    await asyncio.to_thread(on_result, result)
             except Exception as e:
                 logger.exception("Streamed run %s failed", workflow_id)
                 final = {
                     "type": "workflow_failed",
                     "error": {"message": str(e), "error_type": type(e).__name__},
                 }
+                if result.get("instance_id"):
+                    # The workflow was started and this is the stream failing
+                    # (its status polls gave out), not the workflow: it may
+                    # still complete. Say so, and publish nothing: a failure
+                    # published for a run that then succeeds is a lie.
+                    final["error"]["error_type"] = "PollError"
+                    final["workflow_still_running"] = True
             sink.close(
                 normalize_final(final, workflow_id=workflow_id, thread_id=thread_id)
             )
 
         try:
+            # Before the pump schedules the workflow: an activity can write the
+            # moment it is scheduled, and the event must come before its chunks.
+            sink.put(_started_event({}, workflow_id, thread_id))
             task = asyncio.create_task(_pump())
             while True:
-                item = await sink.get()
+                item = await _next_item(sink, keepalive)
+                if item is KEEPALIVE:
+                    yield item
+                    continue
                 if isinstance(item, StreamClosed):
                     # Unregister before handing over the result: chunks a late
                     # activity attempt writes from here on are dropped.
                     self._stream_registry.close(workflow_id, sink)
                     unavailable = stream_unavailable_event(
-                        item.final, seen_steps, workflow_id
+                        item.final, seen_nodes, workflow_id
                     )
                     if unavailable is not None:
                         logger.warning(
-                            "Streamed run %s: no chunks for steps %s",
+                            "Streamed run %s: no chunks for steps %s (nodes %s)",
                             workflow_id,
                             unavailable.data["missing_steps"],
+                            [m["node"] for m in unavailable.data["missing_nodes"]],
                         )
                         yield unavailable
-                    yield (
-                        {**item.final, "dropped": item.dropped}
-                        if item.dropped
-                        else item.final
-                    )
+                    final = _without_executed(item.final)
+                    yield {**final, "dropped": item.dropped} if item.dropped else final
                     return
-                seen_steps.add(item.step)
+                if item.mode == UPDATES:
+                    seen_nodes.add((item.step, item.node))
                 yield item
         finally:
             # Also reached when the consumer goes away (client disconnect,
@@ -880,6 +1038,17 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         publish_topic: Optional[str] = None,
     ) -> None:
         """Start an HTTP server exposing /agent/run endpoints.
+
+        ``POST /agent/run`` with ``"stream": true`` answers as server-sent
+        events: ``workflow_started`` first, then the ``messages``, ``updates``
+        and ``custom`` chunks picked by ``stream_mode``, then
+        ``workflow_completed`` or ``workflow_failed``. The keys ``stream`` and
+        ``stream_mode`` are reserved on such a request. Streaming works only on
+        a single replica: chunks reach the connection through an in-process
+        queue, so a node activity that runs in another process streams nothing
+        and the stream ends with ``stream_unavailable``. A client that
+        disconnects ends the stream, not the workflow; with ``publish_topic``
+        set its result is still published when the run ends.
 
         Args:
             port: Port to listen on (default: 5001)
@@ -926,6 +1095,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
     _supports_serve_stream = True
 
+    _DEFAULT_STREAM_MODES = ["messages", "updates", "custom"]
+
+    def _validate_stream_request(self, request: dict) -> None:  # type: ignore[type-arg]
+        """Reject an unsupported ``stream_mode`` before the response starts."""
+        normalize_stream_mode(request.get("stream_mode") or self._DEFAULT_STREAM_MODES)
+
     async def _serve_stream(  # type: ignore[override]
         self,
         request: dict,  # type: ignore[type-arg]
@@ -940,9 +1115,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         the run's full terminal event. The base runner frames the pairs.
         """
         thread_id = request.get("thread_id") or request.get("session_id") or session_id
+        workflow_id: Optional[str] = None
+        unencodable = 0
         try:
             modes, _ = normalize_stream_mode(
-                request.get("stream_mode") or ["messages", "updates", "custom"]
+                request.get("stream_mode") or self._DEFAULT_STREAM_MODES
             )
             graph_input = self._request_to_input(request, streaming=True)
             async with aclosing(
@@ -953,24 +1130,37 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     workflow_id=None,
                     poll_interval=0.5,
                     on_result=on_result,
+                    keepalive=True,
                 )
             ) as events:
                 async for item in events:
-                    if isinstance(item, StreamEvent):
+                    if item is KEEPALIVE:
+                        yield KEEPALIVE_EVENT, None
+                    elif isinstance(item, StreamEvent):
                         if item.mode not in CONTROL_MODES and item.mode not in modes:
                             continue
-                        yield item.mode, to_wire(item.mode, item.data)
+                        if item.mode == WORKFLOW_STARTED:
+                            workflow_id = item.data["workflow_id"]
+                        wire, ok = _encode_chunk(item)
+                        unencodable += 0 if ok else 1
+                        yield item.mode, wire
                     else:
-                        yield item["type"], item
+                        yield item["type"], _count_unencodable(item, unencodable)
         except Exception as e:
             logger.exception("Streaming run failed")
-            failed = {
+            failed: Dict[str, Any] = {
                 "type": "workflow_failed",
                 "error": {"message": str(e), "error_type": type(e).__name__},
             }
+            if workflow_id:
+                # The workflow started and this is the stream failing, not the
+                # run: it goes on, and may well succeed. Say so, as _pump does
+                # for a failed status poll, rather than report it as failed.
+                failed["error"]["error_type"] = "StreamError"
+                failed["workflow_still_running"] = True
             yield (
                 "workflow_failed",
-                normalize_final(failed, workflow_id=None, thread_id=thread_id),
+                normalize_final(failed, workflow_id=workflow_id, thread_id=thread_id),
             )
 
     def _request_to_input(

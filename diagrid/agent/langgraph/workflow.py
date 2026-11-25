@@ -18,7 +18,7 @@ from dapr.ext.workflow import (
 
 from langchain_core.runnables.config import set_config_context
 from langgraph.runtime import Runtime
-from langgraph.types import Command
+from langgraph.types import Command, Send
 
 try:
     from langgraph.runtime import ExecutionInfo
@@ -63,6 +63,9 @@ _serializer: Optional[Any] = None
 _default_graph_config: Optional["GraphConfig"] = None
 _default_input_mapper: Optional[Callable] = None
 _default_max_steps: int = 100
+# (source, node) edges whose Send payload was already warned about; cleared with
+# the other registries so a second runner in the process hears it too.
+_WARNED_SENDS: set = set()
 
 # Special node names
 START = "__start__"
@@ -226,6 +229,7 @@ def clear_registries() -> None:
     _node_registry.clear()
     _condition_registry.clear()
     _channel_reducers.clear()
+    _WARNED_SENDS.clear()
     global _serializer, _default_graph_config, _default_input_mapper, _default_max_steps
     _serializer = None
     _default_graph_config = None
@@ -305,6 +309,9 @@ def agent_workflow(
     # Start with entry point
     pending_nodes = [graph_config.entry_point]
     step = 0
+    # The nodes that ran in each step, reported on the output so a streaming
+    # consumer can tell which node's chunks never arrived.
+    executed: List[List[str]] = []
 
     # Main execution loop
     while step < max_steps:
@@ -322,6 +329,7 @@ def agent_workflow(
                 output=_extract_output(channel_state, graph_config.output_channels),
                 channel_state=channel_state,
                 steps=step,
+                executed=executed,
                 status="completed",
             ).to_dict()
 
@@ -334,8 +342,11 @@ def agent_workflow(
                 output=_extract_output(channel_state, graph_config.output_channels),
                 channel_state=channel_state,
                 steps=step,
+                executed=executed,
                 status="completed",
             ).to_dict()
+
+        executed.append(list(nodes_to_execute))
 
         # Execute all triggered nodes in parallel (each as a separate activity)
         node_tasks = []
@@ -371,6 +382,7 @@ def agent_workflow(
                     output=_extract_output(channel_state, graph_config.output_channels),
                     channel_state=channel_state,
                     steps=step,
+                    executed=executed,
                     status="error",
                     error=f"Node '{output.node_name}' failed: {output.error}",
                 ).to_dict()
@@ -416,6 +428,7 @@ def agent_workflow(
                                 ),
                                 channel_state=channel_state,
                                 steps=step,
+                                executed=executed,
                                 status="error",
                                 error=f"Condition evaluation failed: {cond_output.error}",
                             ).to_dict()
@@ -426,6 +439,12 @@ def agent_workflow(
                         # Direct edge
                         if edge.target not in next_nodes:
                             next_nodes.append(edge.target)
+
+        # Nodes a Command(goto=...) asked for run next as well, as in LangGraph.
+        for output in node_outputs:
+            for target in output.goto:
+                if target not in next_nodes:
+                    next_nodes.append(target)
 
         # Move to next step
         pending_nodes = next_nodes
@@ -438,6 +457,7 @@ def agent_workflow(
         output=_extract_output(channel_state, graph_config.output_channels),
         channel_state=channel_state,
         steps=step,
+        executed=executed,
         status="max_steps_reached",
         error=f"Max steps ({max_steps}) reached",
     ).to_dict()
@@ -679,6 +699,16 @@ def _warn_stream_sink_missing(
     """Say, once per run, that a streamed run's chunks are going nowhere."""
     if not registry.first_report(workflow_id):
         return
+    if registry.was_closed(workflow_id):
+        # This process had the stream and it ended (the client left, or the
+        # run's stream was closed): not a second replica, nothing to act on.
+        logger.debug(
+            "Run %s: its stream was closed in this process (its consumer left "
+            "or the stream ended); chunks of node %r are not delivered",
+            workflow_id,
+            node_name,
+        )
+        return
     logger.warning(
         "Run %s is streamed but this process has no stream sink for it, so the "
         "chunks of node %r (and of any node that runs here) are not delivered. "
@@ -769,7 +799,7 @@ def execute_node_activity(
     # "LangGraph" trace created by runner.invoke().
     parent = _langsmith_parent(config)
     if streamer:
-        streamer.node_started(state)
+        streamer.node_started(state, config)
     try:
         if parent:
             import langsmith as ls
@@ -802,6 +832,7 @@ def execute_node_activity(
     return ExecuteNodeOutput(
         node_name=node_name,
         writes=writes,
+        goto=_result_to_gotos(result, node_name),
     ).to_dict()
 
 
@@ -888,6 +919,7 @@ def evaluate_condition_activity(
     next_nodes = []
     for item in items:
         if hasattr(item, "node"):
+            _warn_send_payload(cond_input.source_node, item)
             next_nodes.append(item.node)
         elif path_map is None:
             next_nodes.append(item if isinstance(item, str) else str(item))
@@ -1073,11 +1105,59 @@ def _result_to_raw_writes(result: Any) -> List[Tuple[str, Any]]:
     return [("__result__", result)]
 
 
+def _warn_send_payload(source: str, send: Any) -> None:
+    """Say, once per edge, that a ``Send`` runs its node on the channel state.
+
+    LangGraph hands the node the ``Send`` argument as its input. Here the node
+    reads the channel state, so a node that depends on the argument gets the
+    wrong data (the prebuilt agent's tools node, which passes the state, is fine).
+    """
+    key = (source, send.node)
+    if getattr(send, "arg", None) is None or key in _WARNED_SENDS:
+        return
+    _WARNED_SENDS.add(key)
+    logger.warning(
+        "Send(%r, ...) from %r: the payload is not delivered, node %r runs on the "
+        "channel state. A node that reads the Send argument gets different data "
+        "than under LangGraph.",
+        send.node,
+        source,
+        send.node,
+    )
+
+
+def _result_to_gotos(result: Any, source: str) -> List[str]:
+    """The nodes a ``Command(goto=...)`` result asks to run next.
+
+    ``END`` is skipped (it ends that branch, which running nothing does). A
+    ``Send`` in ``goto`` runs its node on the channel state; see
+    :func:`_warn_send_payload`.
+    """
+    if isinstance(result, Command):
+        commands: List[Any] = [result]
+    elif isinstance(result, list) and result and isinstance(result[0], Command):
+        commands = result
+    else:
+        return []
+    targets: List[str] = []
+    for cmd in commands:
+        goto = getattr(cmd, "goto", None) or ()
+        for item in [goto] if isinstance(goto, (str, Send)) else goto:
+            if isinstance(item, Send):
+                _warn_send_payload(source, item)
+                name = item.node
+            else:
+                name = str(item)
+            if name != END and name not in targets:
+                targets.append(name)
+    return targets
+
+
 def _command_to_raw_writes(cmd: Any) -> List[Tuple[str, Any]]:
     """Extract ``(channel, value)`` pairs from the ``update`` of a Command.
 
-    This helper only inspects ``cmd.update``. Any ``goto`` / control-flow
-    information on the Command is ignored by this workflow runner.
+    This helper only inspects ``cmd.update``; ``goto`` is read by
+    :func:`_result_to_gotos`.
 
     Args:
         cmd: A LangGraph Command instance whose ``update`` field encodes channel writes.
@@ -1118,11 +1198,6 @@ def _result_to_writes(result: Any) -> List[NodeWrite]:
         List of NodeWrite objects
     """
     return _serialize_writes(_result_to_raw_writes(result))
-
-
-def _command_to_writes(cmd: Any) -> List[NodeWrite]:
-    """Serialized form of :func:`_command_to_raw_writes`."""
-    return _serialize_writes(_command_to_raw_writes(cmd))
 
 
 def _serialize_value(value: Any) -> Any:

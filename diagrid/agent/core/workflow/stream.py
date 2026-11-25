@@ -23,18 +23,37 @@ logger = logging.getLogger(__name__)
 # Upper bound on buffered chunks per run. Past it, token and custom chunks are
 # dropped (counted, and reported on the final event) so a slow consumer cannot
 # grow memory without limit. Updates, node resets and the close marker are never
-# dropped: they cannot be re-sent and are bounded by the size of the graph.
+# dropped: they cannot be re-sent and are bounded by the size of the graph
+# (the workflow_started event is sent once).
 MAX_BUFFERED_EVENTS = 10_000
 
 NODE_RESET = "node_reset"
 STREAM_UNAVAILABLE = "stream_unavailable"
 STREAM_DROPPED = "stream_dropped"
+#: First event of a stream: the ids a client needs to find or stop its run.
+WORKFLOW_STARTED = "workflow_started"
 # Events about the stream itself, delivered whatever stream modes were asked for.
-CONTROL_MODES = (NODE_RESET, STREAM_UNAVAILABLE)
+CONTROL_MODES = (WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE)
+
+#: Seconds an idle SSE stream waits before it sends a keepalive comment, so a
+#: proxy or load balancer does not cut it during a long tool call or LLM gap.
+SSE_KEEPALIVE_SECONDS = 15.0
+#: The ``event`` name a runner yields for a keepalive; framed as an SSE comment.
+KEEPALIVE_EVENT = "keepalive"
 
 # Runs remembered by StreamSinkRegistry.first_report; older ones are forgotten.
 _MAX_REPORTED_RUNS = 1024
 UPDATES = "updates"
+
+
+def display_step(step: int) -> int:
+    """A workflow step number as a client sees it.
+
+    Workflow steps count from 0. Clients match ``node_reset`` and
+    ``stream_unavailable`` against the ``langgraph_step`` of a chunk's metadata,
+    which Pregel counts from 1, so every step a client sees is numbered from 1.
+    """
+    return step + 1
 
 
 @dataclass(frozen=True)
@@ -112,7 +131,7 @@ class InProcessSink:
                         event.seq,
                         event.ns,
                         NODE_RESET,
-                        {"node": event.node, "step": event.step},
+                        {"node": event.node, "step": display_step(event.step)},
                     )
                 )
             self._owner[key] = event.attempt_id
@@ -161,7 +180,11 @@ class InProcessSink:
 
 def _is_control(item: Any) -> bool:
     """Chunks that must not be dropped: they cannot be re-sent."""
-    return isinstance(item, StreamEvent) and item.mode in (UPDATES, NODE_RESET)
+    return isinstance(item, StreamEvent) and item.mode in (
+        UPDATES,
+        NODE_RESET,
+        WORKFLOW_STARTED,
+    )
 
 
 class StreamSinkRegistry:
@@ -177,6 +200,7 @@ class StreamSinkRegistry:
         self._sinks: Dict[str, InProcessSink] = {}
         self._lock = threading.Lock()
         self._reported: "OrderedDict[str, None]" = OrderedDict()
+        self._closed: "OrderedDict[str, None]" = OrderedDict()
 
     def open(self, workflow_id: str) -> InProcessSink:
         """Register a sink for ``workflow_id`` on the running event loop.
@@ -189,6 +213,7 @@ class StreamSinkRegistry:
             if workflow_id in self._sinks:
                 raise ValueError(f"A stream for {workflow_id!r} is already open")
             self._sinks[workflow_id] = sink
+            self._closed.pop(workflow_id, None)
         return sink
 
     def close(self, workflow_id: str, sink: Optional[InProcessSink] = None) -> None:
@@ -202,7 +227,21 @@ class StreamSinkRegistry:
             if current is None or (sink is not None and current is not sink):
                 return
             del self._sinks[workflow_id]
+            self._closed[workflow_id] = None
+            self._closed.move_to_end(workflow_id)
+            while len(self._closed) > _MAX_REPORTED_RUNS:
+                self._closed.popitem(last=False)
         current.close()
+
+    def was_closed(self, workflow_id: str) -> bool:
+        """True when this process opened a stream for ``workflow_id`` and closed it.
+
+        Tells a run whose consumer left (or whose stream ended) from one whose
+        activity runs in a process that never had a sink. Remembers the most
+        recent closes only.
+        """
+        with self._lock:
+            return workflow_id in self._closed
 
     def first_report(self, workflow_id: str) -> bool:
         """True the first time it is asked about ``workflow_id``.
@@ -230,23 +269,6 @@ class StreamSinkRegistry:
 default_registry = StreamSinkRegistry()
 
 
-def open_stream(
-    workflow_id: str, *, registry: Optional[StreamSinkRegistry] = None
-) -> InProcessSink:
-    """:meth:`StreamSinkRegistry.open` on ``registry`` (default: the module's)."""
-    return (registry or default_registry).open(workflow_id)
-
-
-def close_stream(
-    workflow_id: str,
-    sink: Optional[InProcessSink] = None,
-    *,
-    registry: Optional[StreamSinkRegistry] = None,
-) -> None:
-    """:meth:`StreamSinkRegistry.close` on ``registry`` (default: the module's)."""
-    (registry or default_registry).close(workflow_id, sink)
-
-
 def get_stream_sink(
     workflow_id: Optional[str], *, registry: Optional[StreamSinkRegistry] = None
 ) -> Optional[StreamSink]:
@@ -259,7 +281,9 @@ def get_stream_sink(
 
 
 def format_sse(event: str, data: Any, event_id: Optional[int] = None) -> str:
-    """Frame one Server-Sent Event."""
+    """Frame one Server-Sent Event (a keepalive is a comment, not an event)."""
+    if event == KEEPALIVE_EVENT:
+        return ": keepalive\n\n"
     lines = []
     if event_id is not None:
         lines.append(f"id: {event_id}")

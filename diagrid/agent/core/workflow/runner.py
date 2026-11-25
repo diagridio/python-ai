@@ -19,7 +19,7 @@ from diagrid.agent.core.discovery import discover_components
 from diagrid.agent.core.metadata.mixins import AgentRegistryMixin
 from diagrid.agent.core.observability import resolve_observability_config
 from diagrid.agent.core.workflow.naming import build_workflow_name
-from diagrid.agent.core.workflow.stream import format_sse
+from diagrid.agent.core.workflow.stream import KEEPALIVE_EVENT, format_sse
 
 # ``diagrid-core`` ships the reporter. This distribution only pins
 # ``diagrid-core>=0.1.0`` (through ``diagrid-cli``), so an application holding
@@ -51,6 +51,33 @@ _FRAMEWORK_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
     "dapr agents": ("dapr-agents",),
     "holmesgpt": ("holmesgpt",),
 }
+
+
+#: A failed status poll is retried this many times in a row (only when the
+#: caller asks, and only for a transient error: see ``_is_transient_poll_error``)
+#: before the run's outcome is given up as unknown, waiting
+#: ``POLL_RETRY_BASE_SECONDS`` (doubling, capped at ``POLL_RETRY_MAX_SECONDS``)
+#: between tries: about a minute in all, enough for a sidecar restart or a
+#: rolling update.
+POLL_MAX_ERRORS = 10
+POLL_RETRY_BASE_SECONDS = 0.5
+POLL_RETRY_MAX_SECONDS = 10.0
+
+
+def _is_transient_poll_error(error: BaseException) -> bool:
+    """A failed poll worth retrying: the call failed to get through.
+
+    A gRPC error or a connection/OS-level one (a sidecar restarting, a dropped
+    connection). A programming or credentials error is not transient and
+    surfaces at once.
+    """
+    if isinstance(error, OSError):  # ConnectionError, TimeoutError, ...
+        return True
+    try:
+        import grpc
+    except ImportError:  # pragma: no cover - dapr depends on grpcio
+        return False
+    return isinstance(error, grpc.RpcError)
 
 
 def fold_run_event(result: dict, event: dict) -> bool:  # type: ignore[type-arg]
@@ -274,6 +301,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         *,
         poll_interval: float = 0.5,
         parse_output: Any = None,
+        retry_failed_polls: bool = False,
     ) -> AsyncIterator[dict[str, Any]]:
         """Poll a running workflow and yield status/completion events.
 
@@ -284,6 +312,10 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             parse_output: Optional callable to parse serialized output
                 into a completion event dict. If None, raw output is
                 returned.
+            retry_failed_polls: Ride out a failed poll when it looks transient
+                (see ``POLL_MAX_ERRORS``) instead of raising at once. Off by
+                default: a runner opts in when it can tell its caller that the
+                run's fate is unknown.
 
         Yields:
             Event dictionaries with workflow progress updates.
@@ -291,11 +323,43 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         assert self._workflow_client is not None
 
         previous_status = None
+        failed_polls = 0
 
         while True:
             await asyncio.sleep(poll_interval)
 
-            state = self._workflow_client.get_workflow_state(instance_id=workflow_id)
+            try:
+                # A blocking gRPC call: off the loop, or every other run's
+                # tokens (and all HTTP handling) wait for the sidecar.
+                state = await asyncio.to_thread(
+                    self._workflow_client.get_workflow_state, instance_id=workflow_id
+                )
+            except Exception as e:
+                # The poll failed, not the workflow (a sidecar restart, a
+                # dropped call). Retry; only a poll that keeps failing is given
+                # up on, and the caller learns the run's fate is unknown.
+                failed_polls += 1
+                if (
+                    not retry_failed_polls
+                    or not _is_transient_poll_error(e)
+                    or failed_polls > POLL_MAX_ERRORS
+                ):
+                    raise
+                delay = min(
+                    POLL_RETRY_BASE_SECONDS * 2 ** (failed_polls - 1),
+                    POLL_RETRY_MAX_SECONDS,
+                )
+                logger.warning(
+                    "Polling workflow %s failed (%d of %d), retrying in %.1fs: %s",
+                    workflow_id,
+                    failed_polls,
+                    POLL_MAX_ERRORS,
+                    delay,
+                    e,
+                )
+                await asyncio.sleep(delay)
+                continue
+            failed_polls = 0
 
             if state is None:
                 yield {
@@ -407,7 +471,8 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         runtime, and registers POST/GET ``/agent/run`` endpoints.
 
         A runner that supports it (the LangGraph runner does) answers
-        ``POST /agent/run`` with ``"stream": true`` as server-sent events. The
+        ``POST /agent/run`` with ``"stream": true`` (the JSON boolean, nothing
+        else) as server-sent events. The
         keys ``stream`` and ``stream_mode`` are reserved on such a request. The
         last event is ``workflow_completed`` or ``workflow_failed``; its data is
         also what gets published to ``publish_topic``. Streaming works while the
@@ -465,11 +530,14 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 if fold_run_event(result, event):
                     break
 
-            _publish_result(result)
+            await asyncio.to_thread(_publish_result, result)
             return result
 
         def _publish_result(result: dict) -> None:  # type: ignore[type-arg]
-            """Publish a result to the configured topic, if any."""
+            """Publish a result to the configured topic, if any.
+
+            Blocking: callers run it off the event loop.
+            """
             if pubsub_client and publish_topic:
                 try:
                     pubsub_client.publish(publish_topic, result)
@@ -486,7 +554,8 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             event_id = 0
             try:
                 async for name, data in events:
-                    event_id += 1
+                    if name != KEEPALIVE_EVENT:
+                        event_id += 1
                     yield format_sse(name, data, event_id)
             finally:
                 # A client that disconnects ends the generator at a yield; close
@@ -500,7 +569,15 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
 
         @app.post("/agent/run")
         async def run_agent(request: dict) -> Any:  # type: ignore[type-arg]
-            if request.get("stream") and self._supports_serve_stream:
+            # Only the JSON value true streams. Anything else ("false", an
+            # object) is a plain request whose "stream" key may be the graph's own.
+            if request.get("stream") is True and self._supports_serve_stream:
+                # A bad request is refused with a 4xx now: once the response
+                # starts, its 200 is committed and an error can only be in-band.
+                try:
+                    self._validate_stream_request(request)
+                except ValueError as e:
+                    raise HTTPException(status_code=422, detail=str(e))
                 session_id = request.get(
                     "session_id",
                     request.get("thread_id", uuid.uuid4().hex[:8]),
@@ -510,6 +587,9 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                         self._serve_stream(request, session_id, on_result=on_result)
                     ),
                     media_type="text/event-stream",
+                    # Without these an ingress or reverse proxy may buffer the
+                    # stream and hand the client its tokens in one batch.
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
                 )
             return await _run_and_collect(request)
 
@@ -595,6 +675,14 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
     # implement ``_serve_stream`` (used by ``POST /agent/run`` with
     # ``"stream": true``).
     _supports_serve_stream = False
+
+    def _validate_stream_request(self, request: dict) -> None:  # type: ignore[type-arg]
+        """Raise ``ValueError`` if a streaming request is invalid.
+
+        Called before the SSE response is started, so the client gets a 422
+        rather than a 200 whose only event is a failure. Default: accept all.
+        """
+        return None
 
     def _serve_stream(
         self,
