@@ -1668,7 +1668,7 @@ def _serialize_input(
     return {
         channel: (
             _serialize_messages(value, functools.partial(message_id, channel))
-            if channel == "messages" or _is_messages_channel(channel)
+            if _is_messages_channel(channel)
             else _store_value(value)
         )
         for channel, value in input_data.items()
