@@ -6,6 +6,7 @@
 import contextlib
 import logging
 from datetime import timedelta
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 from dapr.ext.workflow import (
@@ -494,6 +495,184 @@ def _is_async_only(runnable: Any) -> bool:
     )
 
 
+@dataclass
+class _NodeCall:
+    """Everything one execution of a node needs, gathered by the activity."""
+
+    ctx: WorkflowActivityContext
+    node_input: ExecuteNodeInput
+    node_func: Callable
+    state: Dict[str, Any]
+    config: Dict[str, Any]
+    streamer: Optional[NodeStreamer]
+    #: Side-channel writes queued via CONFIG_KEY_SEND while the node runs.
+    pending_sends: list
+
+    @property
+    def node_name(self) -> str:
+        return self.node_input.node_name
+
+    @property
+    def stream_writer(self) -> Optional[Callable[[Any], None]]:
+        return self.streamer.writer if self.streamer else None
+
+
+def _make_activity_read(
+    channel_state: ChannelState, pending_sends: list
+) -> Callable[..., Any]:
+    """Stand-in for CONFIG_KEY_READ inside a Dapr activity.
+
+    In normal LangGraph execution the Pregel engine injects a read
+    function bound to live BaseChannel objects.  Here the activity
+    only has a serialized ``channel_state``, so we read from that.
+    """
+
+    def _activity_read(select: Any, fresh: bool = False) -> Any:
+        if fresh:
+            # Apply any pending sends to a snapshot before reading.
+            merged = dict(channel_state.values)
+            for ch, val in pending_sends:
+                reducer = get_channel_reducer(ch)
+                if reducer and ch in merged:
+                    try:
+                        merged[ch] = reducer(merged[ch], val)
+                    except Exception:
+                        merged[ch] = val
+                else:
+                    merged[ch] = val
+            source = merged
+        else:
+            source = channel_state.values
+
+        if isinstance(select, str):
+            return source.get(select)
+        return {k: source.get(k) for k in select if k in source}
+
+    return _activity_read
+
+
+def _await_if_coroutine(r: Any) -> Any:
+    """Run ``r`` to completion on a private loop if it is a coroutine."""
+    import asyncio
+
+    if asyncio.iscoroutine(r):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            r = loop.run_until_complete(r)
+        finally:
+            loop.close()
+    return r
+
+
+def _runnable_config(call: _NodeCall) -> Dict[str, Any]:
+    """The config a Runnable node is invoked with.
+
+    Copies before mutating so we never write back into the shared config dict
+    handed to this activity (immutability).
+    """
+    _config = dict(call.config) if call.config else {}
+    _config[CONF] = dict(_config.get(CONF) or {})
+
+    thread_id = (
+        call.node_input.thread_id
+        or _config.get("thread_id")
+        or getattr(call.ctx, "workflow_id", None)
+    )
+    # Expose thread_id in the conventional LangGraph location too,
+    # so middleware reading config["configurable"]["thread_id"] works.
+    _config[CONF].setdefault("thread_id", thread_id)
+
+    # Ensure the config has a Runtime object for deep agent middleware nodes
+    # that require it (runtime injection via RunnableCallable). It also lets
+    # sandbox/state backends resolve which workflow owns a tool call via
+    # runtime.execution_info.thread_id.
+    if CONFIG_KEY_RUNTIME not in _config[CONF]:
+        _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
+            thread_id, call.ctx, call.node_name, call.stream_writer
+        )
+    if call.streamer:
+        _config = call.streamer.patch_config(_config)
+
+    # Inject CONFIG_KEY_READ / CONFIG_KEY_SEND so that deepagents
+    # StateBackend (sandbox tools) can read/write the "files"
+    # channel when running inside a Dapr workflow activity.
+    try:
+        from langgraph._internal._constants import (
+            CONFIG_KEY_READ,
+            CONFIG_KEY_SEND,
+        )
+
+        _config[CONF][CONFIG_KEY_READ] = _make_activity_read(
+            call.node_input.channel_state, call.pending_sends
+        )
+        _config[CONF][CONFIG_KEY_SEND] = call.pending_sends.extend
+    except ImportError:
+        pass
+    return _config
+
+
+def _invoke_runnable(call: _NodeCall, config: Dict[str, Any]) -> Any:
+    """Call a Runnable node; an async-only one returns a coroutine to await."""
+    if _is_async_only(call.node_func):
+        return call.node_func.ainvoke(call.state, config=config)  # type: ignore[attr-defined]
+    return call.node_func.invoke(call.state, config=config)  # type: ignore[attr-defined]
+
+
+def _call_plain(call: _NodeCall) -> Any:
+    """Call a plain function node (sync or async) and return its result."""
+    sig = inspect.signature(call.node_func)
+    params = list(sig.parameters.keys())
+    if len(params) >= 2 and "config" in params:
+        out = call.node_func(call.state, config=call.config)
+    else:
+        out = call.node_func(call.state)
+    return _await_if_coroutine(out)
+
+
+def _plain_node_config(call: _NodeCall) -> Dict[str, Any]:
+    """Ambient config for a plain function node.
+
+    Plain callables get no config injected, so what a node reaches through the
+    ambient config (``get_stream_writer()``, the stream handler and the task
+    metadata of a streamed run) is supplied here. Without a streamer the
+    runtime carries LangGraph's no-op writer, as ``invoke`` does natively.
+    """
+    thread_id = call.node_input.thread_id or getattr(call.ctx, "workflow_id", None)
+    runtime = _build_node_runtime(
+        thread_id, call.ctx, call.node_name, call.stream_writer
+    )
+    configurable = {**(call.config.get(CONF) or {}), CONFIG_KEY_RUNTIME: runtime}
+    config: Dict[str, Any] = {CONF: configurable}
+    return call.streamer.patch_config(config) if call.streamer else config
+
+
+def _run_node(call: _NodeCall) -> Any:
+    """Run the node and return its raw result."""
+    node_func = call.node_func
+    if hasattr(node_func, "invoke") and callable(getattr(node_func, "invoke")):
+        # A LangChain Runnable (e.g. RunnableCallable): call .invoke() so that
+        # argument injection (runtime, config, store) works.
+        node_config = _runnable_config(call)
+
+        def run() -> Any:
+            return _await_if_coroutine(_invoke_runnable(call, node_config))
+
+        ambient = node_config
+    else:
+
+        def run() -> Any:
+            return _call_plain(call)
+
+        ambient = _plain_node_config(call)
+
+    # RunnableCallable.invoke only sets the ambient config when tracing;
+    # get_stream_writer() and the stream handler need it, and a node that calls
+    # get_stream_writer() must find a (no-op) writer when the run is not streamed.
+    with set_config_context(ambient) as ctx_:  # type: ignore[arg-type]
+        return ctx_.run(run)
+
+
 def _warn_stream_sink_missing(
     registry: StreamSinkRegistry, workflow_id: str, node_name: str
 ) -> None:
@@ -550,7 +729,6 @@ def execute_node_activity(
 
     # Reconstruct state from channel values
     state = _reconstruct_state(node_input.channel_state)
-    channel_state = node_input.channel_state
 
     # Extract tracing config
     config = node_input.config or {}
@@ -569,161 +747,53 @@ def execute_node_activity(
             step=node_input.step or 0,
             node=node_name,
             task_id=getattr(ctx, "task_id", ""),
+            thread_id=node_input.thread_id or config.get("thread_id"),
         )
         if sink is not None
         else None
     )
-    stream_writer = streamer.writer if streamer else None
 
     # Collect side-channel writes from CONFIG_KEY_SEND (used by StateBackend
     # to write to the "files" channel from sandbox tools).
-    pending_sends: list = []
-
-    def _activity_read(select: Any, fresh: bool = False) -> Any:
-        """Stand-in for CONFIG_KEY_READ inside a Dapr activity.
-
-        In normal LangGraph execution the Pregel engine injects a read
-        function bound to live BaseChannel objects.  Here the activity
-        only has a serialized ``channel_state``, so we read from that.
-        """
-        if fresh:
-            # Apply any pending sends to a snapshot before reading.
-            merged = dict(channel_state.values)
-            for ch, val in pending_sends:
-                reducer = get_channel_reducer(ch)
-                if reducer and ch in merged:
-                    try:
-                        merged[ch] = reducer(merged[ch], val)
-                    except Exception:
-                        merged[ch] = val
-                else:
-                    merged[ch] = val
-            source = merged
-        else:
-            source = channel_state.values
-
-        if isinstance(select, str):
-            return source.get(select)
-        return {k: source.get(k) for k in select if k in source}
-
-    def _run_node() -> Any:
-        # If the registered object is a LangChain Runnable (e.g. RunnableCallable),
-        # call .invoke() so that argument injection (runtime, config, store) works.
-        if hasattr(node_func, "invoke") and callable(getattr(node_func, "invoke")):
-            # Ensure the config has a Runtime object for deep agent middleware
-            # nodes that require it (runtime injection via RunnableCallable).
-            # Copy before mutating so we never write back into the shared
-            # config dict handed to this activity (immutability).
-            _config = dict(config) if config else {}
-            _config[CONF] = dict(_config.get(CONF) or {})
-
-            thread_id = (
-                node_input.thread_id
-                or _config.get("thread_id")
-                or getattr(ctx, "workflow_id", None)
-            )
-            # Expose thread_id in the conventional LangGraph location too,
-            # so middleware reading config["configurable"]["thread_id"] works.
-            _config[CONF].setdefault("thread_id", thread_id)
-
-            # Populate the Runtime so sandbox/state backends can resolve which
-            # workflow owns a tool call via runtime.execution_info.thread_id.
-            if CONFIG_KEY_RUNTIME not in _config[CONF]:
-                _config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
-                    thread_id, ctx, node_name, stream_writer
-                )
-            if streamer:
-                _config = streamer.patch_config(_config)
-
-            # Inject CONFIG_KEY_READ / CONFIG_KEY_SEND so that deepagents
-            # StateBackend (sandbox tools) can read/write the "files"
-            # channel when running inside a Dapr workflow activity.
-            try:
-                from langgraph._internal._constants import (
-                    CONFIG_KEY_READ,
-                    CONFIG_KEY_SEND,
-                )
-
-                _config[CONF][CONFIG_KEY_READ] = _activity_read
-                _config[CONF][CONFIG_KEY_SEND] = pending_sends.extend
-            except ImportError:
-                pass
-
-            def _invoke() -> Any:
-                if _is_async_only(node_func):
-                    # A coroutine; run to completion by the caller.
-                    return node_func.ainvoke(state, config=_config)  # type: ignore[attr-defined]
-                return node_func.invoke(state, config=_config)
-
-            if streamer is None:
-                r = _invoke()
-            else:
-                # RunnableCallable.invoke only sets the ambient config when
-                # tracing; get_stream_writer() and the stream handler need it.
-                with set_config_context(_config) as ctx_:  # type: ignore[arg-type]
-                    return ctx_.run(lambda: _await_if_coroutine(_invoke()))
-        else:
-
-            def _call_plain() -> Any:
-                sig = inspect.signature(node_func)
-                params = list(sig.parameters.keys())
-                if len(params) >= 2 and "config" in params:
-                    out = node_func(state, config=config)
-                else:
-                    out = node_func(state)
-                return _await_if_coroutine(out)
-
-            if streamer is None:
-                return _call_plain()
-            # Plain callables get no config injected; expose the handler and
-            # writer through the ambient config instead.
-            with set_config_context(_plain_stream_config()) as ctx_:  # type: ignore[arg-type]
-                return ctx_.run(_call_plain)
-
-        return _await_if_coroutine(r)
-
-    def _await_if_coroutine(r: Any) -> Any:
-        import asyncio
-
-        if asyncio.iscoroutine(r):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                r = loop.run_until_complete(r)
-            finally:
-                loop.close()
-        return r
-
-    def _plain_stream_config() -> Dict[str, Any]:
-        assert streamer is not None
-        thread_id = node_input.thread_id or getattr(ctx, "workflow_id", None)
-        runtime = _build_node_runtime(thread_id, ctx, node_name, stream_writer)
-        return streamer.patch_config({CONF: {CONFIG_KEY_RUNTIME: runtime}})
+    call = _NodeCall(
+        ctx=ctx,
+        node_input=node_input,
+        node_func=node_func,
+        state=state,
+        config=config,
+        streamer=streamer,
+        pending_sends=[],
+    )
 
     # Set up LangSmith child trace so LLM calls nest under the parent
     # "LangGraph" trace created by runner.invoke().
     parent = _langsmith_parent(config)
     if streamer:
         streamer.node_started(state)
-    if parent:
-        import langsmith as ls
+    try:
+        if parent:
+            import langsmith as ls
 
-        with ls.trace(
-            name=node_name,
-            run_type="chain",
-            parent=parent,
-            inputs={"step": node_name},
-        ):
-            result = _run_node()
-    else:
-        result = _run_node()
+            with ls.trace(
+                name=node_name,
+                run_type="chain",
+                parent=parent,
+                inputs={"step": node_name},
+            ):
+                result = _run_node(call)
+        else:
+            result = _run_node(call)
+    except BaseException as exc:
+        if streamer:
+            streamer.node_failed(exc)
+        raise
     if streamer:
         streamer.node_finished(result)
 
     # Convert result to writes, then append any side-channel writes queued via
     # CONFIG_KEY_SEND (e.g. StateBackend writing to the "files" channel from
     # sandbox tools).
-    raw_writes = [*_result_to_raw_writes(result), *pending_sends]
+    raw_writes = [*_result_to_raw_writes(result), *call.pending_sends]
     writes = _serialize_writes(raw_writes)
 
     if streamer:

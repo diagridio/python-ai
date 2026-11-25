@@ -10,10 +10,13 @@ every task. Chunks go to a :class:`StreamSink` wrapped in a ``StreamEvent``.
 """
 
 import itertools
+import threading
 import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from langchain_core.load import dumpd
+from langchain_core.load.serializable import Serializable
 
 from diagrid.agent.core.workflow.stream import (
     STREAM_UNAVAILABLE,
@@ -26,9 +29,25 @@ UPDATES = "updates"
 CUSTOM = "custom"
 SUPPORTED_MODES = (MESSAGES, UPDATES, CUSTOM)
 
+# Configurable keys LangChain never copies into metadata (they are secrets).
+_UNTRACED_CONFIGURABLE = frozenset(("api_key",))
+
 # Set in the workflow config of a run someone is streaming, so an activity that
 # finds no sink to write to knows that is a problem and not just a plain run.
 STREAM_RUN_KEY = "diagrid_streamed"
+
+
+@dataclass(frozen=True)
+class StreamControl:
+    """An event about the stream itself rather than a chunk of the run.
+
+    ``kind`` is ``node_reset``, ``stream_unavailable`` or ``stream_dropped``;
+    ``data`` is its payload. ``astream`` hands these to its ``on_control``
+    callback, and in list mode also yields them as ``(kind, data)``.
+    """
+
+    kind: str
+    data: Dict[str, Any]
 
 
 class NodeStreamer:
@@ -42,14 +61,19 @@ class NodeStreamer:
         step: int,
         node: str,
         task_id: Any,
+        thread_id: Optional[str] = None,
     ) -> None:
         self._sink = sink
+        self._thread_id = thread_id
         self._workflow_id = workflow_id
         self._step = step
         self._node = node
         self._task_id = task_id
         self._attempt_id = uuid.uuid4().hex
         self._seq = itertools.count()
+        # A node may emit from several threads (parallel tool calls); seq is
+        # taken and the chunk handed over under one lock so they stay in order.
+        self._emit_lock = threading.Lock()
         self._handler: Any = None
         self._run_id = uuid.uuid4()
 
@@ -67,18 +91,19 @@ class NodeStreamer:
         }
 
     def _emit(self, ns: Tuple[str, ...], mode: str, data: Any) -> None:
-        self._sink.put(
-            StreamEvent(
-                workflow_id=self._workflow_id,
-                step=self._step,
-                node=self._node,
-                attempt_id=self._attempt_id,
-                seq=next(self._seq),
-                ns=tuple(ns),
-                mode=mode,
-                data=data,
+        with self._emit_lock:
+            self._sink.put(
+                StreamEvent(
+                    workflow_id=self._workflow_id,
+                    step=self._step,
+                    node=self._node,
+                    attempt_id=self._attempt_id,
+                    seq=next(self._seq),
+                    ns=tuple(ns),
+                    mode=mode,
+                    data=data,
+                )
             )
-        )
 
     def _on_chunk(self, chunk: Tuple[Any, ...]) -> None:
         """Receive ``(ns, mode, payload)`` from ``StreamMessagesHandler``."""
@@ -112,6 +137,13 @@ class NodeStreamer:
 
     def node_finished(self, output: Any) -> None:
         self._messages_handler().on_chain_end(output, run_id=self._run_id)
+
+    def node_failed(self, error: BaseException) -> None:
+        """Close the chain run :meth:`node_started` opened.
+
+        Without it the message handler keeps that run's state for good.
+        """
+        self._messages_handler().on_chain_error(error, run_id=self._run_id)
 
     def writer(self, chunk: Any) -> None:
         """``Runtime.stream_writer``: what ``get_stream_writer()`` returns."""
@@ -149,8 +181,30 @@ class NodeStreamer:
             for handler in self.callbacks():
                 callbacks.add_handler(handler, inherit=True)
         patched["callbacks"] = callbacks
-        patched["metadata"] = {**(patched.get("metadata") or {}), **self.metadata}
+        patched["metadata"] = {
+            **self._configurable_metadata(patched),
+            **(patched.get("metadata") or {}),
+            **self.metadata,
+        }
         return patched
+
+    def _configurable_metadata(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """What native LangGraph copies from ``configurable`` into metadata.
+
+        ``thread_id`` and the other primitive, non-private configurable values,
+        so a client keying on ``metadata["thread_id"]`` sees what it would
+        from ``CompiledStateGraph.astream``.
+        """
+        derived = {
+            key: value
+            for key, value in (config.get("configurable") or {}).items()
+            if not key.startswith("__")
+            and isinstance(value, (str, int, float, bool))
+            and key not in _UNTRACED_CONFIGURABLE
+        }
+        if self._thread_id:
+            derived.setdefault("thread_id", self._thread_id)
+        return derived
 
 
 def normalize_stream_mode(stream_mode: Any) -> Tuple[List[str], bool]:
@@ -166,16 +220,43 @@ def normalize_stream_mode(stream_mode: Any) -> Tuple[List[str], bool]:
     return modes, is_list
 
 
+def _plain_data(value: Any) -> Any:
+    """``value`` with everything but LangChain objects reduced to plain data.
+
+    ``dumpd`` replaces what it cannot serialize (a pydantic model, a datetime,
+    a UUID) with a ``not_implemented`` stub that holds only a repr. Leaves go
+    through the same fallback the run's final output uses
+    (``workflow._serialize_value``) so a client sees the same data in a chunk
+    and in the final event. ``Serializable`` objects (messages, documents) stay
+    as they are for ``dumpd`` to turn into their ``load()``-able form.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Serializable):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_plain_data(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _plain_data(v) for k, v in value.items()}
+    from diagrid.agent.langgraph.workflow import _serialize_value
+
+    reduced = _serialize_value(value)
+    # A model dumps to a dict that can still hold a datetime or a UUID.
+    return str(value) if reduced is value else _plain_data(reduced)
+
+
 def to_wire(mode: str, data: Any) -> Any:
     """JSON-ready form of a chunk for a transport.
 
-    ``messages`` and ``updates`` carry LangChain objects; ``dumpd`` turns them
-    into the form ``langchain_core.load.load`` restores, so a client sees the
-    same objects an in-process ``astream`` consumer does. Other chunks (the
-    ``custom`` payload a node chose to write, control events) go as they are.
+    ``messages``, ``updates`` and ``custom`` chunks can carry LangChain objects
+    next to arbitrary values a node chose to return or write. ``dumpd`` turns
+    the objects into the form ``langchain_core.load.load`` restores, so a client
+    sees the same objects an in-process ``astream`` consumer does; everything
+    else becomes plain data first (see :func:`_plain_data`). Control events go
+    as they are.
     """
-    if mode in (MESSAGES, UPDATES):
-        return dumpd(data)
+    if mode in (MESSAGES, UPDATES, CUSTOM):
+        return dumpd(_plain_data(data))
     return data
 
 

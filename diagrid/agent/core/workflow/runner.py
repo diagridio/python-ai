@@ -10,7 +10,7 @@ import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from importlib import metadata
-from typing import Any, AsyncIterator, Optional, Tuple
+from typing import Any, AsyncIterator, Callable, Optional, Tuple
 
 from dapr.ext.workflow import DaprWorkflowClient, WorkflowRuntime, WorkflowStatus
 from dapr_agents.utils.signal.mixin import SignalMixin
@@ -53,8 +53,22 @@ _FRAMEWORK_DISTRIBUTIONS: dict[str, tuple[str, ...]] = {
 }
 
 
-#: Event names that end a streamed run; the data of the last one is the result.
-_TERMINAL_EVENTS = ("workflow_completed", "workflow_failed")
+def fold_run_event(result: dict, event: dict) -> bool:  # type: ignore[type-arg]
+    """Fold one event of a run into ``result``, the body of ``POST /agent/run``.
+
+    Returns ``True`` when ``event`` is the run's last. The same fold builds the
+    returned body of a plain call and the result published for a streamed one,
+    so the two cannot drift apart.
+    """
+    kind = event["type"]
+    if kind == "workflow_started":
+        result["instance_id"] = event["workflow_id"]
+        if event.get("thread_id"):
+            result["thread_id"] = event["thread_id"]
+    elif kind in ("workflow_completed", "workflow_failed"):
+        result.update(event)
+        return True
+    return False
 
 
 def _framework_version(framework: str) -> Optional[str]:
@@ -392,6 +406,16 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         Creates a FastAPI app, calls ``_setup_telemetry()``, starts the
         runtime, and registers POST/GET ``/agent/run`` endpoints.
 
+        A runner that supports it (the LangGraph runner does) answers
+        ``POST /agent/run`` with ``"stream": true`` as server-sent events. The
+        keys ``stream`` and ``stream_mode`` are reserved on such a request. The
+        last event is ``workflow_completed`` or ``workflow_failed``; its data is
+        also what gets published to ``publish_topic``. Streaming works while the
+        node activities run in the serving process (single replica; see the
+        runner's README). A client that disconnects ends the stream but not the
+        workflow, which keeps running; with ``publish_topic`` set its result is
+        still published when the run ends.
+
         When pub/sub parameters are provided, also registers Dapr
         programmatic subscription endpoints so the agent can receive
         tasks via pub/sub and publish results.
@@ -438,15 +462,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             async for event in runner_ref._serve_run(
                 request=request, session_id=session_id
             ):
-                if event["type"] == "workflow_started":
-                    result["instance_id"] = event["workflow_id"]
-                    if event.get("thread_id"):
-                        result["thread_id"] = event["thread_id"]
-                elif event["type"] == "workflow_completed":
-                    result.update(event)
-                    break
-                elif event["type"] == "workflow_failed":
-                    result.update(event)
+                if fold_run_event(result, event):
                     break
 
             _publish_result(result)
@@ -461,33 +477,26 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 except Exception as e:
                     logger.error("Failed to publish result: %s", str(e))
 
-        async def _frame_and_publish(
-            events: AsyncIterator[Tuple[str, Any]],
-        ) -> AsyncIterator[str]:
-            """Frame ``(event, data)`` pairs as SSE; publish the terminal one.
+        async def _frame(events: AsyncIterator[Tuple[str, Any]]) -> AsyncIterator[str]:
+            """Frame ``(event, data)`` pairs as SSE.
 
-            The only place a streamed run is turned into SSE frames and into
-            the published result, so a runner just yields pairs.
+            The only place a streamed run is turned into SSE frames, so a runner
+            just yields pairs. Publishing is the runner's job (``on_result``).
             """
-            final: Optional[dict[str, Any]] = None
             event_id = 0
             try:
                 async for name, data in events:
                     event_id += 1
                     yield format_sse(name, data, event_id)
-                    if name in _TERMINAL_EVENTS and isinstance(data, dict):
-                        final = data
             finally:
                 # A client that disconnects ends the generator at a yield; close
                 # the runner's stream now rather than when it is collected.
                 aclose = getattr(events, "aclose", None)
                 if aclose is not None:
                     await aclose()
-            if final is not None:
-                result = dict(final)
-                if final.get("workflow_id"):
-                    result["instance_id"] = final["workflow_id"]
-                _publish_result(result)
+
+        # Only a run that is published needs to outlive its client.
+        on_result = _publish_result if pubsub_client else None
 
         @app.post("/agent/run")
         async def run_agent(request: dict) -> Any:  # type: ignore[type-arg]
@@ -497,7 +506,9 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                     request.get("thread_id", uuid.uuid4().hex[:8]),
                 )
                 return StreamingResponse(
-                    _frame_and_publish(self._serve_stream(request, session_id)),
+                    _frame(
+                        self._serve_stream(request, session_id, on_result=on_result)
+                    ),
                     media_type="text/event-stream",
                 )
             return await _run_and_collect(request)
@@ -589,12 +600,16 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         self,
         request: dict,  # type: ignore[type-arg]
         session_id: str,
+        on_result: Optional[Callable[[dict], None]] = None,  # type: ignore[type-arg]
     ) -> AsyncIterator[Tuple[str, Any]]:
         """Yield ``(event_name, data)`` pairs for a run. Opt-in per runner.
 
         The last pair is ``workflow_completed`` or ``workflow_failed`` with the
-        run's terminal event as data. Framing as SSE and publishing the result
-        are done by ``serve()``, not here.
+        run's terminal event as data. Framing as SSE is done by ``serve()``.
+
+        ``on_result`` is how a run gets published: the runner calls it once
+        with the same result a plain ``POST /agent/run`` would return (see
+        :func:`fold_run_event`) when the run ends.
         """
         raise NotImplementedError
 

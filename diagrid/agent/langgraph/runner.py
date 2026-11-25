@@ -8,8 +8,10 @@ import json
 import logging
 import time
 import uuid
+from contextlib import aclosing
 from typing import (
     Any,
+    AsyncGenerator,
     AsyncIterator,
     Callable,
     Dict,
@@ -24,6 +26,7 @@ from dapr.ext.workflow import WorkflowStatus
 
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
+from diagrid.agent.core.workflow.runner import fold_run_event
 from diagrid.agent.core.workflow.stream import (
     CONTROL_MODES,
     STREAM_DROPPED,
@@ -43,6 +46,7 @@ from .models import (
 from .streaming import (
     STREAM_RUN_KEY,
     GraphRunError,
+    StreamControl,
     stream_unavailable_event,
     normalize_final,
     normalize_stream_mode,
@@ -171,6 +175,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self._stream_registry = (
             stream_registry if stream_registry is not None else StreamSinkRegistry()
         )
+        # Pumps of streams whose consumer left while a result is still to be
+        # published; held here so they are not collected before they finish.
+        self._detached_pumps: Set["asyncio.Task[None]"] = set()
 
         super().__init__(
             name,
@@ -693,14 +700,27 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         stream_mode: Any = "updates",
         subgraphs: bool = False,
         poll_interval: float = 0.5,
+        on_control: Optional[Callable[[StreamControl], None]] = None,
     ) -> AsyncIterator[Any]:
         """Stream a run like ``CompiledStateGraph.astream``.
 
         Supports ``messages``, ``updates`` and ``custom``. A single mode
-        yields bare chunks; a list of modes yields ``(mode, chunk)`` tuples.
-        When a retried node restarts, a ``("node_reset", {...})`` tuple is
-        yielded in either form; discard that node's partial output. Streaming
-        works when the node activities run in this process (single replica).
+        yields bare chunks, as native ``astream`` does, and a list of modes
+        yields ``(mode, chunk)`` tuples.
+
+        Events about the stream itself are :class:`StreamControl` objects:
+        ``node_reset`` (a node was retried; discard its partial output),
+        ``stream_unavailable`` (the run finished but chunks for some of its
+        nodes never arrived: streaming works only when the node activities run
+        in this process, i.e. a single replica) and ``stream_dropped`` (the
+        consumer fell behind; ``{"dropped": n}``). Pass ``on_control`` to
+        receive them. A list of modes also yields them as ``(kind, data)``
+        tuples; a single mode never does, so a consumer written against native
+        ``astream`` (``async for message, metadata in ...``) cannot trip over
+        one. A run that fails raises :class:`GraphRunError`.
+
+        Stopping early (``break``, ``aclose()``) closes the stream but does not
+        cancel the Dapr workflow, which runs to completion.
 
         Chunks have the shape ``CompiledStateGraph.astream`` yields:
         ``messages`` are ``(message_chunk, metadata)`` and ``updates`` are
@@ -713,26 +733,38 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         if subgraphs:
             raise NotImplementedError("subgraphs=True is not supported yet")
         modes, is_list = normalize_stream_mode(stream_mode)
-        async for item in self._stream_events(
-            input,
-            config=config,
-            thread_id=thread_id,
-            workflow_id=workflow_id,
-            poll_interval=poll_interval,
-        ):
-            if isinstance(item, StreamEvent):
-                if item.mode in CONTROL_MODES:
-                    # Always delivered, as a tuple even for a single mode:
-                    # node_reset lets a client drop a failed attempt's partial
-                    # output, stream_unavailable says chunks went missing.
-                    yield (item.mode, item.data)
-                elif item.mode in modes:
-                    yield (item.mode, item.data) if is_list else item.data
-            else:
-                if item.get("dropped"):
-                    yield (STREAM_DROPPED, {"dropped": item["dropped"]})
-                if item.get("type") == "workflow_failed":
-                    raise GraphRunError(item)
+        # aclosing: if the caller stops early, close the inner stream now (it
+        # unregisters the sink) instead of whenever the garbage collector runs.
+        async with aclosing(
+            self._stream_events(
+                input,
+                config=config,
+                thread_id=thread_id,
+                workflow_id=workflow_id,
+                poll_interval=poll_interval,
+            )
+        ) as events:
+            async for item in events:
+                if isinstance(item, StreamEvent):
+                    if item.mode in CONTROL_MODES:
+                        control = StreamControl(item.mode, item.data)
+                        if on_control is not None:
+                            on_control(control)
+                        if is_list:
+                            yield (control.kind, control.data)
+                    elif item.mode in modes:
+                        yield (item.mode, item.data) if is_list else item.data
+                else:
+                    if item.get("dropped"):
+                        control = StreamControl(
+                            STREAM_DROPPED, {"dropped": item["dropped"]}
+                        )
+                        if on_control is not None:
+                            on_control(control)
+                        if is_list:
+                            yield (control.kind, control.data)
+                    if item.get("type") == "workflow_failed":
+                        raise GraphRunError(item)
 
     async def _stream_events(
         self,
@@ -742,12 +774,17 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id: Optional[str],
         workflow_id: Optional[str],
         poll_interval: float,
-    ) -> AsyncIterator[Any]:
+        on_result: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> AsyncGenerator[Any, None]:
         """Yield ``StreamEvent`` chunks, then the terminal event dict.
 
         The terminal event is always the last item: ``workflow_completed`` or
         ``workflow_failed`` (see :func:`normalize_final`), carrying the run's
         ``workflow_id`` and ``thread_id``.
+
+        ``on_result`` is called once, when the run ends, with the result a plain
+        ``POST /agent/run`` would return for it (not the normalized terminal
+        event), so a streamed run publishes exactly what a plain one does.
         """
         thread_id = thread_id or str(uuid.uuid4())
         workflow_id = workflow_id or f"graph-{thread_id}-{uuid.uuid4().hex[:8]}"
@@ -757,6 +794,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
         async def _pump() -> None:
             final: Dict[str, Any] = {}
+            result: Dict[str, Any] = {}
             try:
                 async for event in self.run_async(
                     input,
@@ -765,8 +803,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     workflow_id=workflow_id,
                     poll_interval=poll_interval,
                 ):
+                    fold_run_event(result, event)
                     if event["type"] in _FINAL_EVENTS:
                         final = event
+                if on_result is not None:
+                    on_result(result)
             except Exception as e:
                 logger.exception("Streamed run %s failed", workflow_id)
                 final = {
@@ -809,8 +850,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             # workflow itself keeps running to completion.
             self._stream_registry.close(workflow_id, sink)
             if task is not None and not task.done():
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+                if on_result is not None:
+                    # Someone is waiting for the result on a topic: let the
+                    # pump finish the run and hand it over, with no consumer.
+                    self._detached_pumps.add(task)
+                    task.add_done_callback(self._detached_pumps.discard)
+                else:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
 
     def _serialize_input(self, input: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize input values for storage."""
@@ -883,6 +930,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self,
         request: dict,  # type: ignore[type-arg]
         session_id: str,
+        on_result: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> AsyncIterator[Tuple[str, Any]]:
         """Run the graph and yield its stream as ``(event_name, data)`` pairs.
 
@@ -897,19 +945,23 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 request.get("stream_mode") or ["messages", "updates", "custom"]
             )
             graph_input = self._request_to_input(request, streaming=True)
-            async for item in self._stream_events(
-                graph_input,
-                config=None,
-                thread_id=thread_id,
-                workflow_id=None,
-                poll_interval=0.5,
-            ):
-                if isinstance(item, StreamEvent):
-                    if item.mode not in CONTROL_MODES and item.mode not in modes:
-                        continue
-                    yield item.mode, to_wire(item.mode, item.data)
-                else:
-                    yield item["type"], item
+            async with aclosing(
+                self._stream_events(
+                    graph_input,
+                    config=None,
+                    thread_id=thread_id,
+                    workflow_id=None,
+                    poll_interval=0.5,
+                    on_result=on_result,
+                )
+            ) as events:
+                async for item in events:
+                    if isinstance(item, StreamEvent):
+                        if item.mode not in CONTROL_MODES and item.mode not in modes:
+                            continue
+                        yield item.mode, to_wire(item.mode, item.data)
+                    else:
+                        yield item["type"], item
         except Exception as e:
             logger.exception("Streaming run failed")
             failed = {

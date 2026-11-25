@@ -39,7 +39,7 @@ UPDATES = "updates"
 
 @dataclass(frozen=True)
 class StreamEvent:
-    """One chunk, wrapped with enough identity to order and de-duplicate it."""
+    """One chunk, wrapped with enough identity to order it and tell attempts apart."""
 
     workflow_id: str
     step: int
@@ -88,7 +88,6 @@ class InProcessSink:
         self._owner: Dict[Tuple[int, str], str] = {}
         self._finished: Dict[Tuple[int, str], str] = {}
         self._retired: set = set()
-        self._last_seq: Dict[Tuple[str, int], int] = {}
         self._closed = False
         self._dropped = 0
 
@@ -101,10 +100,6 @@ class InProcessSink:
                 return
             if (key, event.attempt_id) in self._retired:
                 return
-            seq_key = (event.attempt_id, event.step)
-            if event.seq <= self._last_seq.get(seq_key, -1):
-                return
-            self._last_seq[seq_key] = event.seq
             owner = self._owner.get(key)
             if owner is not None and owner != event.attempt_id:
                 self._retired.add((key, owner))
