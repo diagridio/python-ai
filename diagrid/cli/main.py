@@ -12,6 +12,7 @@ from typing import Any
 
 import click
 
+from diagrid.cli import telemetry_notice
 from diagrid.cli.commands.chaos import chaos
 from diagrid.cli.commands.deploy import deploy
 from diagrid.cli.commands.init import init
@@ -48,10 +49,16 @@ def _is_completion_request(prog_name: str | None, complete_var: str | None) -> b
 
 
 def _report_cli_usage() -> None:
-    """Report one anonymous usage event to Reo. Never raises, never prints."""
+    """Report one anonymous usage event to Reo. Never raises.
+
+    The first run that is about to send prints a one-time notice to stderr
+    first; nothing else is ever printed.
+    """
     if analytics is None:
         return
     try:
+        if analytics.REO_SINK.configured() and analytics.reo_allowed():
+            telemetry_notice.show_notice_once()
         analytics.report_usage_blocking("diagrid-cli", sinks=(analytics.REO_SINK,))
     except Exception:
         logging.getLogger(__name__).debug("cli usage report failed", exc_info=True)

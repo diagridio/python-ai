@@ -68,6 +68,8 @@ Every agent runner reports one event when it is constructed, once per package pe
 
 `diagridpy`, the console script for `diagrid-cli`, reports to Reo only. It sends one event per invocation, including `--help` and `--version`. The send blocks the command for at most about one second in total, a hard cap that includes DNS resolution. A send still running at the cap is abandoned. Shell completion requests are not reported.
 
+The first time `diagridpy` is about to report, it prints a short notice to stderr that names the opt-out variables, and records that it did in `~/.diagrid/telemetry-notice-shown` (or under `$DIAGRID_HOME` when set). Delete that file to see the notice again. Nothing is printed when reporting is skipped.
+
 **What is sent:** the package name and version, the `diagrid-core` version, operating system, architecture, Python version, and, for agent runners, the agent framework and the installed version of its library. Nothing else: no prompts, application data, configuration, app IDs, hostnames, or file paths.
 
 | | Scarf | Reo |
