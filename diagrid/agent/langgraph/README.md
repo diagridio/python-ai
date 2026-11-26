@@ -121,6 +121,7 @@ from diagrid.agent.langgraph import (
     StreamControl,  # what `on_control` receives
     StreamSinkRegistry,  # the type of the `stream_registry` argument
 )
+from langgraph.types import Command  # resumes a run paused by interrupt()
 ```
 
 `astream` yields what `CompiledStateGraph.astream` yields, while each node runs
@@ -222,7 +223,8 @@ no-cache` and `X-Accel-Buffering: no` so an nginx or ingress in front does not
 buffer the tokens. The
 chunks are serialized with `langchain_core.load.dumpd`, so
 `langchain_core.load.load` restores the messages in them. The stream ends with
-`workflow_completed` or `workflow_failed`; both carry `workflow_id` and
+`workflow_completed` or `workflow_failed` (or `workflow_interrupted`, see
+[Interrupts](#interrupts)); both carry `workflow_id` and
 `thread_id`, a failure carries the error, and `dropped` is set when chunks were
 dropped. The run's result is also published to `publish_topic`; it is exactly what
 a non-streaming call returns and publishes for the same run, so a run that ends
@@ -250,8 +252,89 @@ they are left alone.
 `status` is the workflow's runtime status, and once the run has completed the
 body also has the `output` and `steps` a plain `POST /agent/run` returns for
 it, `run_status` (`completed`, `error` or `max_steps_reached`) and `error`
-when there is one. A workflow that failed carries its `error`. An unknown id is
-a `404`.
+when there is one. A workflow that failed carries its `error`; a run paused by
+`interrupt()` has `interrupted: true` and its `interrupts` (see
+[Interrupts](#interrupts)). An unknown id is a `404`.
+
+Every event carries an SSE `id`. With the state-store transport (see
+[Streaming across replicas](#streaming-across-replicas)) the id is a cursor
+into the run's event log that any replica can resume from: `v1.start` on
+`workflow_started`, `v1.end` on the final event, and in between the position
+after that chunk (a control event repeats the id of the chunk before it). With
+the in-process transport the events are numbered from 1 on each connection.
+
+#### Reconnecting
+
+A client that lost its stream (a network drop, a proxy timeout, the serving
+process restarting) reconnects with `GET /agent/run/{workflow_id}/stream`,
+sending the last id it received as the `Last-Event-ID` header (a browser
+`EventSource` does this by itself) or, when it cannot set headers, as the
+`last_event_id` query parameter. Any replica answers it. The response is the
+same SSE stream from that point on: `workflow_started`, then the chunks the
+client has not seen, then the live ones, then the final event with the run's
+result. Nothing is repeated and nothing is skipped. Without an id, or with one
+that does not parse, the whole run is replayed; with `v1.end` only the final
+event is sent. A run that already ended is replayed the same way, for as long
+as its log is kept (an hour by default). `stream_mode` (repeat the parameter,
+or separate modes with commas) picks the chunks as on `POST`; an unsupported
+one is a `422`, and an unknown run a `404`. If a node was retried after the
+client saw part of its output, the stream sends `node_reset` for it before the
+new attempt's chunks. If the log has expired, the stream sends
+`stream_purged` and then the final event.
+
+On the in-process transport nothing can be replayed: the endpoint answers with
+`workflow_started`, then `stream_unavailable` with reason
+`transport_not_replayable` (reconnecting needs a state store), then waits for
+the run and sends the final event with its result.
+
+In Python, `runner.astream_resume(workflow_id, last_event_id=None,
+stream_mode=...)` does the same and yields what `astream` yields.
+
+#### Streaming across replicas
+
+How chunks get from a node's activity to the stream is the runner's stream
+transport (`DaprWorkflowGraphRunner(stream_transport=...)`). You normally do
+not pick one:
+
+- **`StateLogTransport` (the default whenever the app has a state store).**
+  Every activity writes its chunks to an event log in a Dapr state store, in
+  small batches (every 100 ms, every 64 chunks, and when the node ends), and
+  the replica that serves a stream reads them back. So a stream carries every
+  node's chunks whichever replica ran it, a client can reconnect to any
+  replica, and a slow client lags instead of losing chunks. The runner uses
+  the app's `agent-memory` state store if it has one, else the state store the
+  workflows themselves use; every workflow app has that one, so on Catalyst
+  there is nothing to add: no component, no variable, no argument. Keys look
+  like `lgstream:<workflow id>:<step>:<task>:...` with `:` between path-escaped
+  parts, batches expire after an hour and their index after a day. Chunks
+  arrive about 150 to 250 ms later than in process, in small bursts. A failed
+  write is retried with the next batch and never fails a node; if a node's
+  chunks still never reach the log, the stream ends with `stream_unavailable`
+  whose `reason` is `write_failed`. A store that cannot be read ends the
+  stream with `workflow_failed` (`error_type` `StreamReadError`), never with an
+  empty stream. `StateLogStreamConfig` sets the store, key prefix, TTLs, batch
+  sizes and read interval:
+
+  ```python
+  from diagrid.agent.core.workflow.stream_log import (
+      StateLogStreamConfig,
+      StateLogTransport,
+  )
+
+  runner = DaprWorkflowGraphRunner(
+      graph=compiled,
+      name="my-graph",
+      stream_transport=StateLogTransport(
+          StateLogStreamConfig(store_name="statestore", event_ttl_s=600)
+      ),
+  )
+  ```
+
+- **`InProcessTransport` (no state store, or a `stream_registry` given).**
+  Chunks go straight from the activity to the stream through a queue in the
+  process. Only the nodes that run in the process serving the stream are
+  streamed (a single replica), nothing can be replayed, and a stream cannot be
+  resumed after a drop or a restart.
 
 #### Behind a proxy
 
@@ -266,28 +349,53 @@ expect events to arrive one by one as the nodes produce them, comment lines
 after `workflow_completed` or `workflow_failed`. If tokens arrive all at once
 at the end of the run, something in front of the app is buffering.
 
+### Interrupts
+
+A node can pause the run with LangGraph's `interrupt(value)`, as in a graph
+with a checkpointer: the workflow is the checkpoint, so no checkpointer is
+needed for this.
+
+- The stream sends LangGraph's `updates` chunk `{"__interrupt__": [...]}` (each
+  interrupt's `value` and `id`; `Interrupt` objects in `astream`) and ends with
+  the event `workflow_interrupted` (`workflow_id`, `thread_id`, `interrupts`).
+  `invoke` returns `{"__interrupt__": [Interrupt(...)]}`.
+- The workflow waits durably for the answer: in its history, not in process
+  memory, so the app may restart or scale meanwhile. The other nodes of the
+  step keep their results. `GET /agent/run/{workflow_id}` shows
+  `interrupted: true` and the `interrupts` while it waits.
+- Resume it with `POST /agent/run/{workflow_id}/resume` and the body
+  `{"resume": <value>}` (add `"stream": true`, and `stream_mode` if you like,
+  for SSE; without it the response is the run's result, as a plain `POST`
+  returns it). In Python: `runner.astream(Command(resume=value),
+  workflow_id=...)`. The interrupted node runs again in the same run, on the
+  same thread, and `interrupt()` returns the value; a dict keyed by interrupt
+  ids answers several interrupts one by one. The stream of a resume carries
+  what happens after it (starting with `node_reset` for the node that runs
+  again) and ends with the final event, or with `workflow_interrupted` when a
+  node asks again. A body without `resume` is a `422`, an unknown run a `404`,
+  and a run that is not waiting a `409`.
+
 ### Limits
 
-- **Single replica.** Chunks travel from the activity to the HTTP connection
-  through an in-process queue. If an activity runs in another process (several
-  replicas of the app, or after a restart) its chunks are not delivered: the
-  activity logs a warning once per run and the stream sends `stream_unavailable`
-  before it ends. The run and its result are not affected. Delivery across
-  replicas is not implemented yet.
-- **A dropped connection cannot be resumed.** If the connection drops (a
-  network failure, a proxy timeout, the app's process restarting), the events
-  sent while the client was away are lost and the stream cannot be reopened.
-  The run is not affected: Dapr keeps running it, on this process or after a
-  restart. The client polls `GET /agent/run/{workflow_id}`, with the id from
-  `workflow_started`, until the run is finished, and reads the result from
-  that response.
+- **Single replica without a state store.** On the in-process transport chunks
+  travel from the activity to the HTTP connection through a queue in the
+  process. If an activity runs in another process (several replicas of the
+  app, or after a restart) its chunks are not delivered: the activity logs a
+  warning once per run and the stream sends `stream_unavailable` before it
+  ends. The run and its result are not affected. Give the app a state store to
+  stream across replicas and to reconnect (see
+  [Streaming across replicas](#streaming-across-replicas)).
+- **A replay shows a node's last attempt.** When a node was retried, a client
+  that was connected saw the first attempt's chunks and then `node_reset`; a
+  replay from the start (or a reconnect from before the retry) has the attempt
+  that finished only.
 - **Node code must not count attempts in process memory.** A retried node may
   run in another process, so a counter kept in a module or a closure does not
   see the earlier attempt. Keep such state in the graph's state or a store.
 - **A disconnect does not cancel the run.** The stream closes but the Dapr
   workflow runs to completion; `terminate_workflow` stops it, and the ids in
-  `workflow_started` let a client that lost its connection `GET
-  /agent/run/{workflow_id}` or terminate the run. When `publish_topic` is set,
+  `workflow_started` let a client that lost its connection reconnect to its
+  stream, `GET /agent/run/{workflow_id}` or terminate the run. When `publish_topic` is set,
   the server keeps following the run after the client left and publishes its
   result when it ends.
 

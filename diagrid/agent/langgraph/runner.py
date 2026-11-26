@@ -1262,9 +1262,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         ``POST /agent/run`` with ``"stream": true`` answers as server-sent events
         (``workflow_started``, the chunks ``stream_mode`` picks, then
         ``workflow_completed`` or ``workflow_failed``); the streaming README
-        has the details. Streaming works only on a single replica. A client that
-        disconnects ends the stream, not the workflow, and with ``publish_topic``
-        set the result is still published when the run ends.
+        has the details. With a state store the stream carries every node
+        whichever replica ran it, and ``GET /agent/run/{workflow_id}/stream``
+        reconnects to it (``Last-Event-ID``); without one, streaming works on a
+        single replica only. ``POST /agent/run/{workflow_id}/resume`` resumes a
+        run paused by ``interrupt()``. A client that disconnects ends the
+        stream, not the workflow, and with ``publish_topic`` set the result is
+        still published when the run ends.
 
         ``input_mapper`` maps the request dict to the graph's input.
         """

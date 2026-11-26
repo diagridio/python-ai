@@ -624,9 +624,9 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         else) as server-sent events. The
         keys ``stream`` and ``stream_mode`` are reserved on such a request. The
         last event is ``workflow_completed`` or ``workflow_failed``; its data is
-        also what gets published to ``publish_topic``. Streaming works while the
-        node activities run in the serving process (single replica; see the
-        runner's README). A client that disconnects ends the stream but not the
+        also what gets published to ``publish_topic``. Which replicas a stream
+        reaches depends on the runner's stream transport (see the runner's
+        README). A client that disconnects ends the stream but not the
         workflow, which keeps running; with ``publish_topic`` set its result is
         still published when the run ends.
 
