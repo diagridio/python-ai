@@ -296,11 +296,16 @@ class LogFollower:
         return await asyncio.to_thread(self._status) or {}
 
     def _behind_window(self, status: Dict[str, Any]) -> bool:
-        """Whether the status no longer lists steps this reader still needs."""
+        """Whether the status no longer lists steps this reader still needs.
+
+        The reader must know the step just below the window: one that knows
+        only older steps would learn the later ones first, and a cursor it
+        hands out then would skip the gap.
+        """
         first = int(status.get(STATUS_EXECUTED_FROM) or 0)
         if not first or self._cursor.skips_step(first - 1):
             return False
-        return not any(step < first for step, _ in self._units)
+        return max((step for step, _ in self._units), default=-1) < first - 1
 
     def _learn(self, units: List[Unit]) -> None:
         for unit in units:
