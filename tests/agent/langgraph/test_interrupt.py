@@ -163,6 +163,10 @@ class TestInterruptOverHttp(_RunnerTestCase):
         self.assertEqual(
             http.post(f"/agent/run/{wf}/resume", json={"value": 1}).status_code, 422
         )
+        # as in Python, where Command(resume=None) is no resume
+        refused = http.post(f"/agent/run/{wf}/resume", json={"resume": None})
+        self.assertEqual(refused.status_code, 422)
+        self.assertNotIn(wf, runner._workflow_client.done)
         self.assertEqual(
             http.post("/agent/run/nope/resume", json={"resume": 1}).status_code, 404
         )
@@ -198,6 +202,28 @@ class TestInterruptInPython(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
         runner = log_runner(_approval_graph(), "py-bad")
         with self.assertRaises(ValueError):
             await _collect(runner.astream(Command(resume="go")))
+
+    async def test_a_command_that_also_updates_the_state_is_refused(self):
+        runner = log_runner(_approval_graph(), "py-upd")
+        await _collect(runner.astream(INPUT, workflow_id="wf-upd", poll_interval=0.01))
+        with self.assertRaises(ValueError) as caught:
+            await _collect(
+                runner.astream(
+                    Command(resume="go", update={"answer": "x"}),
+                    workflow_id="wf-upd",
+                    poll_interval=0.01,
+                )
+            )
+        self.assertIn("update", str(caught.exception))
+        with self.assertRaises(ValueError):
+            runner.invoke(
+                Command(resume="go", update={"answer": "x"}),
+                workflow_id="wf-upd",
+                poll_interval=0.01,
+                timeout=1,
+            )
+        # still waiting: the refused commands raised no resume
+        self.assertNotIn("wf-upd", runner._workflow_client.done)
 
 
 class TestInvoke(_RunnerTestCase):

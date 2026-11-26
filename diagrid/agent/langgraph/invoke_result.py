@@ -130,15 +130,40 @@ def _wait_taken(
         time.sleep(min(poll_interval, 0.05))
 
 
+def command_resume(command: Any, workflow_id: Optional[str], call: str) -> Any:
+    """The resume value of a ``Command`` given as ``call``'s input.
+
+    Raises ``ValueError`` for a ``Command`` that is not a resume (or sets more
+    than ``resume``, which would be lost) or comes without the run's
+    ``workflow_id``.
+    """
+    if getattr(command, "resume", None) is None or not workflow_id:
+        raise ValueError(
+            f"{call}(Command(resume=...)) resumes a run paused by interrupt(): "
+            "pass the run's workflow_id (other Commands are not supported as input)"
+        )
+    extra = [
+        name
+        for name in ("update", "goto", "graph")
+        if getattr(command, name, None) not in (None, ())
+    ]
+    if extra:
+        raise ValueError(
+            f"{call}(Command(resume=..., {extra[0]}=...)): a resume cannot also "
+            f"set {' or '.join(extra)}; send Command(resume=...) only"
+        )
+    return command.resume
+
+
 def invoke_resume(
     runner: Any,
     command: Any,
-    workflow_id: Optional[str],
+    run_id: Optional[str],
     *,
     poll_interval: float,
     timeout: Optional[float],
 ) -> Any:
-    """Resume the run ``workflow_id`` with ``command.resume`` and wait for it.
+    """Resume the run ``run_id`` with ``command.resume`` and wait for it.
 
     Raises ``ValueError`` for a ``Command`` that is not a resume, without the
     run's ``workflow_id``, or for a run that is not waiting for a resume, and
@@ -146,11 +171,8 @@ def invoke_resume(
     """
     from .reconnect import _thread_of
 
-    if getattr(command, "resume", None) is None or not workflow_id:
-        raise ValueError(
-            "invoke(Command(resume=...)) resumes a run paused by interrupt(): "
-            "pass the run's workflow_id (other Commands are not supported as input)"
-        )
+    resume = command_resume(command, run_id, "invoke")
+    workflow_id = str(run_id)
     client = runner._workflow_client
     state = client.get_workflow_state(instance_id=workflow_id)
     if state is None:
@@ -158,7 +180,7 @@ def invoke_resume(
     pending = pending_interrupt(parse_status(state.serialized_custom_status))
     if state.runtime_status != WorkflowStatus.RUNNING or pending is None:
         raise ValueError(f"Workflow {workflow_id!r} is not waiting for a resume")
-    error = partial_map_error(pending["interrupts"], command.resume)
+    error = partial_map_error(pending["interrupts"], resume)
     if error is not None:
         raise ValueError(error)
     seq = int(pending.get("seq") or 0)
@@ -166,7 +188,7 @@ def invoke_resume(
     client.raise_workflow_event(
         instance_id=workflow_id,
         event_name=RESUME_EVENT,
-        data={"seq": seq, "resume": command.resume, "id": resume_id},
+        data={"seq": seq, "resume": resume, "id": resume_id},
     )
     _wait_taken(client, workflow_id, seq, resume_id, poll_interval)
     return wait_invoke_result(

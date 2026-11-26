@@ -213,9 +213,11 @@ def add_resume_route(app: Any, runner: Any) -> None:
             body = await request.json()
         except ValueError:
             raise HTTPException(status_code=422, detail="the body must be JSON")
-        if not isinstance(body, dict) or "resume" not in body:
+        if not isinstance(body, dict) or body.get("resume") is None:
+            # null is no resume, as Command(resume=None) is none in Python
             raise HTTPException(
-                status_code=422, detail='the body must be {"resume": <value>}'
+                status_code=422,
+                detail='the body must be {"resume": <value>}, the value not null',
             )
         try:
             modes, _ = normalize_stream_mode(

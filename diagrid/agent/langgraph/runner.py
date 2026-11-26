@@ -59,7 +59,7 @@ from .langsmith_trace import ParentTrace, start_parent_trace
 from .run_status import completed_result, interrupted_result
 from .activity_stream import parse_status
 from .interrupts import interrupted_event
-from .invoke_result import invoke_resume, wait_invoke_result
+from .invoke_result import command_resume, invoke_resume, wait_invoke_result
 from .reconnect import add_reconnect_route, resume_events
 from .resume_run import add_resume_route, resume_run_events
 from .stream_drain import SseEncoder, drain, parse_output
@@ -1034,15 +1034,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             raise NotImplementedError("subgraphs=True is not supported yet")
         modes, is_list = normalize_stream_mode(stream_mode)
         if isinstance(input, Command):
-            if input.resume is None or not workflow_id:
-                raise ValueError(
-                    "astream(Command(resume=...)) resumes a run paused by "
-                    "interrupt(): pass the run's workflow_id"
-                )
             events: Any = resume_run_events(
                 self,
-                workflow_id,
-                input.resume,
+                str(workflow_id),
+                command_resume(input, workflow_id, "astream"),
                 poll_interval=poll_interval,
                 keepalive=False,
             )

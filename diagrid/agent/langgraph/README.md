@@ -339,8 +339,8 @@ not pick one:
   parts, batches expire after an hour and their index after a day. Chunks
   arrive about 150 to 250 ms later than in process, in small bursts. A failed
   write is retried with the next batch, and a node's last write (its `updates`
-  chunk), which no batch follows, is retried up to four times with backoff; a
-  write never fails a node. If a node's
+  chunk), which no batch follows, is tried up to four times in all, with
+  backoff; a write never fails a node. If a node's
   chunks still never reach the log, the stream ends with `stream_unavailable`
   whose `reason` is `write_failed`. A store that cannot be read ends the
   stream with `workflow_failed` (`error_type` `StreamReadError`), never with an
@@ -418,8 +418,11 @@ needed for this.
   ids answers several interrupts one by one. The stream of a resume carries
   what happens after it (starting with `node_reset` for the node that runs
   again) and ends with the final event, or with `workflow_interrupted` when a
-  node asks again. A body without `resume` is a `422`, an unknown run a `404`,
-  and a run that is not waiting a `409`. When two requests resume the same
+  node asks again. A body without `resume`, or with `"resume": null` (as
+  `Command(resume=None)` is no resume in Python), is a `422`, an unknown run
+  a `404`, and a run that is not waiting a `409`. In Python a `Command` that
+  sets `update` or `goto` besides `resume` is a `ValueError`: the run would
+  not apply them. When two requests resume the same
   interrupt at once, the run takes one and the other gets a `409` (before any
   event, when it asked for a stream).
 - `interrupt()` pauses the run also when it is called in a subgraph the node
