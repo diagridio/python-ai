@@ -297,6 +297,11 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             runtime_conf=discovered.runtime_conf or None,
         )
 
+        #: The state store workflows keep their state in, if discovery saw one.
+        self._workflow_store_name: Optional[str] = getattr(
+            discovered, "workflow_store_name", None
+        )
+
         # Auto-configure state store from discovery if not explicitly provided
         if self._state_store is None and discovered.memory_store_name:
             from diagrid.agent.core.state import DaprStateStore

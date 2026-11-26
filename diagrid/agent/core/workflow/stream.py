@@ -4,10 +4,11 @@
 """Transport for streaming chunks out of workflow activities.
 
 Activities run in worker threads; the HTTP connection that wants the chunks
-lives on the asyncio loop of the API. A :class:`StreamSink` sits between them.
-Only the in-process sink exists today (single replica: activity and API share
-a process). :func:`get_stream_sink` is the seam for a later cross-replica sink:
-it is the only place an activity looks a sink up.
+lives on the asyncio loop of the API. A :class:`StreamTransport` hands each
+activity execution a writer, and the serving side reads what it wrote. Two
+exist: :class:`InProcessTransport` (activity and API share a process, a single
+replica) and the state-store event log (``stream_log.StateLogTransport``),
+which any replica can read and resume from.
 """
 
 import asyncio
@@ -34,10 +35,12 @@ VALUES = "values"
 NODE_RESET = "node_reset"
 STREAM_UNAVAILABLE = "stream_unavailable"
 STREAM_DROPPED = "stream_dropped"
+#: The run's event log outlived its TTL: what is left cannot be replayed.
+STREAM_PURGED = "stream_purged"
 #: First event of a stream: the ids a client needs to find or stop its run.
 WORKFLOW_STARTED = "workflow_started"
 # Events about the stream itself, delivered whatever stream modes were asked for.
-CONTROL_MODES = (WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE)
+CONTROL_MODES = (WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE, STREAM_PURGED)
 #: Internal marker: a conditional edge's function finished streaming here. It
 #: tells the stream which routers ran in this process and never reaches a client.
 BRANCH_DONE = "branch_done"
@@ -85,6 +88,9 @@ class StreamEvent:
     #: The conditional edge whose function sent the chunk, so a retry of that
     #: function is not taken for a retry of the node itself.
     branch: Optional[str] = None
+    #: The SSE id of the stream after this event, when the transport can
+    #: resume from it (the state-store log); ``None`` otherwise.
+    event_id: Optional[str] = None
 
     def reset_data(self) -> Dict[str, Any]:
         """The ``node_reset`` payload for a retry of this event's task.
@@ -135,8 +141,17 @@ class InProcessSink:
     is kept and any later one dropped, with no ``node_reset``.
     """
 
-    def __init__(self, workflow_id: str, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self,
+        workflow_id: str,
+        loop: asyncio.AbstractEventLoop,
+        *,
+        bounded: bool = True,
+    ) -> None:
         self.workflow_id = workflow_id
+        #: ``False`` when the writer waits for room itself (a log reader), so
+        #: nothing is ever dropped here.
+        self._bounded = bounded
         self._loop = loop
         self._queue: "asyncio.Queue[Any]" = asyncio.Queue()
         self._lock = threading.Lock()
@@ -192,6 +207,19 @@ class InProcessSink:
     async def get(self) -> Any:
         return await self._queue.get()
 
+    def backlog(self) -> int:
+        """Items waiting for the consumer."""
+        return self._queue.qsize()
+
+    def prime(self, step: int, node: str, attempt_id: str) -> None:
+        """Take ``attempt_id`` as the owner of ``(step, node)`` without a chunk.
+
+        A stream resumed from a cursor uses it for an attempt the client saw
+        part of: the next attempt's first chunk then sends ``node_reset``.
+        """
+        with self._lock:
+            self._owner.setdefault((step, node), attempt_id)
+
     def _enqueue(self, item: Any) -> None:
         def _put() -> None:
             # Runs on the loop thread in the order chunks were handed over, so
@@ -204,8 +232,10 @@ class InProcessSink:
                         self.workflow_id,
                         self._dropped,
                     )
-            elif self._queue.qsize() >= MAX_BUFFERED_EVENTS and not _is_kept_when_full(
-                item
+            elif (
+                self._bounded
+                and self._queue.qsize() >= MAX_BUFFERED_EVENTS
+                and not _is_kept_when_full(item)
             ):
                 if not self._dropped:
                     logger.warning(
@@ -316,6 +346,93 @@ class StreamSinkRegistry:
 default_registry = StreamSinkRegistry()
 
 
+class ActivityStreamWriter(Protocol):
+    """What one activity execution writes its chunks to."""
+
+    def put(self, event: StreamEvent) -> None: ...
+
+    def finish(self, *, done: bool) -> None:
+        """The execution ended; ``done`` when it is the task's last attempt."""
+        ...
+
+
+class StreamTransport(Protocol):
+    """How a streamed run's chunks get from its activities to its stream."""
+
+    #: Whether a stream can be read again from a cursor (reconnect, replay).
+    replayable: bool
+
+    def writer(
+        self, workflow_id: str, step: int, unit: str, *, streamed: bool
+    ) -> Optional[ActivityStreamWriter]:
+        """The writer for one execution of ``unit`` at ``step``, or ``None``."""
+        ...
+
+
+class _SinkWriter:
+    """An in-process sink as an activity's writer: nothing to flush."""
+
+    def __init__(self, sink: InProcessSink) -> None:
+        self._sink = sink
+
+    def put(self, event: StreamEvent) -> None:
+        self._sink.put(event)
+
+    def finish(self, *, done: bool) -> None:
+        return None
+
+
+class InProcessTransport:
+    """Chunks go to the sink a stream opened in this process, if there is one.
+
+    Works while the activities run in the process that serves the stream (a
+    single replica); a chunk written anywhere else is lost, and the stream
+    says so with ``stream_unavailable``. Nothing can be replayed.
+    """
+
+    replayable = False
+
+    def __init__(self, registry: Optional[StreamSinkRegistry] = None) -> None:
+        self.registry = registry if registry is not None else default_registry
+
+    def writer(
+        self, workflow_id: str, step: int, unit: str, *, streamed: bool
+    ) -> Optional[ActivityStreamWriter]:
+        sink = self.registry.get(workflow_id)
+        if sink is None:
+            if streamed:
+                _warn_sink_missing(self.registry, workflow_id, unit)
+            return None
+        return _SinkWriter(sink)
+
+
+def _warn_sink_missing(
+    registry: StreamSinkRegistry, workflow_id: str, unit: str
+) -> None:
+    """Say, once per run, that a streamed run's chunks are going nowhere."""
+    if not registry.first_report(workflow_id):
+        return
+    if registry.was_closed(workflow_id):
+        # This process had the stream and it ended (the client left, or the
+        # run's stream was closed): not a second replica, nothing to act on.
+        logger.debug(
+            "Run %s: its stream was closed in this process (its consumer left "
+            "or the stream ended); chunks of %r are not delivered",
+            workflow_id,
+            unit,
+        )
+        return
+    logger.warning(
+        "Run %s is streamed but this process has no stream sink for it, so the "
+        "chunks of %r (and of any node that runs here) are not delivered. "
+        "The activity is running in another process (several replicas) or the "
+        "run outlived the process that streams it. Give the app a state store "
+        "to stream across replicas; the run itself is unaffected.",
+        workflow_id,
+        unit,
+    )
+
+
 def get_stream_sink(
     workflow_id: Optional[str], *, registry: Optional[StreamSinkRegistry] = None
 ) -> Optional[StreamSink]:
@@ -327,7 +444,7 @@ def get_stream_sink(
     return (registry or default_registry).get(workflow_id)
 
 
-def format_sse(event: str, data: Any, event_id: Optional[int] = None) -> str:
+def format_sse(event: str, data: Any, event_id: Optional[Any] = None) -> str:
     """Frame one Server-Sent Event (a keepalive is a comment, not an event)."""
     if event == KEEPALIVE_EVENT:
         return ": keepalive\n\n"
@@ -341,18 +458,22 @@ def format_sse(event: str, data: Any, event_id: Optional[int] = None) -> str:
     return "\n".join(lines) + "\n\n"
 
 
-async def frame_sse(events: AsyncIterator[Tuple[str, Any]]) -> AsyncIterator[str]:
-    """Frame ``(event, data)`` pairs as SSE.
+async def frame_sse(events: AsyncIterator[Tuple[Any, ...]]) -> AsyncIterator[str]:
+    """Frame ``(event, data)`` or ``(event, data, id)`` items as SSE.
 
     The only place a streamed run is turned into SSE frames, so a runner just
-    yields pairs. Publishing is the runner's job (``on_result``).
+    yields pairs. An item that brings its own id (a cursor a client can resume
+    from) is sent with it; otherwise events are numbered on this connection.
+    Publishing is the runner's job (``on_result``).
     """
-    event_id = 0
+    counter = 0
     try:
-        async for name, data in events:
+        async for item in events:
+            name, data = item[0], item[1]
+            given = item[2] if len(item) > 2 else None
             if name != KEEPALIVE_EVENT:
-                event_id += 1
-            yield format_sse(name, data, event_id)
+                counter += 1
+            yield format_sse(name, data, given if given is not None else counter)
     finally:
         # A client that disconnects ends the generator at a yield; close the
         # runner's stream now rather than when it is collected.

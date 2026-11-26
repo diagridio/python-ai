@@ -484,7 +484,7 @@ class TestRunnerOwnsRegistry(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(await other_sink.get(), StreamClosed)
 
 
-LOGGER = "diagrid.agent.langgraph.workflow"
+LOGGER = "diagrid.agent.core.workflow.stream"
 
 
 class TestRegistryRemembersClosedRuns(unittest.IsolatedAsyncioTestCase):

@@ -205,12 +205,15 @@ def closing_events(
     *,
     output_channels: Optional[List[str]] = None,
     values_sent: Optional[Set[int]] = None,
+    unavailable_reason: Optional[str] = None,
+    purged: bool = False,
 ) -> List[Any]:
     """The items a stream ends with.
 
     The ``values`` chunk of the state the run ended with (when the run got to
-    the end of a step and no activity sent it), ``stream_unavailable`` if due,
-    then the final event.
+    the end of a step and no activity sent it), ``stream_unavailable`` if due
+    (with ``unavailable_reason``; never after ``stream_purged``, which already
+    said the rest is gone), then the final event.
     """
     out: List[Any] = []
     if output_channels:
@@ -219,7 +222,13 @@ def closing_events(
         )
         if last is not None:
             out.append(last)
-    unavailable = stream_unavailable_event(closed.final, seen_nodes, workflow_id)
+    unavailable = (
+        None
+        if purged
+        else stream_unavailable_event(
+            closed.final, seen_nodes, workflow_id, unavailable_reason
+        )
+    )
     if unavailable is not None:
         logger.warning(
             "Streamed run %s: no chunks for steps %s (nodes %s)",

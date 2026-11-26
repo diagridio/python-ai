@@ -26,6 +26,7 @@ from diagrid.agent.langgraph.models import GraphWorkflowInput
 
 from ..core.log_store_fake import FakeLogStore
 from .streaming_helpers import _IdCtx
+from .test_runner import _clear_dapr_registration
 
 FAST = StateLogStreamConfig(flush_interval_s=0.01, flush_max_chunks=4, read_poll_s=0.01)
 
@@ -152,8 +153,12 @@ def log_runner(
 
 def replica(compiled: Any, name: str, store: FakeLogStore) -> DaprWorkflowGraphRunner:
     """Another process of the same app: same graph, same store, its own activities."""
-    return DaprWorkflowGraphRunner(
+    other = DaprWorkflowGraphRunner(
         graph=compiled,
         name=name,
         stream_transport=StateLogTransport(FAST, store=store),
     )
+    # one process registers a workflow function once; the next runner (this
+    # replica's server) registers it again
+    _clear_dapr_registration()
+    return other

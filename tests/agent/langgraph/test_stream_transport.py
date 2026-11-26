@@ -29,9 +29,9 @@ from diagrid.agent.langgraph import DaprWorkflowGraphRunner
 
 from ..core.log_store_fake import FakeLogStore
 from .golden_harness import MODES, _both, _golden_graph, _Golden, _wire
-from .log_helpers import FAST, log_runner, replica
+from .log_helpers import log_runner, replica
 from .streaming_helpers import INPUT, _collect, serve_app
-from .test_runner import _RunnerTestCase
+from .test_runner import _clear_dapr_registration, _RunnerTestCase
 
 
 def _discovered(**kw: Any) -> Any:
@@ -96,6 +96,7 @@ class TestStateLogStream(_Golden):
 
     async def test_the_same_chunks_as_the_in_process_transport(self):
         _, in_process = await _both(_golden_graph(), "golden-ip", INPUT)
+        _clear_dapr_registration()
         runner = log_runner(_golden_graph(), "golden-log")
         ours = await self._astream(runner, "wf-golden-log")
         self.assertEqual(_wire(ours), _wire(in_process))

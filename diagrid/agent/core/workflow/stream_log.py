@@ -457,3 +457,65 @@ class LogReader:
             done=done,
             reset=reset,
         )
+
+
+def _json_data(event: StreamEvent) -> Any:
+    return event.data
+
+
+def _as_is(mode: str, data: Any) -> Any:
+    return data
+
+
+class StateLogTransport:
+    """Streams through the state-store event log: any replica reads, any time.
+
+    ``store`` defaults to the Dapr state store ``config.store_name``. ``encode``
+    turns a chunk's data into JSON for the log and ``decode`` turns it back; a
+    runner binds its own with :meth:`with_codec`.
+    """
+
+    replayable = True
+
+    def __init__(
+        self,
+        config: Optional[StateLogStreamConfig] = None,
+        *,
+        store: Optional[LogStore] = None,
+        encode: Callable[[StreamEvent], Any] = _json_data,
+        decode: Callable[[str, Any], Any] = _as_is,
+    ) -> None:
+        self.config = config or StateLogStreamConfig()
+        if store is None:
+            if not self.config.store_name:
+                raise ValueError("StateLogTransport needs a store or a store_name")
+            store = DaprLogStore(self.config.store_name)
+        self.store = store
+        self.encode = encode
+        self.decode = decode
+
+    @property
+    def store_name(self) -> Optional[str]:
+        return self.config.store_name or getattr(self.store, "store_name", None)
+
+    def with_codec(
+        self,
+        encode: Callable[[StreamEvent], Any],
+        decode: Callable[[str, Any], Any],
+    ) -> "StateLogTransport":
+        """A transport on the same store that encodes and decodes this way."""
+        return StateLogTransport(
+            self.config, store=self.store, encode=encode, decode=decode
+        )
+
+    def writer(
+        self, workflow_id: str, step: int, unit: str, *, streamed: bool
+    ) -> Optional[LogWriter]:
+        if not streamed:
+            return None
+        return LogWriter(
+            self.store, self.config, workflow_id, step, unit, encode=self.encode
+        )
+
+    def reader(self, workflow_id: str) -> LogReader:
+        return LogReader(self.store, self.config, workflow_id)

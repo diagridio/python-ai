@@ -25,6 +25,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    Union,
 )
 
 from dapr.ext.workflow import (
@@ -58,11 +59,16 @@ except ImportError:  # pragma: no cover - constant moved/renamed across versions
     CONF = "configurable"
 
 from diagrid.agent.core.workflow.stream import (
+    StreamSink,
     StreamSinkRegistry,
-    default_registry,
-    get_stream_sink,
+    StreamTransport,
 )
 
+from .activity_stream import (
+    activity_writer,
+    publish_run_status,
+    transport_of,
+)
 from .node_routes import route_in_node
 from .stream_values import state_values
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
@@ -182,19 +188,21 @@ def node_activity_name(node_name: str) -> str:
 
 def make_node_activity(
     node_name: str,
-    stream_registry: Optional[StreamSinkRegistry] = None,
+    stream: Union[StreamTransport, StreamSinkRegistry, None] = None,
 ) -> Callable[[WorkflowActivityContext, Dict[str, Any]], Dict[str, Any]]:
     """Build the activity registered for one node.
 
     Dapr registers each function object once, so every node gets its own
-    wrapper around ``execute_node_activity``. ``stream_registry`` is where the
-    wrapper looks for the sink of a streamed run (default: the module's).
+    wrapper around ``execute_node_activity``. ``stream`` is the runner's
+    stream transport (a registry stands for the in-process one over it;
+    default: the module's registry).
     """
+    transport = transport_of(stream)
 
     def node_activity(
         ctx: WorkflowActivityContext, input_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        return execute_node_activity(ctx, input_data, stream_registry=stream_registry)
+        return execute_node_activity(ctx, input_data, stream_transport=transport)
 
     return node_activity
 
@@ -684,6 +692,7 @@ def _run_step(
     run.executed.append(
         [*nodes, *[send_key(t["node"], slot) for slot, t in enumerate(sends)]]
     )
+    publish_run_status(run)
     outputs = yield from _run_nodes(run, nodes, sends, step)
     failed = next((o for o in outputs if o.error), None)
     if failed:
@@ -981,6 +990,7 @@ def _follow_edge(
         output_channels=run.output_channels if source_node == START else None,
     )
     run.branches.append([step, _branch_key(cond_input)])
+    publish_run_status(run)
     # By name, so the runner's own activity (the one that knows its stream
     # registry) runs, not the module-level function.
     cond_result = yield run.ctx.call_activity(
@@ -1067,8 +1077,8 @@ class _NodeCall:
     streamer: Optional[NodeStreamer]
     #: Side-channel writes queued via CONFIG_KEY_SEND while the node runs.
     pending_sends: list
-    #: Where the node's routers look for the run's stream sink.
-    registry: Optional[StreamSinkRegistry] = None
+    #: Where the node's routers write their chunks, in a streamed run.
+    sink: Optional[StreamSink] = None
 
     @property
     def node_name(self) -> str:
@@ -1377,42 +1387,15 @@ def _parent_command_result(exc: ParentCommand, node_name: str) -> Command:
     raise exc
 
 
-def _warn_stream_sink_missing(
-    registry: StreamSinkRegistry, workflow_id: str, node_name: str
-) -> None:
-    """Say, once per run, that a streamed run's chunks are going nowhere."""
-    if not registry.first_report(workflow_id):
-        return
-    if registry.was_closed(workflow_id):
-        # This process had the stream and it ended (the client left, or the
-        # run's stream was closed): not a second replica, nothing to act on.
-        logger.debug(
-            "Run %s: its stream was closed in this process (its consumer left "
-            "or the stream ended); chunks of node %r are not delivered",
-            workflow_id,
-            node_name,
-        )
-        return
-    logger.warning(
-        "Run %s is streamed but this process has no stream sink for it, so the "
-        "chunks of node %r (and of any node that runs here) are not delivered. "
-        "The activity is running in another process (several replicas) or the "
-        "run outlived the process that streams it. Cross-replica streaming is "
-        "not supported yet; the run itself is unaffected.",
-        workflow_id,
-        node_name,
-    )
-
-
 def _make_streamer(
     ctx: WorkflowActivityContext,
     node_input: ExecuteNodeInput,
     config: Dict[str, Any],
-    registry: Optional[StreamSinkRegistry],
+    sink: Optional[StreamSink],
 ) -> Optional[NodeStreamer]:
     """The streamer for this attempt of the node, or ``None`` when not streaming.
 
-    Chunks are streamed only when a consumer registered a sink for this run;
+    Chunks are streamed only when the transport gave this activity a writer;
     otherwise nothing about the node's execution changes.
     """
     send = node_input.send
@@ -1422,7 +1405,7 @@ def _make_streamer(
         node_input.step or 0,
         node_input.thread_id,
         config,
-        registry,
+        sink,
         # a Send is a task of its own, keyed apart from the node's other runs
         sink_node=None
         if send is None
@@ -1437,22 +1420,17 @@ def _streamer_for(
     step: int,
     thread_id: Optional[str],
     config: Dict[str, Any],
-    registry: Optional[StreamSinkRegistry],
+    sink: Optional[StreamSink],
     sink_node: Optional[str] = None,
     send_index: Optional[int] = None,
     branch: Optional[str] = None,
 ) -> Optional[NodeStreamer]:
-    """A streamer that emits as ``node_name`` at ``step``, or ``None``.
+    """A streamer that emits as ``node_name`` at ``step`` into ``sink``, or ``None``.
 
     ``send_index`` is set for a node that runs for a ``Send``: LangGraph tags
     such a task with the ``__pregel_push`` trigger and path.
     """
-    sink = get_stream_sink(getattr(ctx, "workflow_id", None), registry=registry)
     if sink is None:
-        if config.get(STREAM_RUN_KEY):
-            _warn_stream_sink_missing(
-                registry or default_registry, str(ctx.workflow_id), node_name
-            )
         return None
     return NodeStreamer(
         sink,
@@ -1528,7 +1506,7 @@ def _node_output(call: _NodeCall, result: Any) -> Dict[str, Any]:
     routed: Dict[str, Any] = {}
     if call.node_input.routes:
         routed = route_in_node(
-            call.ctx, call.node_input, writes, call.registry
+            call.ctx, call.node_input, writes, call.sink
         ).output_fields()
     if call.streamer:
         call.streamer.updates(raw_writes)
@@ -1548,13 +1526,15 @@ def execute_node_activity(
     input_data: Dict[str, Any],
     *,
     stream_registry: Optional[StreamSinkRegistry] = None,
+    stream_transport: Optional[StreamTransport] = None,
 ) -> Dict[str, Any]:
     """Run one node, or one ``Send`` task, and return the writes it produced.
 
     The node runs under a config that carries a ``Runtime`` and, when someone
-    streams the run, the handler that sends its chunks to the stream sink
-    (looked up in ``stream_registry``, default the module's). An exception
-    propagates, so Dapr retries the activity.
+    streams the run, the handler that sends its chunks to the writer
+    ``stream_transport`` gives this execution (``stream_registry`` stands for
+    the in-process transport over it; default the module's registry). An
+    exception propagates, so Dapr retries the activity.
     """
     node_input = ExecuteNodeInput.from_dict(input_data)
     node_name = node_input.node_name
@@ -1569,28 +1549,42 @@ def execute_node_activity(
         ).to_dict()
 
     config = node_input.config or {}
-    call = _NodeCall(
-        ctx=ctx,
-        node_input=node_input,
-        node_func=node_func,
-        state=_node_state(node_input),
-        config=config,
-        streamer=_make_streamer(ctx, node_input, config, stream_registry),
-        pending_sends=[],
-        registry=stream_registry,
-    )
-
-    _send_values(
+    send = node_input.send
+    writer = activity_writer(
         ctx,
-        node_input.channel_state,
-        node_input.output_channels,
+        transport_of(stream_transport or stream_registry),
         node_input.step or 0,
-        stream_registry,
+        node_name if send is None else send_key(node_name, send["slot"]),
+        config,
     )
-    # Under the LangSmith parent trace the runner opened, so LLM calls nest in it.
-    result = _run_with_stream_hooks(call, _langsmith_parent(config))
-
-    return _node_output(call, result)
+    done = False
+    try:
+        call = _NodeCall(
+            ctx=ctx,
+            node_input=node_input,
+            node_func=node_func,
+            state=_node_state(node_input),
+            config=config,
+            streamer=_make_streamer(ctx, node_input, config, writer),
+            pending_sends=[],
+            sink=writer,
+        )
+        _send_values(
+            ctx,
+            node_input.channel_state,
+            node_input.output_channels,
+            node_input.step or 0,
+            writer,
+        )
+        # Under the LangSmith parent trace the runner opened, so LLM calls nest in it.
+        result = _run_with_stream_hooks(call, _langsmith_parent(config))
+        output = _node_output(call, result)
+        done = True
+        return output
+    finally:
+        if writer is not None:
+            # synchronous: the unit's log is complete before the activity returns
+            writer.finish(done=done)
 
 
 def _send_values(
@@ -1598,7 +1592,7 @@ def _send_values(
     channel_state: ChannelState,
     output_channels: Optional[List[str]],
     step: int,
-    registry: Optional[StreamSinkRegistry],
+    sink: Optional[StreamSink],
 ) -> None:
     """Offer the state this activity was handed as the ``values`` chunk of ``step``.
 
@@ -1606,12 +1600,9 @@ def _send_values(
     every activity of ``step`` is handed: the sink keeps the first offer, which
     comes before any of the step's own chunks.
     """
-    if not output_channels:
+    if not output_channels or sink is None:
         return
     workflow_id = getattr(ctx, "workflow_id", None)
-    sink = get_stream_sink(workflow_id, registry=registry)
-    if sink is None:
-        return
     event = state_values(str(workflow_id), step, channel_state, output_channels)
     if event is not None:
         sink.put(event)
@@ -1631,16 +1622,15 @@ def _node_state(node_input: ExecuteNodeInput) -> Any:
 
 
 def make_condition_activity(
-    stream_registry: Optional[StreamSinkRegistry] = None,
+    stream: Union[StreamTransport, StreamSinkRegistry, None] = None,
 ) -> Callable[[WorkflowActivityContext, Dict[str, Any]], Dict[str, Any]]:
     """Build the conditional-edge activity of a runner (see ``make_node_activity``)."""
+    transport = transport_of(stream)
 
     def evaluate_condition(
         ctx: WorkflowActivityContext, input_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        return evaluate_condition_activity(
-            ctx, input_data, stream_registry=stream_registry
-        )
+        return evaluate_condition_activity(ctx, input_data, stream_transport=transport)
 
     return evaluate_condition
 
@@ -1660,7 +1650,7 @@ def _call_condition(
     cond_input: EvaluateConditionInput,
     cond_func: Callable,
     state: Any,
-    registry: Optional[StreamSinkRegistry],
+    sink: Optional[StreamSink],
 ) -> Any:
     """Call a conditional edge's function and return what it routed to.
 
@@ -1677,7 +1667,7 @@ def _call_condition(
             cond_input.step,
             cond_input.thread_id,
             config,
-            registry,
+            sink,
             # one key per edge and task: a node's several conditional edges, and
             # its several Send tasks, are several tasks, and a key they share
             # would read as one retrying
@@ -1717,27 +1707,42 @@ def evaluate_condition_activity(
     input_data: Dict[str, Any],
     *,
     stream_registry: Optional[StreamSinkRegistry] = None,
+    stream_transport: Optional[StreamTransport] = None,
 ) -> Dict[str, Any]:
     """Evaluate a conditional edge; the output names where it routes, or the error.
 
-    ``stream_registry`` is where the sink of a streamed run is (default: the
-    module's).
+    A streamed run's chunks go to the writer ``stream_transport`` gives this
+    execution (see :func:`execute_node_activity`).
     """
     cond_input = EvaluateConditionInput.from_dict(input_data)
-    _send_values(
+    writer = activity_writer(
         ctx,
-        cond_input.channel_state,
-        cond_input.output_channels,
-        0,
-        stream_registry,
+        transport_of(stream_transport or stream_registry),
+        cond_input.step if cond_input.step is not None else 0,
+        _branch_key(cond_input),
+        cond_input.config or {},
     )
-    return evaluate_condition(ctx, cond_input, stream_registry).to_dict()
+    done = False
+    try:
+        _send_values(
+            ctx,
+            cond_input.channel_state,
+            cond_input.output_channels,
+            0,
+            writer,
+        )
+        output = evaluate_condition(ctx, cond_input, writer).to_dict()
+        done = True
+        return output
+    finally:
+        if writer is not None:
+            writer.finish(done=done)
 
 
 def evaluate_condition(
     ctx: WorkflowActivityContext,
     cond_input: EvaluateConditionInput,
-    stream_registry: Optional[StreamSinkRegistry],
+    sink: Optional[StreamSink],
 ) -> EvaluateConditionOutput:
     """Call a conditional edge's function and say where it routes, or the error.
 
@@ -1763,7 +1768,7 @@ def evaluate_condition(
     # add_conditional_edges path is one) traces itself, so without a parent
     # each evaluation lands in LangSmith as a separate top-level trace.
     with _under_parent_trace(cond_input.config):
-        result = _call_condition(ctx, cond_input, cond_func, state, stream_registry)
+        result = _call_condition(ctx, cond_input, cond_func, state, sink)
     return _route(cond_input, result)
 
 

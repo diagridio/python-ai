@@ -67,6 +67,7 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
         goal: Optional[str] = None,
         registry_config: Optional[Any] = None,
         stream_registry: Optional["StreamSinkRegistry"] = None,
+        stream_transport: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -82,6 +83,9 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
             stream_registry: Where streamed runs register their sinks (see
                 :class:`DaprWorkflowGraphRunner`); each runner owns one by
                 default.
+            stream_transport: How streamed runs get their chunks (see
+                :class:`DaprWorkflowGraphRunner`); by default the state-store
+                event log when the app has a state store.
         """
         super().__init__(
             graph=agent,
@@ -93,6 +97,7 @@ class DaprWorkflowDeepAgentRunner(DaprWorkflowGraphRunner):
             goal=goal,
             registry_config=registry_config,
             stream_registry=stream_registry,
+            stream_transport=stream_transport,
         )
 
     @property

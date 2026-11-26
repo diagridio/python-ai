@@ -21,6 +21,7 @@ from diagrid.agent.core.workflow import stream
 from diagrid.agent.core.workflow.stream import (
     CONTROL_MODES,
     NODE_RESET,
+    STREAM_PURGED,
     STREAM_UNAVAILABLE,
     UPDATES,
     WORKFLOW_STARTED,
@@ -157,7 +158,7 @@ class TestFailureDetailSurvives(_ScriptedCase):
         self.assertEqual(data["error"]["error_type"], "ConnectionError")
 
 
-LOGGER = "diagrid.agent.langgraph.workflow"
+LOGGER = "diagrid.agent.core.workflow.stream"
 
 
 class TestActivityWithoutASink(unittest.TestCase):
@@ -457,7 +458,8 @@ def _control_event(mode: str, node: str) -> StreamEvent:
 class TestControlModes(unittest.IsolatedAsyncioTestCase):
     def test_control_modes_are_the_events_about_the_stream_itself(self):
         self.assertEqual(
-            set(CONTROL_MODES), {WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE}
+            set(CONTROL_MODES),
+            {WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE, STREAM_PURGED},
         )
 
     def test_updates_are_a_stream_mode_not_a_control_event(self):
@@ -472,6 +474,7 @@ class TestControlModes(unittest.IsolatedAsyncioTestCase):
             WORKFLOW_STARTED,
             NODE_RESET,
             STREAM_UNAVAILABLE,
+            STREAM_PURGED,
         ]
         sink = InProcessSink("wf", asyncio.get_running_loop())
         with mock.patch.object(stream, "MAX_BUFFERED_EVENTS", 1):

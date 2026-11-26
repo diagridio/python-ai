@@ -36,11 +36,13 @@ from diagrid.agent.core.workflow.stream import (
     WORKFLOW_STARTED,
     UPDATES,
     VALUES,
-    InProcessSink,
+    InProcessTransport,
     StreamClosed,
     StreamEvent,
     StreamSinkRegistry,
+    StreamTransport,
 )
+from diagrid.agent.core.workflow.stream_cursor import END_ID, START_ID
 from .models import (
     ChannelState,
     EdgeConfig,
@@ -76,6 +78,11 @@ from .stream_events import (
 )
 from .langsmith_trace import ParentTrace, start_parent_trace
 from .run_status import completed_result
+from .stream_source import (
+    custom_status,
+    open_source,
+    resolve_transport,
+)
 from .thread_state import (
     LOAD_THREAD_ACTIVITY,
     SAVE_THREAD_ACTIVITY,
@@ -259,6 +266,31 @@ async def _wait_scheduled(scheduled: asyncio.Event, pump: "asyncio.Task[None]") 
     return scheduled.is_set()
 
 
+class _SseIds:
+    """The SSE id of each event of a stream read from the log: its cursor.
+
+    A stream on the in-process transport has no cursor: its events are
+    numbered per connection (``()`` leaves that to the framer).
+    """
+
+    def __init__(self, replayable: bool) -> None:
+        self._replayable = replayable
+        self._last = START_ID
+
+    def of(self, item: StreamEvent) -> Tuple[str, ...]:
+        if not self._replayable:
+            return ()
+        if item.mode == WORKFLOW_STARTED:
+            return (START_ID,)
+        if item.event_id:
+            self._last = item.event_id
+        # a control event reuses the cursor of the chunk it follows
+        return (self._last,)
+
+    def final(self) -> Tuple[str, ...]:
+        return (END_ID,) if self._replayable else ()
+
+
 @dataclass(frozen=True)
 class _RunSetup:
     """What a run needs once its identity, config and input are settled."""
@@ -340,6 +372,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         registry_config: Optional[Any] = None,
         stream_registry: Optional[StreamSinkRegistry] = None,
         checkpointer: Optional[Any] = None,
+        stream_transport: Optional[StreamTransport] = None,
     ):
         """Initialize the runner.
 
@@ -357,9 +390,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 goal when ``goal`` is not given. Without it, the registry looks
                 for a module-level ``SystemMessage`` in node globals.
             registry_config: Optional registry configuration for metadata extraction
-            stream_registry: Where streamed runs register their sinks. The
-                activities this runner registers write into it. Defaults to a
-                new registry owned by this runner.
+            stream_registry: Where streamed runs register their sinks when
+                they stream in process. Giving one picks the in-process
+                transport. Defaults to a new registry owned by this runner.
             checkpointer: Where a thread's state is kept between runs, so a run
                 with the same ``thread_id`` continues the conversation: a
                 ``DaprMemoryCheckpointer`` or a LangGraph checkpoint saver with
@@ -367,6 +400,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 compiled with, else the app's Dapr state store
                 (``agent-memory``) when it has one; with none, ``thread_id`` is
                 only a label.
+            stream_transport: How a streamed run's chunks get from its
+                activities to its stream. By default the state-store event
+                log (``StateLogTransport``) when the app has a state store,
+                which any replica reads and a client can reconnect to, and
+                the in-process transport otherwise.
         """
         self._graph = graph
         self._max_steps = DEFAULT_MAX_STEPS if max_steps is None else max_steps
@@ -374,6 +412,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self._stream_registry = (
             stream_registry if stream_registry is not None else StreamSinkRegistry()
         )
+        self._given_transport = stream_transport
+        self._given_registry = stream_registry
         # Pumps of streams whose consumer left while a result is still to be
         # published; held here so they are not collected before they finish.
         self._detached_pumps: Set["asyncio.Task[None]"] = set()
@@ -401,6 +441,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self._thread_store = resolve_thread_store(
             checkpointer, self._graph, self._state_store
         )
+        self._stream_transport = resolve_transport(
+            self._given_transport,
+            self._given_registry,
+            getattr(self._state_store, "store_name", None) or self._workflow_store_name,
+            self._stream_registry,
+        )
+        if isinstance(self._stream_transport, InProcessTransport):
+            self._stream_registry = self._stream_transport.registry
 
         self._register_agent_metadata(
             agent=self._graph,
@@ -425,11 +473,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             agent_workflow, name=self.workflow_name
         )
         self._workflow_runtime.register_activity(
-            make_node_activity(GENERIC_NODE_ACTIVITY, self._stream_registry),
+            make_node_activity(GENERIC_NODE_ACTIVITY, self._stream_transport),
             name=GENERIC_NODE_ACTIVITY,
         )
         self._workflow_runtime.register_activity(
-            make_condition_activity(self._stream_registry),
+            make_condition_activity(self._stream_transport),
             name="evaluate_condition_activity",
         )
         # Registered even without a store, so an instance that scheduled them
@@ -448,7 +496,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             if name == GENERIC_NODE_ACTIVITY:
                 continue
             self._workflow_runtime.register_activity(
-                make_node_activity(node.name, self._stream_registry), name=name
+                make_node_activity(node.name, self._stream_transport), name=name
             )
 
     def _extract_graph_config(self) -> GraphConfig:
@@ -1046,15 +1094,21 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             config, self._run_config(config), thread_id, workflow_id
         )
         run_config = {**run_config, STREAM_RUN_KEY: True}
-        sink = self._stream_registry.open(workflow_id)
-        task: Optional["asyncio.Task[None]"] = None
         seen_nodes: Set[Tuple[int, str]] = set()
+        source = open_source(
+            self._stream_transport,
+            workflow_id,
+            status=lambda: custom_status(self._workflow_client, workflow_id),
+            seen=seen_nodes,
+        )
+        sink = source.sink
+        task: Optional["asyncio.Task[None]"] = None
         values_sent: Set[int] = set()
         scheduled = asyncio.Event()
         try:
             task = asyncio.create_task(
                 self._pump_run(
-                    sink,
+                    source.on_final,
                     input,
                     thread_id,
                     workflow_id,
@@ -1074,13 +1128,15 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 if isinstance(item, StreamClosed):
                     # Unregister before handing over the result: chunks a late
                     # activity attempt writes from here on are dropped.
-                    self._stream_registry.close(workflow_id, sink)
+                    await source.close()
                     for event in closing_events(
                         item,
                         seen_nodes,
                         workflow_id,
                         output_channels=self._graph_config.output_channels,
                         values_sent=values_sent,
+                        unavailable_reason=source.unavailable_reason,
+                        purged=source.purged,
                     ):
                         yield event
                     return
@@ -1097,12 +1153,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             # Also reached when the consumer goes away (client disconnect,
             # abandoned generator). That stops this stream only: the Dapr
             # workflow itself keeps running to completion.
-            self._stream_registry.close(workflow_id, sink)
+            await source.close()
             await self._release_pump(task, detach=on_result is not None)
 
     async def _pump_run(
         self,
-        sink: InProcessSink,
+        on_final: Callable[[Dict[str, Any]], None],
         input: Any,
         thread_id: str,
         workflow_id: str,
@@ -1111,7 +1167,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         on_result: Optional[Callable[[Dict[str, Any]], None]],
         scheduled: Optional[asyncio.Event] = None,
     ) -> None:
-        """Follow the run, publish its result, and close ``sink`` with the final.
+        """Follow the run, publish its result, and hand ``on_final`` the final.
 
         ``scheduled`` is set once ``run_async`` reports the workflow started,
         which it does after ``schedule_new_workflow`` returned.
@@ -1138,7 +1194,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             final = stream_failure_event(
                 e, "PollError", bool(result.get("instance_id"))
             )
-        sink.close(normalize_final(final, workflow_id=workflow_id, thread_id=thread_id))
+        on_final(normalize_final(final, workflow_id=workflow_id, thread_id=thread_id))
 
     async def _release_pump(
         self, task: Optional["asyncio.Task[None]"], *, detach: bool
@@ -1272,6 +1328,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         thread_id = request.get("thread_id") or request.get("session_id") or session_id
         workflow_id: Optional[str] = None
         unencodable = 0
+        ids = _SseIds(self._stream_transport.replayable)
         try:
             modes, _ = normalize_stream_mode(
                 request.get("stream_mode") or self._DEFAULT_STREAM_MODES
@@ -1292,15 +1349,17 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     if item is KEEPALIVE:
                         yield KEEPALIVE_EVENT, None
                     elif isinstance(item, StreamEvent):
+                        event_id = ids.of(item)
                         if item.mode not in CONTROL_MODES and item.mode not in modes:
                             continue
                         if item.mode == WORKFLOW_STARTED:
                             workflow_id = item.data["workflow_id"]
                         wire, ok = encode_chunk(item)
                         unencodable += 0 if ok else 1
-                        yield item.mode, wire
+                        yield (item.mode, wire, *event_id)
                     else:
-                        yield item["type"], count_unencodable(item, unencodable)
+                        final = count_unencodable(item, unencodable)
+                        yield (item["type"], final, *ids.final())
         except Exception as e:
             logger.exception("Streaming run failed")
             failed = stream_failure_event(e, "StreamError", bool(workflow_id))
@@ -1336,6 +1395,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
+
+    @property
+    def stream_transport(self) -> StreamTransport:
+        """How this runner's streamed runs get their chunks (see ``__init__``)."""
+        return self._stream_transport
 
     @property
     def stream_registry(self) -> StreamSinkRegistry:

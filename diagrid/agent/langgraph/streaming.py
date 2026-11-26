@@ -78,7 +78,8 @@ class StreamControl:
     """An event about the stream itself rather than a chunk of the run.
 
     ``kind`` is ``workflow_started`` (``{"workflow_id", "thread_id"}``, always
-    first), ``node_reset``, ``stream_unavailable`` or ``stream_dropped``;
+    first), ``node_reset``, ``stream_unavailable``, ``stream_purged`` or
+    ``stream_dropped``;
     ``data`` is its payload. ``astream`` hands these to its ``on_control``
     callback, and in list mode also yields them as ``(kind, data)``, except
     ``workflow_started``, which is only ever given to ``on_control`` and never
@@ -569,7 +570,10 @@ def _branches(final: Dict[str, Any]) -> List[Tuple[int, str]]:
 
 
 def stream_unavailable_event(
-    final: Dict[str, Any], seen: Set[Tuple[int, str]], workflow_id: str
+    final: Dict[str, Any],
+    seen: Set[Tuple[int, str]],
+    workflow_id: str,
+    reason: Optional[str] = None,
 ) -> Optional[StreamEvent]:
     """The ``stream_unavailable`` event for a finished run, if it applies.
 
@@ -581,7 +585,8 @@ def stream_unavailable_event(
     activity (``branches``) are judged the same way. A final without
     ``executed`` is judged per step instead. A run
     that failed is just a failure, and one with no step count has nothing to
-    report.
+    report. ``reason`` replaces the default explanation (the state-store log
+    says ``write_failed``).
     """
     steps = final.get("steps")
     if final.get("type") != "workflow_completed" or not isinstance(steps, int):
@@ -614,7 +619,7 @@ def stream_unavailable_event(
         mode=STREAM_UNAVAILABLE,
         data={
             "workflow_id": workflow_id,
-            "reason": UNAVAILABLE_REASON,
+            "reason": reason or UNAVAILABLE_REASON,
             "missing_steps": missing,
             "missing_nodes": missing_nodes,
         },

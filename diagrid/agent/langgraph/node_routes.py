@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from diagrid.agent.core.workflow.stream import StreamSinkRegistry
+from diagrid.agent.core.workflow.stream import StreamSink
 
 from .models import (
     ChannelState,
@@ -87,7 +87,7 @@ def route_in_node(
     ctx: Any,
     node_input: ExecuteNodeInput,
     writes: List[NodeWrite],
-    registry: Optional[StreamSinkRegistry],
+    sink: Optional[StreamSink],
 ) -> RouteOutcome:
     """Evaluate the node's conditional edges on the state with ``writes`` applied.
 
@@ -107,7 +107,7 @@ def route_in_node(
     for route in node_input.routes or []:
         cond_input = _route_input(node_input, route, state)
         try:
-            output = evaluate_condition(ctx, cond_input, registry)
+            output = evaluate_condition(ctx, cond_input, sink)
         except Exception:
             logger.warning(
                 "Router %r of node %r raised inside the node's activity; the "

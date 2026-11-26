@@ -140,7 +140,7 @@ class TestWriterWithoutAStreamer(_RunnerTestCase):
 
         loop.run_until_complete(hold())
         self.addCleanup(default_registry.close, wf)
-        with self.assertLogs("diagrid.agent.langgraph.workflow", level="WARNING"):
+        with self.assertLogs("diagrid.agent.core.workflow.stream", level="WARNING"):
             out = execute_node_activity(_Ctx(wf), payload, stream_registry=registry)
         self.assertIsNone(out.get("error"))
         self.assertTrue(out["writes"])
