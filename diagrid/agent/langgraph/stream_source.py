@@ -76,6 +76,7 @@ def open_source(
     seen: Set[Tuple[int, str]],
     cursor: Optional[StreamCursor] = None,
     from_end: bool = False,
+    replay: bool = False,
 ) -> StreamSource:
     """The source of a stream of ``workflow_id`` on ``transport``.
 
@@ -93,6 +94,7 @@ def open_source(
             decode=transport.decode,
             seen=seen,
             from_end=from_end,
+            replay=replay,
         )
         task = asyncio.create_task(follower.run())
         return StreamSource(sink, follower.finish, follower=follower, task=task)

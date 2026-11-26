@@ -159,6 +159,7 @@ async def resume_events(
         status=lambda: custom_status(client, workflow_id),
         seen=seen,
         cursor=cursor,
+        replay=True,
     )
 
     async def pump() -> None:

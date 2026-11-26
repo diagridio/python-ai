@@ -150,6 +150,7 @@ class LogFollower:
         decode: Callable[[str, Any], Any] = decode_wire,
         seen: Optional[Set[Unit]] = None,
         from_end: bool = False,
+        replay: bool = False,
     ) -> None:
         self._reader = reader
         self._sink = sink
@@ -173,6 +174,9 @@ class LogFollower:
         self.purged = False
         #: Start after what the log holds when the follower starts (a resumed run).
         self._from_end = from_end
+        #: A reconnect: the run may have ended long enough ago that its whole
+        #: log expired (see ``_expired``).
+        self._replay = replay
         #: Set once the follower knows where it starts reading.
         self.ready = asyncio.Event()
         self._final: "asyncio.Future[Dict[str, Any]]" = (
@@ -273,6 +277,31 @@ class LogFollower:
                 self._purge(chunk)
                 continue
             await self._deliver(chunk)
+        if final is not None and self._expired():
+            self._say_purged(min(step for step, _ in self._wanted()))
+
+    def _expired(self) -> bool:
+        """Whether a replayed run's whole log is gone: its heads expired too.
+
+        Heads outlive batches (a day by default), and a run that ended that
+        long ago has none left. A unit missing among others that are there
+        is still a write that failed, and so is a live stream's.
+        """
+        wanted = self._wanted()
+        return (
+            self._replay
+            and not self.purged
+            and bool(wanted)
+            and all(state.attempt is None for state in wanted.values())
+        )
+
+    def _wanted(self) -> Dict[Unit, _UnitState]:
+        """The units this stream reads: those its cursor did not skip whole."""
+        return {
+            unit: state
+            for unit, state in self._units.items()
+            if not self._cursor.skips_step(unit[0])
+        }
 
     async def _run_status(
         self, final: Optional[Dict[str, Any]]
@@ -340,26 +369,29 @@ class LogFollower:
         state.skip = 0
         state.done = chunk.done
         self._seen.add((chunk.step, chunk.unit))
+        self._say_purged(chunk.step)
+
+    def _say_purged(self, step: int) -> None:
+        """Send ``stream_purged`` (once): the log is gone from ``step`` on."""
         if self.purged:
             return
         self.purged = True
         logger.warning(
-            "The stream log of %s is purged (unit %s of step %s): it outlived its "
-            "TTL; streaming what is left",
+            "The stream log of %s is purged from step %s: it outlived its TTL; "
+            "streaming what is left",
             self._workflow_id,
-            chunk.unit,
-            chunk.step,
+            step,
         )
         self._sink.put(
             StreamEvent(
                 workflow_id=self._workflow_id,
-                step=chunk.step,
+                step=step,
                 node="",
                 attempt_id="",
                 seq=0,
                 ns=(),
                 mode=STREAM_PURGED,
-                data={"workflow_id": self._workflow_id, "step": chunk.step + 1},
+                data={"workflow_id": self._workflow_id, "step": step + 1},
                 event_id=self.event_id(),
             )
         )

@@ -308,7 +308,9 @@ client saw part of its output, the stream sends `node_reset` for it before the
 new attempt's chunks. If part of the log has expired, the stream sends
 `stream_purged` once and goes on with what is still there and what comes
 live (a run resumed after waiting on `interrupt()` for longer than the batch
-TTL streams everything after the resume), then the final event.
+TTL streams everything after the resume), then the final event. A run that
+ended more than a day ago has no log left at all: its replay is
+`stream_purged` and the final event.
 
 On the in-process transport nothing can be replayed: the endpoint answers with
 `workflow_started`, then `stream_unavailable` with reason
