@@ -33,6 +33,7 @@ from .streaming import (
 logger = logging.getLogger(__name__)
 
 FINAL_EVENTS = (
+    "workflow_interrupted",
     "workflow_completed",
     "workflow_failed",
     "workflow_terminated",

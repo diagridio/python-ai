@@ -77,13 +77,22 @@ def not_replayable_event(workflow_id: str) -> StreamEvent:
 
 
 async def follow_final(
-    runner: Any, workflow_id: str, thread_id: str, poll_interval: float
+    runner: Any,
+    workflow_id: str,
+    thread_id: str,
+    poll_interval: float,
+    after_seq: int = 0,
 ) -> Dict[str, Any]:
-    """Wait for the run to end; its normalized terminal event (stream-only keys kept)."""
+    """Wait for the run to end (or to pause on an interrupt newer than
+    ``after_seq``); its normalized terminal event (stream-only keys kept)."""
     final: Dict[str, Any] = {}
     try:
         async for event in runner._follow_run(
-            workflow_id, thread_id, poll_interval=poll_interval, streamed=True
+            workflow_id,
+            thread_id,
+            poll_interval=poll_interval,
+            streamed=True,
+            after_seq=after_seq,
         ):
             if event["type"] in FINAL_EVENTS:
                 final = event

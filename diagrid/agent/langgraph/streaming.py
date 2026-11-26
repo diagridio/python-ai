@@ -362,6 +362,30 @@ class NodeStreamer:
         if self._branch:
             self._emit((), BRANCH_DONE, None)
 
+    def interrupted(self, interrupts: List[Dict[str, Any]]) -> None:
+        """Send LangGraph's ``{"__interrupt__": (Interrupt, ...)}`` updates chunk.
+
+        Keyed apart from the node's own updates, so the task's run after the
+        resume is not taken for a late attempt of a finished one.
+        """
+        from .interrupts import INTERRUPT_KEY, as_interrupts
+
+        with self._emit_lock:
+            self._sink.put(
+                StreamEvent(
+                    workflow_id=self._workflow_id,
+                    step=self._step,
+                    node=f"{self._sink_node}:{INTERRUPT_KEY}",
+                    attempt_id=self._attempt_id,
+                    seq=next(self._seq),
+                    ns=(),
+                    mode=UPDATES,
+                    data={INTERRUPT_KEY: as_interrupts(interrupts)},
+                    display_node=self._node,
+                    path=self._path,
+                )
+            )
+
     def updates(self, writes: List[Tuple[str, Any]]) -> None:
         """Emit the node's ``(channel, value)`` writes as ``{node: update}``.
 
@@ -444,6 +468,11 @@ def _plain_data(value: Any) -> Any:
         return value
     if isinstance(value, Serializable):
         return value
+    from langgraph.types import Interrupt
+
+    if isinstance(value, Interrupt):
+        # what a client needs to answer it: the payload and the id to resume by
+        return {"value": _plain_data(value.value), "id": value.id}
     if isinstance(value, (list, tuple)):
         return [_plain_data(v) for v in value]
     if isinstance(value, dict):

@@ -44,7 +44,7 @@ from langchain_core.runnables.config import run_in_executor, set_config_context
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from langgraph.runtime import Runtime
-from langgraph.errors import ParentCommand
+from langgraph.errors import GraphInterrupt, ParentCommand
 from langgraph.types import Command, Overwrite, Send
 
 try:
@@ -68,6 +68,12 @@ from .activity_stream import (
     activity_writer,
     publish_run_status,
     transport_of,
+)
+from .interrupts import (
+    interrupt_config,
+    interrupt_payloads,
+    settle_interrupts,
+    without_resume_writes,
 )
 from .node_routes import route_in_node
 from .stream_values import state_values
@@ -538,6 +544,10 @@ class _Run:
     #: key]``, so a streaming consumer can tell which router's chunks never
     #: arrived.
     branches: List[List[Any]] = field(default_factory=list)
+    #: The interrupt the run waits on (``{"seq", "step", "interrupts"}``).
+    interrupt: Optional[Dict[str, Any]] = None
+    #: How many times the run was interrupted so far.
+    interrupt_seq: int = 0
 
     @property
     def output_channels(self) -> Optional[List[str]]:
@@ -694,6 +704,13 @@ def _run_step(
     )
     publish_run_status(run)
     outputs = yield from _run_nodes(run, nodes, sends, step)
+    outputs = yield from settle_interrupts(
+        run,
+        outputs,
+        step,
+        lambda resumes: _rerun_nodes(run, nodes, sends, step, resumes),
+        publish_run_status,
+    )
     failed = next((o for o in outputs if o.error), None)
     if failed:
         return [], [], f"Node '{failed.node_name}' failed: {failed.error}"
@@ -859,6 +876,44 @@ def _state_for_task(
     return state
 
 
+def _invocations(
+    nodes: List[str], sends: List[Dict[str, Any]]
+) -> List[Tuple[str, Optional[Dict[str, Any]]]]:
+    """A step's tasks in order: its nodes, then its ``Send`` tasks."""
+    return [
+        *[(name, None) for name in nodes],
+        *[(t["node"], {"arg": t["arg"], "slot": slot}) for slot, t in enumerate(sends)],
+    ]
+
+
+def _call_node(
+    run: _Run,
+    node_name: str,
+    send: Optional[Dict[str, Any]],
+    step: int,
+    resume: Optional[List[Any]] = None,
+) -> Any:
+    """Schedule one task of ``step`` as its activity."""
+    node_input = ExecuteNodeInput(
+        node_name=node_name,
+        channel_state=run.channel_state,
+        config=run.config,
+        thread_id=run.thread_id,
+        step=step,
+        send=send,
+        recursion_limit=run.recursion_limit,
+        routes=_node_routes(run, node_name) if run.route_in_node else None,
+        output_channels=run.output_channels,
+        resume=resume,
+    )
+    activity: Any = execute_node_activity
+    if run.node_activities_by_name:
+        activity = node_activity_name(node_name)
+    return run.ctx.call_activity(
+        activity, input=node_input.to_dict(), retry_policy=run.retry_policy
+    )
+
+
 def _run_nodes(
     run: _Run,
     nodes_to_execute: List[str],
@@ -866,36 +921,32 @@ def _run_nodes(
     step: int,
 ) -> Generator[Any, Any, List[ExecuteNodeOutput]]:
     """Run the nodes and ``Send`` tasks of one step in parallel, each as an activity."""
-    node_tasks = []
-    invocations: List[Tuple[str, Optional[Dict[str, Any]]]] = [
-        *[(name, None) for name in nodes_to_execute],
-        *[(t["node"], {"arg": t["arg"], "slot": slot}) for slot, t in enumerate(sends)],
+    node_tasks = [
+        _call_node(run, name, send, step)
+        for name, send in _invocations(nodes_to_execute, sends)
     ]
-    for node_name, send in invocations:
-        node_input = ExecuteNodeInput(
-            node_name=node_name,
-            channel_state=run.channel_state,
-            config=run.config,
-            thread_id=run.thread_id,
-            step=step,
-            send=send,
-            recursion_limit=run.recursion_limit,
-            routes=_node_routes(run, node_name) if run.route_in_node else None,
-            output_channels=run.output_channels,
-        )
-        activity: Any = execute_node_activity
-        if run.node_activities_by_name:
-            activity = node_activity_name(node_name)
-        node_tasks.append(
-            run.ctx.call_activity(
-                activity,
-                input=node_input.to_dict(),
-                retry_policy=run.retry_policy,
-            )
-        )
-
     task_results = yield when_all(node_tasks)
     return [ExecuteNodeOutput.from_dict(result) for result in task_results]
+
+
+def _rerun_nodes(
+    run: _Run,
+    nodes: List[str],
+    sends: List[Dict[str, Any]],
+    step: int,
+    resumes: Dict[int, List[Any]],
+) -> Generator[Any, Any, Dict[int, ExecuteNodeOutput]]:
+    """Run the step's tasks at ``resumes``' positions again, with their resume values."""
+    invocations = _invocations(nodes, sends)
+    positions = sorted(resumes)
+    node_tasks = [
+        _call_node(run, *invocations[i], step, resume=resumes[i]) for i in positions
+    ]
+    task_results = yield when_all(node_tasks)
+    return {
+        i: ExecuteNodeOutput.from_dict(result)
+        for i, result in zip(positions, task_results)
+    }
 
 
 def _node_routes(run: _Run, node_name: str) -> Optional[List[Dict[str, Any]]]:
@@ -1300,7 +1351,25 @@ def _runnable_config(call: _NodeCall) -> Dict[str, Any]:
         config[CONF][CONFIG_KEY_SEND] = call.pending_sends.extend
     except ImportError:
         pass
+    config[CONF].update(_interrupt_conf(call))
     return config
+
+
+def _interrupt_conf(call: _NodeCall) -> Dict[str, Any]:
+    """What ``interrupt()`` reads from the config: the task's scratchpad and name."""
+    node_input = call.node_input
+    send = node_input.send
+    workflow_id = getattr(call.ctx, "workflow_id", "")
+    return interrupt_config(
+        namespace=(
+            f"{call.node_name}:{workflow_id}:{node_input.step or 0}:"
+            f"{'' if send is None else send['slot']}"
+        ),
+        step=node_input.step or 0,
+        stop=node_input.recursion_limit,
+        resume=node_input.resume,
+        send=call.pending_sends.extend,
+    )
 
 
 def _invoke_runnable(runnable: Any, value: Any, config: Dict[str, Any]) -> Any:
@@ -1329,7 +1398,7 @@ def _plain_node_config(call: _NodeCall) -> Dict[str, Any]:
     metadata of a streamed run) is supplied here. Without a streamer the
     runtime carries LangGraph's no-op writer.
     """
-    return _node_config(
+    config = _node_config(
         {CONF: call.config.get(CONF)},
         thread_id=call.node_input.thread_id,
         ctx=call.ctx,
@@ -1337,6 +1406,8 @@ def _plain_node_config(call: _NodeCall) -> Dict[str, Any]:
         streamer=call.streamer,
         identity=_call_identity(call),
     )
+    config[CONF].update(_interrupt_conf(call))
+    return config
 
 
 def _run_node(call: _NodeCall) -> Any:
@@ -1501,7 +1572,10 @@ def _node_output(call: _NodeCall, result: Any) -> Dict[str, Any]:
     sandbox tools), evaluates the node's conditional edges when the workflow
     asked for that, and then streams the node's update, as LangGraph does.
     """
-    raw_writes = [*_result_to_raw_writes(result), *call.pending_sends]
+    raw_writes = [
+        *_result_to_raw_writes(result),
+        *without_resume_writes(call.pending_sends),
+    ]
     writes = _serialize_writes(raw_writes)
     routed: Dict[str, Any] = {}
     if call.node_input.routes:
@@ -1577,7 +1651,16 @@ def execute_node_activity(
             writer,
         )
         # Under the LangSmith parent trace the runner opened, so LLM calls nest in it.
-        result = _run_with_stream_hooks(call, _langsmith_parent(config))
+        try:
+            result = _run_with_stream_hooks(call, _langsmith_parent(config))
+        except GraphInterrupt as paused:
+            # Not a failure: the task waits for a resume and runs again then.
+            interrupts = interrupt_payloads(paused)
+            if call.streamer:
+                call.streamer.interrupted(interrupts)
+            return ExecuteNodeOutput(
+                node_name=node_name, interrupts=interrupts
+            ).to_dict()
         output = _node_output(call, result)
         done = True
         return output

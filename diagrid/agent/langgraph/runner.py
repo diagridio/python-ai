@@ -25,6 +25,7 @@ from typing import (
 
 from dapr.ext.workflow import WorkflowStatus
 from langchain_core.runnables.config import DEFAULT_RECURSION_LIMIT
+from langgraph.types import Command
 
 from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
@@ -60,8 +61,11 @@ from .stream_events import (
     without_executed,
 )
 from .langsmith_trace import ParentTrace, start_parent_trace
-from .run_status import completed_result
+from .run_status import completed_result, interrupted_result
+from .activity_stream import parse_status
+from .interrupts import INTERRUPT_KEY, as_interrupts, interrupted_event
 from .reconnect import add_reconnect_route, resume_events
+from .resume_run import add_resume_route, resume_run_events
 from .stream_drain import SseEncoder, drain, parse_output
 from .stream_source import (
     custom_status,
@@ -834,6 +838,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 if state is None:
                     raise RuntimeError(f"Workflow {workflow_id} state not found")
 
+                paused = interrupted_event(
+                    parse_status(state.serialized_custom_status), workflow_id
+                )
+                if state.runtime_status == WorkflowStatus.RUNNING and paused:
+                    # As LangGraph's invoke: the interrupts, under __interrupt__.
+                    return {INTERRUPT_KEY: list(as_interrupts(paused["interrupts"]))}
+
                 if state.runtime_status == WorkflowStatus.COMPLETED:
                     # Workflow completed normally; workflow.py already closes the trace.
                     trace = None
@@ -943,8 +954,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         *,
         poll_interval: float,
         streamed: bool,
+        after_seq: int = 0,
     ) -> AsyncIterator[Dict[str, Any]]:
-        """Poll a scheduled run; its status changes, then its terminal event."""
+        """Poll a scheduled run; its status changes, then its terminal event.
+
+        A run paused by ``interrupt()`` (on an interrupt newer than
+        ``after_seq``) ends the poll with ``workflow_interrupted``.
+        """
         async for event in self._poll_workflow(
             workflow_id,
             thread_id,
@@ -953,6 +969,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             # A poll that fails is reported as such (PollError) while the
             # run may still finish: ride out a restarting sidecar first.
             retry_failed_polls=True,
+            running_event=lambda state: interrupted_event(
+                parse_status(state.serialized_custom_status), workflow_id, after_seq
+            ),
         ):
             yield event
 
@@ -1036,18 +1055,31 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         if subgraphs:
             raise NotImplementedError("subgraphs=True is not supported yet")
         modes, is_list = normalize_stream_mode(stream_mode)
-        # aclosing: if the caller stops early, close the inner stream now (it
-        # unregisters the sink) instead of whenever the garbage collector runs.
-        async with aclosing(
-            self._stream_events(
+        if isinstance(input, Command):
+            if input.resume is None or not workflow_id:
+                raise ValueError(
+                    "astream(Command(resume=...)) resumes a run paused by "
+                    "interrupt(): pass the run's workflow_id"
+                )
+            events: Any = resume_run_events(
+                self,
+                workflow_id,
+                input.resume,
+                poll_interval=poll_interval,
+                keepalive=False,
+            )
+        else:
+            events = self._stream_events(
                 input,
                 config=config,
                 thread_id=thread_id,
                 workflow_id=workflow_id,
                 poll_interval=poll_interval,
             )
-        ) as events:
-            async for item in events:
+        # aclosing: if the caller stops early, close the inner stream now (it
+        # unregisters the sink) instead of whenever the garbage collector runs.
+        async with aclosing(events) as stream:
+            async for item in stream:
                 outs, error = route_astream_item(item, modes, is_list, on_control)
                 for out in outs:
                     yield out
@@ -1182,7 +1214,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
     def _status_result(self, state: Any) -> Dict[str, Any]:
         """A completed run's result, or a failed workflow's error."""
-        return completed_result(state) or super()._status_result(state)
+        return (
+            completed_result(state)
+            or interrupted_result(state)
+            or super()._status_result(state)
+        )
 
     def _is_root_state(self) -> bool:
         """Whether the graph's whole state is one ``__root__`` channel."""
@@ -1327,8 +1363,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             )
 
     def _add_routes(self, app: Any) -> None:
-        """``GET /agent/run/{workflow_id}/stream``: reconnect to a run's stream."""
+        """Reconnect to a run's stream; resume a run paused by ``interrupt()``."""
         add_reconnect_route(app, self)
+        add_resume_route(app, self)
 
     def _request_to_input(
         self,

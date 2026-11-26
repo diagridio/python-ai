@@ -254,6 +254,8 @@ class ExecuteNodeInput:
         output_channels: The graph's output channels, set only in a streamed
             run: the activity sends the state it is handed (the state after the
             previous step) as a ``values`` chunk when the step wrote one of them.
+        resume: The values this task's ``interrupt()`` calls return, in order,
+            when it runs again after the run was resumed; ``None`` otherwise.
     """
 
     node_name: str
@@ -265,6 +267,7 @@ class ExecuteNodeInput:
     recursion_limit: Optional[int] = None
     routes: Optional[List[Dict[str, Any]]] = None
     output_channels: Optional[List[str]] = None
+    resume: Optional[List[Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -283,6 +286,8 @@ class ExecuteNodeInput:
             data["routes"] = self.routes
         if self.output_channels is not None:
             data["output_channels"] = self.output_channels
+        if self.resume is not None:
+            data["resume"] = self.resume
         return data
 
     @classmethod
@@ -297,6 +302,7 @@ class ExecuteNodeInput:
             recursion_limit=data.get("recursion_limit"),
             routes=data.get("routes"),
             output_channels=data.get("output_channels"),
+            resume=data.get("resume"),
         )
 
 
@@ -330,6 +336,9 @@ class ExecuteNodeOutput:
     next_nodes: List[str] = field(default_factory=list)
     route_sends: List[Dict[str, Any]] = field(default_factory=list)
     route_error: Optional[str] = None
+    #: The task called ``interrupt()``: ``[{"id", "value"}]``; it wrote nothing
+    #: and runs again when the run is resumed.
+    interrupts: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -348,6 +357,8 @@ class ExecuteNodeOutput:
                 data["route_sends"] = list(self.route_sends)
             if self.route_error:
                 data["route_error"] = self.route_error
+        if self.interrupts:
+            data["interrupts"] = list(self.interrupts)
         return data
 
     @classmethod
@@ -362,6 +373,7 @@ class ExecuteNodeOutput:
             next_nodes=list(data.get("next_nodes") or []),
             route_sends=list(data.get("route_sends") or []),
             route_error=data.get("route_error"),
+            interrupts=data.get("interrupts"),
         )
 
 

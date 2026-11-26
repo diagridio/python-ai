@@ -197,7 +197,7 @@ def fold_run_event(result: dict, event: dict) -> bool:  # type: ignore[type-arg]
         result["instance_id"] = event["workflow_id"]
         if event.get("thread_id"):
             result["thread_id"] = event["thread_id"]
-    elif kind in ("workflow_completed", "workflow_failed"):
+    elif kind in ("workflow_completed", "workflow_failed", "workflow_interrupted"):
         result.update(event)
         return True
     return False
@@ -452,6 +452,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         poll_interval: float = 0.5,
         parse_output: Any = None,
         retry_failed_polls: bool = False,
+        running_event: Optional[Callable[[Any], Optional[dict[str, Any]]]] = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Poll a running workflow and yield status/completion events.
 
@@ -459,7 +460,9 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         dict (the raw output is returned without one). ``retry_failed_polls``
         rides out a failed poll that looks transient (see ``POLL_MAX_ERRORS``)
         instead of raising at once; a runner opts in when it can tell its
-        caller that the run's fate is unknown.
+        caller that the run's fate is unknown. ``running_event`` may end the
+        poll of a run that is still running (one paused for input): the event
+        it returns for a state is yielded last.
         """
         assert self._workflow_client is not None
         previous_status = None
@@ -485,6 +488,8 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 previous_status = state.runtime_status
 
             terminal = _terminal_event(state, workflow_id, parse_output)
+            if terminal is None and running_event is not None:
+                terminal = running_event(state)
             if terminal is not None:
                 yield terminal
                 break

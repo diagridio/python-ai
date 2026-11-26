@@ -33,3 +33,26 @@ def completed_result(state: Any) -> Dict[str, Any]:
         "run_status": output.status,
         **({"error": output.error} if output.error else {}),
     }
+
+
+def interrupted_result(state: Any) -> Dict[str, Any]:
+    """A run paused by ``interrupt()``: ``interrupted`` and its interrupts.
+
+    ``status`` stays the workflow's (running: it waits durably for a resume).
+    Empty for a run that is not paused.
+    """
+    from .activity_stream import parse_status
+    from .interrupts import interrupted_event
+
+    if state.runtime_status != WorkflowStatus.RUNNING:
+        return {}
+    paused = interrupted_event(
+        parse_status(getattr(state, "serialized_custom_status", None)), ""
+    )
+    if paused is None:
+        return {}
+    return {
+        "interrupted": True,
+        "interrupt_seq": paused["interrupt_seq"],
+        "interrupts": paused["interrupts"],
+    }

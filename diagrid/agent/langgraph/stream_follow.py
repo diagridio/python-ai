@@ -36,6 +36,7 @@ from diagrid.agent.core.workflow.stream_log import (
 )
 
 from .activity_stream import STATUS_BRANCHES, STATUS_EXECUTED
+from .interrupts import INTERRUPT_KEY, as_interrupts
 from .stream_events import encode_chunk, stream_failure_event
 from .streaming import BRANCHES_KEY, EXECUTED_KEY, SUPPORTED_MODES
 
@@ -68,6 +69,8 @@ def decode_wire(mode: str, data: Any) -> Any:
         return data
     if mode == "messages" and isinstance(value, list) and len(value) == 2:
         return tuple(value)
+    if mode == "updates" and isinstance(value, dict) and INTERRUPT_KEY in value:
+        return {INTERRUPT_KEY: as_interrupts(value[INTERRUPT_KEY] or ())}
     return value
 
 
@@ -127,6 +130,7 @@ class LogFollower:
         cursor: Optional[StreamCursor] = None,
         decode: Callable[[str, Any], Any] = decode_wire,
         seen: Optional[Set[Unit]] = None,
+        from_end: bool = False,
     ) -> None:
         self._reader = reader
         self._sink = sink
@@ -141,6 +145,10 @@ class LogFollower:
         #: stream does not report them missing.
         self._seen = seen if seen is not None else set()
         self.purged = False
+        #: Start after what the log holds when the follower starts (a resumed run).
+        self._from_end = from_end
+        #: Set once the follower knows where it starts reading.
+        self.ready = asyncio.Event()
         self._final: "asyncio.Future[Dict[str, Any]]" = (
             asyncio.get_running_loop().create_future()
         )
@@ -152,6 +160,14 @@ class LogFollower:
 
     async def run(self) -> None:
         failures = 0
+        if self._from_end:
+            try:
+                await self.skip_to_end()
+            except Exception as e:
+                self.ready.set()
+                self._sink.close(stream_failure_event(e, "StreamReadError", True))
+                return
+        self.ready.set()
         while True:
             final = self._final.result() if self._final.done() else None
             try:
@@ -180,6 +196,25 @@ class LogFollower:
                 await asyncio.wait_for(asyncio.shield(self._final), self._poll_s)
             except asyncio.TimeoutError:
                 pass
+
+    async def skip_to_end(self) -> None:
+        """Take everything the log holds now as read: a stream of what comes next.
+
+        A resumed run streams the rest of the run from here, so this is read
+        before the resume is sent.
+        """
+        status = await asyncio.to_thread(self._status)
+        self._learn(units_of(status or {}))
+        wants = [UnitWant(step, unit, from_batch=1 << 30) for step, unit in self._order]
+        if not wants:
+            return
+        for chunk in await asyncio.to_thread(self._reader.read, wants):
+            state = self._units[(chunk.step, chunk.unit)]
+            state.attempt = chunk.attempt
+            state.from_batch = chunk.batches
+            state.consumed = state.total = chunk.total
+            state.done = chunk.done
+            self._seen.add((chunk.step, chunk.unit))
 
     async def _read_once(self, final: Optional[Dict[str, Any]]) -> None:
         if self.purged or self._cursor.at_end:
