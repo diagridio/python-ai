@@ -67,6 +67,7 @@ from .node_routes import route_in_node
 from .stream_values import state_values
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
 from .task_identity import TaskIdentity
+from .thread_state import THREAD_STATE_PATCH, load_thread, save_thread
 from .values import (
     coerce_to_default,
     decode_value,
@@ -517,6 +518,9 @@ class _Run:
     #: Whether a node's activity evaluates its conditional edges
     #: (see :data:`ROUTE_IN_NODE_PATCH`).
     route_in_node: bool = False
+    #: Whether the run starts from its thread's state and saves its own as the
+    #: thread's (see :data:`THREAD_STATE_PATCH`).
+    thread_state: bool = False
     #: The nodes that ran in each step, reported on the output so a streaming
     #: consumer can tell which node's chunks never arrived.
     executed: List[List[str]] = field(default_factory=list)
@@ -564,6 +568,7 @@ def _new_run(ctx: DaprWorkflowContext, workflow_input: GraphWorkflowInput) -> _R
     node_activities_by_name = ctx.is_patched(NODE_ACTIVITY_NAMES_PATCH)
     step_order = ctx.is_patched(STEP_ORDER_PATCH)
     route_in_node = ctx.is_patched(ROUTE_IN_NODE_PATCH)
+    thread_state = workflow_input.thread_state and ctx.is_patched(THREAD_STATE_PATCH)
     return _Run(
         ctx=ctx,
         graph_config=workflow_input.graph_config,
@@ -584,6 +589,7 @@ def _new_run(ctx: DaprWorkflowContext, workflow_input: GraphWorkflowInput) -> _R
             else workflow_input.max_steps + 1
         ),
         route_in_node=route_in_node,
+        thread_state=thread_state,
     )
 
 
@@ -596,9 +602,28 @@ def agent_workflow(
     writes to the channels, and finds the next step's nodes from the edges. The
     run ends when nothing is triggered, END is reached or a step bound is hit;
     the result is a ``GraphWorkflowOutput`` as a dictionary.
+
+    A run on a thread with a checkpointer starts from the thread's last state
+    with the input applied to it, and keeps the state it ends with as the
+    thread's: both through activities (see ``thread_state``).
     """
     workflow_input = _workflow_input(ctx, input_data)
     run = _new_run(ctx, workflow_input)
+    thread_id = str(run.thread_id or ctx.instance_id)
+    if run.thread_state:
+        run.channel_state = yield from load_thread(
+            ctx, thread_id, run.channel_state, run.retry_policy
+        )
+    output = yield from _run_graph(run, workflow_input)
+    if run.thread_state:
+        yield from save_thread(ctx, thread_id, output, run.retry_policy)
+    return output
+
+
+def _run_graph(
+    run: _Run, workflow_input: GraphWorkflowInput
+) -> Generator[Any, Any, Dict[str, Any]]:
+    """Run the graph's steps until it ends; the workflow output as a dict."""
     max_steps = workflow_input.max_steps
     step = 0
 

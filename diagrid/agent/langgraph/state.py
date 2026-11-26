@@ -5,6 +5,7 @@
 
 import logging
 from typing import Any, Optional
+from urllib.parse import quote
 
 from diagrid.agent.core.state import DaprStateStore
 
@@ -17,7 +18,14 @@ class DaprMemoryCheckpointer:
     Persists LangGraph checkpoints (channel state and version metadata)
     to a Dapr state store, enabling conversation memory across invocations.
 
-    Key format: ``langgraph-{thread_id}-checkpoint-{checkpoint_id}``
+    Key format: ``langgraph:{thread_id}:checkpoint:{checkpoint_id}``, and
+    ``langgraph:{thread_id}:index`` for the thread's list of checkpoints. Each
+    id is path-escaped, so a ``:``, ``|`` or ``#`` in it cannot run into the
+    separators (and no key ever holds ``||``, which Dapr reserves).
+
+    :class:`~diagrid.agent.langgraph.DaprWorkflowGraphRunner` uses one on the
+    app's state store by default, so ``thread_id`` carries a conversation from
+    one run to the next.
 
     Example:
         ```python
@@ -52,10 +60,10 @@ class DaprMemoryCheckpointer:
         )
 
     def _checkpoint_key(self, thread_id: str, checkpoint_id: str) -> str:
-        return f"langgraph-{thread_id}-checkpoint-{checkpoint_id}"
+        return f"langgraph:{_segment(thread_id)}:checkpoint:{_segment(checkpoint_id)}"
 
     def _thread_index_key(self, thread_id: str) -> str:
-        return f"langgraph-{thread_id}-index"
+        return f"langgraph:{_segment(thread_id)}:index"
 
     def save_checkpoint(
         self,
@@ -162,3 +170,8 @@ class DaprMemoryCheckpointer:
     def close(self) -> None:
         """Close the underlying state store."""
         self._store.close()
+
+
+def _segment(value: str) -> str:
+    """``value`` escaped so it is one segment of a ``:``-separated key."""
+    return quote(str(value), safe="")

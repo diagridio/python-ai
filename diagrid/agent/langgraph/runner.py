@@ -76,6 +76,13 @@ from .stream_events import (
 )
 from .langsmith_trace import ParentTrace, start_parent_trace
 from .run_status import completed_result
+from .thread_state import (
+    LOAD_THREAD_ACTIVITY,
+    SAVE_THREAD_ACTIVITY,
+    make_load_activity,
+    make_save_activity,
+    resolve_thread_store,
+)
 from .limits import StepBound, step_bound
 from .workflow import (
     IS_LAST_STEP,
@@ -332,6 +339,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         instructions: Optional[str] = None,
         registry_config: Optional[Any] = None,
         stream_registry: Optional[StreamSinkRegistry] = None,
+        checkpointer: Optional[Any] = None,
     ):
         """Initialize the runner.
 
@@ -352,6 +360,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             stream_registry: Where streamed runs register their sinks. The
                 activities this runner registers write into it. Defaults to a
                 new registry owned by this runner.
+            checkpointer: Where a thread's state is kept between runs, so a run
+                with the same ``thread_id`` continues the conversation: a
+                ``DaprMemoryCheckpointer`` or a LangGraph checkpoint saver with
+                the synchronous API. Defaults to the checkpointer the graph was
+                compiled with, else the app's Dapr state store
+                (``agent-memory``) when it has one; with none, ``thread_id`` is
+                only a label.
         """
         self._graph = graph
         self._max_steps = DEFAULT_MAX_STEPS if max_steps is None else max_steps
@@ -383,6 +398,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         # max_iterations instead of a hardcoded default (read by DeepAgentsMapper).
         self._graph._diagrid_max_steps = self._max_steps  # type: ignore[attr-defined]
 
+        self._thread_store = resolve_thread_store(
+            checkpointer, self._graph, self._state_store
+        )
+
         self._register_agent_metadata(
             agent=self._graph,
             framework=self._REGISTRY_FRAMEWORK,
@@ -412,6 +431,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         self._workflow_runtime.register_activity(
             make_condition_activity(self._stream_registry),
             name="evaluate_condition_activity",
+        )
+        # Registered even without a store, so an instance that scheduled them
+        # still replays on a runner that has none.
+        self._workflow_runtime.register_activity(
+            make_load_activity(self._thread_store), name=LOAD_THREAD_ACTIVITY
+        )
+        self._workflow_runtime.register_activity(
+            make_save_activity(self._thread_store), name=SAVE_THREAD_ACTIVITY
         )
 
     def _register_node_activities(self) -> None:
@@ -617,6 +644,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             pending_nodes=[],
             config=run_config,
             thread_id=thread_id,
+            thread_state=self._thread_store is not None,
         ).to_dict()
         json.dumps(workflow_input)
         return _RunSetup(workflow_id, thread_id, run_config, trace, workflow_input)

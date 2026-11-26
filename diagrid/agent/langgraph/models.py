@@ -487,6 +487,9 @@ class GraphWorkflowInput:
         pending_nodes: Nodes pending execution
         config: Optional LangGraph config dict
         thread_id: Thread identifier for the execution
+        thread_state: The run starts from its thread's last state and keeps
+            the state it ends with as the thread's (the runner has a
+            checkpointer).
     """
 
     graph_config: GraphConfig
@@ -497,6 +500,7 @@ class GraphWorkflowInput:
     pending_nodes: List[str] = field(default_factory=list)
     config: Optional[Dict[str, Any]] = None
     thread_id: Optional[str] = None
+    thread_state: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -510,6 +514,8 @@ class GraphWorkflowInput:
         }
         if self.strict_limit:
             data["strict_limit"] = True
+        if self.thread_state:
+            data["thread_state"] = True
         return data
 
     @classmethod
@@ -523,6 +529,7 @@ class GraphWorkflowInput:
             pending_nodes=data.get("pending_nodes", []),
             config=data.get("config"),
             thread_id=data.get("thread_id"),
+            thread_state=bool(data.get("thread_state", False)),
         )
 
 

@@ -65,6 +65,30 @@ finally:
     runner.shutdown()
 ```
 
+## Conversations
+
+Pass the same `thread_id` to each run of a conversation, and send only the new
+message:
+
+```python
+runner.invoke({"messages": [{"role": "user", "content": "hi"}]}, thread_id="chat-1")
+result = runner.invoke(
+    {"messages": [{"role": "user", "content": "and again"}]}, thread_id="chat-1"
+)
+# result["messages"] holds both turns, as with a LangGraph checkpointer
+```
+
+That is all. `thread_id` may also come as `config["configurable"]["thread_id"]`
+or, over HTTP, as `thread_id` in the request body. Each run starts from the
+state the thread's last run ended with and applies its input to it through the
+channels' reducers, as LangGraph does with a checkpointer. The state is kept in
+the app's Dapr state store (`agent-memory`, which a Catalyst app has), keyed by
+thread. To keep it elsewhere, compile the graph with a LangGraph checkpointer
+(`graph.compile(checkpointer=MemorySaver())`) or pass `checkpointer=` to the
+runner (a `DaprMemoryCheckpointer` on another store, or a LangGraph saver with
+the synchronous `get_tuple` and `put`). With none of these, `thread_id` only
+names the run and each run starts from its input alone.
+
 ## Async Usage
 
 ```python
@@ -112,8 +136,10 @@ as a Dapr activity. The stream modes are:
 | `debug` | the `tasks` events wrapped as `{step, timestamp, type, payload}` |
 
 `checkpoints` is refused (`ValueError` from `astream`, a `422` over HTTP): the
-runner keeps no LangGraph checkpoints, because the Dapr workflow history is the
-run's durable record, so there are no checkpoint ids a client could pass back.
+runner keeps no per-step LangGraph checkpoints, because the Dapr workflow
+history is the run's durable record, so there are no checkpoint ids a client
+could pass back (a thread keeps only the state its last run ended with, see
+[Conversations](#conversations)).
 For the same reason `debug` holds only the task events, which is what native
 `debug` holds for a graph compiled without a checkpointer. A client that wants
 the full state reads it from `values`, from the run's final event, or from `GET
