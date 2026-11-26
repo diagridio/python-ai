@@ -16,6 +16,12 @@ used (Dapr reserves it for actor keys):
 - ``<prefix>:<wf>:<step>:<unit>:<attempt>:end``: the head of an attempt that
   finished, as it was when it did (kept as long as the head).
 
+A Dapr bulk save is neither atomic nor ordered, so a flush writes its batch
+first and the head that counts it in a second save: a head never names a
+batch that was not written. A reader that still misses a counted batch (a
+replica that lags) looks again after ``purge_recheck_s`` before it calls the
+unit purged.
+
 A retried activity is a new attempt: it takes the head over, and a reader that
 sees the attempt change starts that unit again (the consumer turns that into
 ``node_reset``). An attempt that finished (``done``) keeps the head: a late
@@ -58,6 +64,9 @@ class StateLogStreamConfig:
     flush_max_chunks: int = 64
     #: How often a reader looks for new batches.
     read_poll_s: float = 0.2
+    #: A batch the head counts but the store does not return is looked for
+    #: again after this long before the unit is called purged.
+    purge_recheck_s: float = 0.5
     #: Events an activity holds while the store refuses writes; past it,
     #: tokens and custom chunks are dropped, markers and updates never.
     max_buffered: int = MAX_BUFFERED_EVENTS
@@ -290,23 +299,7 @@ class LogWriter:
                 batch = list(self._pending)
             if not batch and not final:
                 return True
-            items: List[LogItem] = []
-            if batch:
-                items.append(
-                    (
-                        batch_key(
-                            self._config.key_prefix,
-                            self._workflow_id,
-                            self._step,
-                            self._unit,
-                            self.attempt,
-                            self._batches,
-                        ),
-                        batch,
-                        _ttl(self._config.event_ttl_s),
-                    )
-                )
-            if not items and not done:
+            if not batch and not done:
                 return True
             batches = self._batches + (1 if batch else 0)
             head = {
@@ -322,12 +315,21 @@ class LogWriter:
                 self._step,
                 self._unit,
             )
+            items: List[LogItem] = []
             if not self._is_blocked():
                 items.append((head_key(*prefix), head, record_ttl))
             if done:
                 items.append((end_key(*prefix, self.attempt), head, record_ttl))
             try:
-                self._store.save_bulk(items)
+                # the batch lands before any head counts it; a batch written
+                # again (its head failed) is the same batch with more events
+                if batch:
+                    key = batch_key(*prefix, self.attempt, self._batches)
+                    self._store.save_bulk(
+                        [(key, batch, _ttl(self._config.event_ttl_s))]
+                    )
+                if items:
+                    self._store.save_bulk(items)
             except Exception as e:  # never fail the node over its stream
                 self.write_failures += 1
                 logger.warning(
@@ -453,6 +455,12 @@ class LogReader:
             plans.append((want, head, reset, keys))
         wanted = list(itertools.chain.from_iterable(p[3] for p in plans))
         batches = self._store.get_bulk(wanted) if wanted else {}
+        missing = [key for key in wanted if key not in batches]
+        if missing:
+            # a head is written after its batches, so a counted batch that is
+            # not there is purged, or on a replica that has not caught up yet
+            time.sleep(self._config.purge_recheck_s)
+            batches = {**batches, **self._store.get_bulk(missing)}
         return [
             self._chunk(want, head, reset, keys, batches)
             for want, head, reset, keys in plans

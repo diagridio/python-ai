@@ -28,7 +28,7 @@ from .log_store_fake import FakeLogStore
 
 
 def _config(**kw: Any) -> StateLogStreamConfig:
-    base = dict(flush_interval_s=30.0, flush_max_chunks=1000)
+    base = dict(flush_interval_s=30.0, flush_max_chunks=1000, purge_recheck_s=0.01)
     base.update(kw)
     return StateLogStreamConfig(**base)
 
@@ -68,7 +68,7 @@ class TestWriter(unittest.TestCase):
         writer = _writer(store, flush_max_chunks=3)
         for seq in range(3):
             writer.put(_event("research#0", seq))
-        self.assertEqual(len(store.saves), 1)
+        self.assertEqual(len(store.saves), 2)  # the batch, then its head
         writer.finish(done=True)
 
     def test_flushes_on_the_interval(self):
@@ -76,9 +76,9 @@ class TestWriter(unittest.TestCase):
         writer = _writer(store, flush_interval_s=0.02)
         writer.put(_event("research#0", 0))
         deadline = time.monotonic() + 5
-        while not store.saves and time.monotonic() < deadline:
+        while len(store.saves) < 2 and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertEqual(len(store.saves), 1)
+        self.assertEqual(len(store.saves), 2)  # the batch, then its head
         writer.finish(done=True)
 
     def test_the_last_flush_runs_before_finish_returns(self):
@@ -103,7 +103,7 @@ class TestWriter(unittest.TestCase):
         end = end_key("lgstream", "wf:1", 0, "research#0", writer.attempt)
         self.assertEqual(store.metadata[head], {"ttlInSeconds": "2400"})
         self.assertEqual(store.metadata[end], {"ttlInSeconds": "2400"})
-        self.assertEqual(store.saves, [[batch, head, end]])
+        self.assertEqual(store.saves, [[batch], [head, end]])
 
     def test_a_write_error_never_raises_and_is_retried(self):
         store = FakeLogStore()
@@ -302,3 +302,81 @@ class TestReader(unittest.TestCase):
             [UnitWant(0, "research#0"), UnitWant(0, "other")]
         )
         self.assertEqual(len(calls), 2)
+
+
+def _heads_first(items: List[Any]) -> List[Any]:
+    """The worst order a parallel bulk save can land in: heads before batches."""
+    return sorted(items, key=lambda item: 0 if item[0].endswith(":head") else 1)
+
+
+class TestNonAtomicBulkSave(unittest.TestCase):
+    """A Dapr bulk save lands its items in any order, and may land some only."""
+
+    def test_a_read_racing_the_save_never_calls_a_live_unit_purged(self):
+        store = FakeLogStore()
+        writer = _writer(store)
+        reader = LogReader(store, _config(), "wf:1")
+        seen: List[Any] = []
+        store.bulk_order = _heads_first
+        store.after_item = lambda key: seen.extend(
+            reader.read([UnitWant(0, "research#0")])
+        )
+        for seq in range(3):
+            writer.put(_event("research#0", seq))
+        writer.finish(done=True)
+        self.assertTrue(seen)
+        for chunk in seen:
+            self.assertFalse(chunk.purged, chunk)
+        self.assertEqual(seen[-1].total, 3)
+        self.assertEqual(len(seen[-1].events), 3)
+
+    def test_a_save_that_lands_in_part_never_calls_a_live_unit_purged(self):
+        for landed in range(3):
+            with self.subTest(landed=landed):
+                store = FakeLogStore()
+                writer = _writer(store)
+                for seq in range(2):
+                    writer.put(_event("research#0", seq))
+                store.bulk_order = _heads_first
+                store.partial_saves = landed
+                writer._flush(done=False)
+                reader = LogReader(store, _config(), "wf:1")
+                (chunk,) = reader.read([UnitWant(0, "research#0")])
+                self.assertFalse(chunk.purged, chunk)
+                writer.finish(done=True)  # the retry writes what failed
+                (chunk,) = reader.read([UnitWant(0, "research#0")])
+                self.assertFalse(chunk.purged, chunk)
+                self.assertEqual(_datas(chunk), ["research#0-0", "research#0-1"])
+
+    def test_batches_land_before_the_head_that_counts_them(self):
+        store = FakeLogStore()
+        writer = _writer(store)
+        writer.put(_event("research#0", 0))
+        writer.finish(done=True)
+        batch = batch_key("lgstream", "wf:1", 0, "research#0", writer.attempt, 0)
+        head = head_key("lgstream", "wf:1", 0, "research#0")
+        end = end_key("lgstream", "wf:1", 0, "research#0", writer.attempt)
+        self.assertEqual(store.saves, [[batch], [head, end]])
+
+    def test_a_batch_that_shows_up_on_a_second_look_is_read(self):
+        """A replica that lags the head by a moment: the reader looks again."""
+        store = FakeLogStore()
+        writer = _writer(store, flush_max_chunks=1)
+        for seq in range(2):
+            writer.put(_event("research#0", seq))
+        writer.finish(done=True)
+        lagging = batch_key("lgstream", "wf:1", 0, "research#0", writer.attempt, 1)
+        real = store.get_bulk
+        hidden = {"left": 1}
+
+        def lagging_get(keys: Any) -> Any:
+            found = real(keys)
+            if lagging in found and hidden["left"]:
+                hidden["left"] -= 1
+                found.pop(lagging)
+            return found
+
+        store.get_bulk = lagging_get  # type: ignore[method-assign]
+        (chunk,) = LogReader(store, _config(), "wf:1").read([UnitWant(0, "research#0")])
+        self.assertFalse(chunk.purged, chunk)
+        self.assertEqual(_datas(chunk), ["research#0-0", "research#0-1"])
