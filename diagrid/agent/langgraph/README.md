@@ -100,8 +100,32 @@ from diagrid.agent.langgraph import (
 ```
 
 `astream` yields what `CompiledStateGraph.astream` yields, while each node runs
-as a Dapr activity: LLM tokens (`messages`), node updates (`updates`) and
-whatever a node writes with `get_stream_writer()` (`custom`).
+as a Dapr activity. The stream modes are:
+
+| Mode | Chunk |
+|---|---|
+| `messages` | LLM tokens and the messages a node returns, as `(message_chunk, metadata)` |
+| `updates` | `{node: update}`, one per node, with the values as the node returned them |
+| `custom` | whatever a node writes with `get_stream_writer()` |
+| `values` | the graph's output state after each step that wrote an output channel (and after the input, when it wrote one) |
+| `tasks` | a task's start (`id`, `name`, `input`, `triggers`) when its node starts, and its result (`result`, `error`, `interrupts`) after its `updates` chunk |
+| `debug` | the `tasks` events wrapped as `{step, timestamp, type, payload}` |
+
+`checkpoints` is refused (`ValueError` from `astream`, a `422` over HTTP): the
+runner keeps no LangGraph checkpoints, because the Dapr workflow history is the
+run's durable record, so there are no checkpoint ids a client could pass back.
+For the same reason `debug` holds only the task events, which is what native
+`debug` holds for a graph compiled without a checkpointer. A client that wants
+the full state reads it from `values`, from the run's final event, or from `GET
+/agent/run/{workflow_id}`.
+
+The `values` chunk of step s is sent by the first activity of step s+1 to
+start, which is handed that state, so it comes one scheduling hop later than in
+LangGraph but in the same place in the stream. The state after the last step is
+sent before the final event; a run that failed in a node or a router sends no
+value for that step, and a run cut by its step limit sends it, as LangGraph
+does. A task that fails sends no result: Dapr retries it and `node_reset`
+covers its partial output.
 
 ```python
 async for mode, chunk in runner.astream(
@@ -162,14 +186,15 @@ Closing the stream does not cancel the Dapr workflow, which runs to completion.
 `serve()` answers `POST /agent/run` with `"stream": true` (the JSON boolean;
 any other value is a plain request and the key reaches the graph) as
 server-sent events.
-`stream_mode` (a mode or a list; default all three) picks the chunks; an
-unsupported one is refused with a `422` before the stream starts. The first
+`stream_mode` (a mode or a list; default `messages`, `updates` and `custom`)
+picks the chunks; an unsupported one, `checkpoints` included, is refused with a
+`422` before the stream starts. The first
 event is `workflow_started`. An idle stream sends a `: keepalive` comment every
 15 seconds so a proxy does not cut it, and the response sets `Cache-Control:
 no-cache` and `X-Accel-Buffering: no` so an nginx or ingress in front does not
 buffer the tokens. The
-messages and updates are serialized with `langchain_core.load.dumpd`, so
-`langchain_core.load.load` restores them. The stream ends with
+chunks are serialized with `langchain_core.load.dumpd`, so
+`langchain_core.load.load` restores the messages in them. The stream ends with
 `workflow_completed` or `workflow_failed`; both carry `workflow_id` and
 `thread_id`, a failure carries the error, and `dropped` is set when chunks were
 dropped. The run's result is also published to `publish_topic`; it is exactly what
