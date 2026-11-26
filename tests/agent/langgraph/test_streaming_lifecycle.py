@@ -521,6 +521,7 @@ class TestClientGoesAway(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
         ):
             sink = runner.stream_registry.get(workflow_id)
             sink.put(StreamEvent(workflow_id, 0, "n", "a", 0, (), "custom", "first"))
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             try:
                 await asyncio.sleep(3600)
                 yield {}  # pragma: no cover
@@ -542,6 +543,7 @@ class TestClientGoesAway(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
         ):
             sink = runner.stream_registry.get(workflow_id)
             sink.put(StreamEvent(workflow_id, 0, "n", "a", 0, (), "custom", "first"))
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             await asyncio.sleep(3600)
             yield {}  # pragma: no cover
 
@@ -587,6 +589,7 @@ class TestClientGoesAway(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
             registry.get(workflow_id).put(
                 StreamEvent(workflow_id, 0, "n", "a", 0, (), "custom", "first")
             )
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             await asyncio.sleep(3600)
             yield {}  # pragma: no cover
 

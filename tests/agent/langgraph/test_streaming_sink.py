@@ -182,6 +182,7 @@ class TestDroppedIsReported(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
         async def quiet(
             input, *, thread_id=None, config=None, workflow_id=None, poll_interval=0.5
         ):
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             yield {"type": "workflow_completed", "workflow_id": workflow_id}
 
         with mock.patch.object(runner, "run_async", quiet):

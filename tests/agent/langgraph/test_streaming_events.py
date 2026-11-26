@@ -193,6 +193,7 @@ class TestStreamedRunsAreMarked(_RunnerTestCase, unittest.IsolatedAsyncioTestCas
             input, *, thread_id=None, config=None, workflow_id=None, poll_interval=0.5
         ):
             seen.update(config or {})
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             yield {"type": "workflow_completed", "workflow_id": workflow_id}
 
         with mock.patch.object(runner, "run_async", spy):
@@ -217,6 +218,7 @@ class _FakeRun(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
             input, *, thread_id=None, config=None, workflow_id=None, poll_interval=0.5
         ):
             sink = runner.stream_registry.get(workflow_id)
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             for chunk in chunks:
                 sink.put(chunk)
             await asyncio.sleep(0)
@@ -375,6 +377,7 @@ class TestThroughAstream(_FakeRun):
             extra = (
                 {"executed": [["chat"]]} if (config or {}).get(STREAM_RUN_KEY) else {}
             )
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             yield {
                 "type": "workflow_completed",
                 "workflow_id": workflow_id,
@@ -648,6 +651,7 @@ class TestRetryInSingleMode(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
                 _token("B", " world", 1),
             ):
                 sink.put(event)
+            yield {"type": "workflow_started", "workflow_id": workflow_id}
             await asyncio.sleep(0)
             yield {"type": "workflow_completed", "workflow_id": workflow_id}
 
