@@ -30,6 +30,7 @@ from .stream_events import (
     encode_chunk,
     next_item,
 )
+from .stream_attempts import STATUS_ATTEMPTS
 from .stream_source import StreamSource
 from .streaming import BRANCHES_KEY, EXECUTED_KEY, FINAL_STATE_KEY
 
@@ -58,6 +59,7 @@ def parse_output(
         ),
         **({EXECUTED_KEY: output.executed} if streamed and output.executed else {}),
         **({BRANCHES_KEY: output.branches} if streamed and output.branches else {}),
+        **({STATUS_ATTEMPTS: output.attempts} if streamed and output.attempts else {}),
         **(
             {FINAL_STATE_KEY: output.channel_state.to_dict()}
             if streamed and output.channel_state is not None

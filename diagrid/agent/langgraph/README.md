@@ -394,6 +394,15 @@ needed for this.
   that was connected saw the first attempt's chunks and then `node_reset`; a
   replay from the start (or a reconnect from before the retry) has the attempt
   that finished only.
+- **The stream follows the attempt the run used.** Dapr may run a node's
+  activity twice even when the first run succeeded (its completion got lost),
+  or run two attempts at once. Each attempt logs its own chunks, and the run
+  records which attempt's output it used. On the state-store transport the
+  stream ends on that attempt: a connected client that saw the other one gets
+  `node_reset` for the node (possibly after the next step's first chunks, as
+  the run says which attempt it used when that step starts) and then the used
+  attempt's chunks; a replay has the used attempt only. The in-process
+  transport keeps the first attempt that finished.
 - **Node code must not count attempts in process memory.** A retried node may
   run in another process, so a counter kept in a module or a closure does not
   see the earlier attempt. Keep such state in the graph's state or a store.

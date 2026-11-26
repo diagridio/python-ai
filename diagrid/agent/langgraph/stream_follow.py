@@ -37,6 +37,7 @@ from diagrid.agent.core.workflow.stream_log import (
 
 from .activity_stream import STATUS_BRANCHES, STATUS_EXECUTED
 from .interrupts import INTERRUPT_KEY, as_interrupts
+from .stream_attempts import attempts_of, unit_key
 from .stream_events import encode_chunk, stream_failure_event
 from .streaming import BRANCHES_KEY, EXECUTED_KEY, SUPPORTED_MODES
 
@@ -96,6 +97,11 @@ def units_of(status: Dict[str, Any]) -> List[Unit]:
     return ordered
 
 
+def _same_attempt(a: str, b: str) -> bool:
+    """Whether two attempt ids (or a cursor's prefix of one) name one attempt."""
+    return bool(a) and bool(b) and (a.startswith(b) or b.startswith(a))
+
+
 @dataclass
 class _UnitState:
     """How far the stream got in one unit."""
@@ -110,9 +116,19 @@ class _UnitState:
     total: int = 0
     #: The attempt an earlier client saw part of, when it was replaced.
     replaced: Optional[str] = None
+    #: The attempt whose output the run used, once the workflow said so.
+    winner: Optional[str] = None
 
     @property
     def complete(self) -> bool:
+        # read another attempt, but the run used the winner: read that one
+        # (a step a cursor skips whole has no attempt here: it was read)
+        if (
+            self.winner
+            and self.attempt
+            and not _same_attempt(self.attempt, self.winner)
+        ):
+            return False
         return self.done and self.consumed >= self.total
 
 
@@ -226,6 +242,9 @@ class LogFollower:
             return
         status = final if final is not None else await asyncio.to_thread(self._status)
         self._learn(units_of(status or {}))
+        winners = attempts_of(status)
+        for key, state in self._units.items():
+            state.winner = winners.get(unit_key(*key), state.winner)
         wants = [
             UnitWant(
                 unit[0],
@@ -233,6 +252,7 @@ class LogFollower:
                 attempt=state.attempt,
                 from_batch=state.from_batch,
                 skip_events=state.skip,
+                winner=state.winner,
             )
             for unit in self._order
             if not (state := self._units[unit]).complete
@@ -312,6 +332,10 @@ class LogFollower:
             # in this stream must tell the client to drop that part
             had = state.consumed > 0
             state.replaced = state.attempt if had else None
+            if had and state.attempt:
+                # the sink may have closed the unit on the old attempt's updates
+                for node in {str(w.get("node")) for w in chunk.events}:
+                    self._sink.reopen(chunk.step, node, state.attempt)
         primed: Set[Tuple[int, str]] = set()
         state.attempt = chunk.attempt
         state.from_batch = chunk.batches

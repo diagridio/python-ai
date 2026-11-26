@@ -13,12 +13,17 @@ used (Dapr reserves it for actor keys):
   longer than the batches.
 - ``<prefix>:<wf>:<step>:<unit>:<attempt>:<n>``: batch ``n`` of an attempt, a
   list of events.
+- ``<prefix>:<wf>:<step>:<unit>:<attempt>:end``: the head of an attempt that
+  finished, as it was when it did (kept as long as the head).
 
 A retried activity is a new attempt: it takes the head over, and a reader that
 sees the attempt change starts that unit again (the consumer turns that into
-``node_reset``). An attempt that finished (``done``) keeps the unit: a late
-attempt is not written. A head whose count names a batch that is gone means
-the log outlived its TTL: the reader reports it purged.
+``node_reset``). An attempt that finished (``done``) keeps the head: a late
+attempt (Dapr ran the activity again) logs its batches and its end record but
+leaves the head alone. The workflow says which attempt's output it used (the
+*winner*); a reader told the winner reads it through its end record. A head
+whose count names a batch that is gone means the log outlived its TTL: the
+reader reports it purged.
 """
 
 import itertools
@@ -125,6 +130,11 @@ def _unit_prefix(prefix: str, workflow_id: str, step: int, unit: str) -> str:
 
 def head_key(prefix: str, workflow_id: str, step: int, unit: str) -> str:
     return f"{_unit_prefix(prefix, workflow_id, step, unit)}:head"
+
+
+def end_key(prefix: str, workflow_id: str, step: int, unit: str, attempt: str) -> str:
+    base = _unit_prefix(prefix, workflow_id, step, unit)
+    return f"{base}:{escape_key_part(attempt)}:end"
 
 
 def batch_key(
@@ -280,10 +290,6 @@ class LogWriter:
                 batch = list(self._pending)
             if not batch and not final:
                 return True
-            if self._is_blocked():
-                with self._buffer_lock:
-                    del self._pending[: len(batch)]
-                return True
             items: List[LogItem] = []
             if batch:
                 items.append(
@@ -309,18 +315,17 @@ class LogWriter:
                 "events": self._events + len(batch),
                 "done": done,
             }
-            items.append(
-                (
-                    head_key(
-                        self._config.key_prefix,
-                        self._workflow_id,
-                        self._step,
-                        self._unit,
-                    ),
-                    head,
-                    _ttl(self._config.event_ttl_s * self._config.record_ttl_factor),
-                )
+            record_ttl = _ttl(self._config.event_ttl_s * self._config.record_ttl_factor)
+            prefix = (
+                self._config.key_prefix,
+                self._workflow_id,
+                self._step,
+                self._unit,
             )
+            if not self._is_blocked():
+                items.append((head_key(*prefix), head, record_ttl))
+            if done:
+                items.append((end_key(*prefix, self.attempt), head, record_ttl))
             try:
                 self._store.save_bulk(items)
             except Exception as e:  # never fail the node over its stream
@@ -376,6 +381,9 @@ class UnitWant:
     from_batch: int = 0
     #: Events of the batches from ``from_batch`` on that it already has.
     skip_events: int = 0
+    #: The attempt whose output the workflow used, once it is known: it is
+    #: read (through its end record) whatever attempt holds the head.
+    winner: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -417,10 +425,21 @@ class LogReader:
     def read(self, wants: Sequence[UnitWant]) -> List[UnitChunk]:
         prefix = self._config.key_prefix
         head_keys = [head_key(prefix, self._workflow_id, w.step, w.unit) for w in wants]
-        heads = self._store.get_bulk(head_keys) if head_keys else {}
+        end_keys = {
+            i: end_key(prefix, self._workflow_id, w.step, w.unit, w.winner)
+            for i, w in enumerate(wants)
+            if w.winner
+        }
+        wanted_heads = [*head_keys, *end_keys.values()]
+        heads = self._store.get_bulk(wanted_heads) if wanted_heads else {}
         plans: List[Tuple[UnitWant, Dict[str, Any], bool, List[str]]] = []
-        for want, key in zip(wants, head_keys):
+        for i, (want, key) in enumerate(zip(wants, head_keys)):
             head = heads.get(key)
+            won = heads.get(end_keys[i]) if i in end_keys else None
+            if isinstance(won, dict) and not _same_attempt(
+                str((head or {}).get("attempt")), str(want.winner)
+            ):
+                head = won  # the head is another attempt's: read the winner
             if not isinstance(head, dict):
                 plans.append((want, {}, False, []))
                 continue
@@ -541,3 +560,8 @@ class StateLogTransport:
 
     def reader(self, workflow_id: str) -> LogReader:
         return LogReader(self.store, self.config, workflow_id)
+
+
+def _same_attempt(a: str, b: str) -> bool:
+    """Whether two attempt ids (or a cursor's prefix of one) name one attempt."""
+    return bool(a) and bool(b) and (a.startswith(b) or b.startswith(a))

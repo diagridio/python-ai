@@ -86,6 +86,7 @@ from .runnable_call import (  # noqa: F401 (re-exported)
     _has_async_entry,
     _invoke_runnable,
 )
+from .stream_attempts import record_attempts, with_attempt
 from .stream_values import state_values
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
 from .task_identity import TaskIdentity
@@ -556,6 +557,8 @@ class _Run:
     interrupt: Optional[Dict[str, Any]] = None
     #: How many times the run was interrupted so far.
     interrupt_seq: int = 0
+    #: The attempt of each unit's output the run used (see ``stream_attempts``).
+    attempts: Dict[str, str] = field(default_factory=dict)
 
     @property
     def output_channels(self) -> Optional[List[str]]:
@@ -578,6 +581,7 @@ class _Run:
             steps=step,
             executed=self.executed,
             branches=self.branches or None,
+            attempts=self.attempts or None,
             status=status,
             **({"error": error} if error else {}),
         ).to_dict()
@@ -719,6 +723,7 @@ def _run_step(
         lambda resumes: _rerun_nodes(run, nodes, sends, step, resumes),
         publish_run_status,
     )
+    record_attempts(run.attempts, step, run.executed[-1], outputs)
     failed = next((o for o in outputs if o.error), None)
     if failed:
         return [], [], f"Node '{failed.node_name}' failed: {failed.error}"
@@ -1058,6 +1063,7 @@ def _follow_edge(
         retry_policy=run.retry_policy,
     )
     output = EvaluateConditionOutput.from_dict(cond_result)
+    record_attempts(run.attempts, step, [_branch_key(cond_input)], [output])
     if output.error:
         return output.error
     found.add_nodes(output.next_nodes)
@@ -1569,13 +1575,14 @@ def execute_node_activity(
             interrupts = interrupt_payloads(paused)
             if call.streamer:
                 call.streamer.interrupted(interrupts)
-            return ExecuteNodeOutput(
-                node_name=node_name, interrupts=interrupts
-            ).to_dict()
+            return with_attempt(
+                ExecuteNodeOutput(node_name=node_name, interrupts=interrupts).to_dict(),
+                writer,
+            )
         except DroppedInterrupt as e:  # retrying would drop it again
             return ExecuteNodeOutput(node_name=node_name, error=str(e)).to_dict()
         done = True
-        return output
+        return with_attempt(output, writer)
     finally:
         if writer is not None:
             # synchronous: the unit's log is complete before the activity returns
@@ -1733,7 +1740,7 @@ def evaluate_condition_activity(
         except GraphInterrupt:
             output = EvaluateConditionOutput(error=ROUTER_INTERRUPT_ERROR).to_dict()
         done = True
-        return output
+        return with_attempt(output, writer)
     finally:
         if writer is not None:
             writer.finish(done=done)

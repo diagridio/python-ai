@@ -219,6 +219,19 @@ class InProcessSink:
         """Items waiting for the consumer."""
         return self._queue.qsize()
 
+    def reopen(self, step: int, node: str, attempt_id: str) -> None:
+        """Let another attempt of ``(step, node)`` in, after ``attempt_id``'s.
+
+        A log reader learns late which attempt's output the run used; when it
+        is not the one already streamed (even in full), the next attempt's
+        first chunk sends ``node_reset`` and its chunks are kept.
+        """
+        key = (step, node)
+        with self._lock:
+            self._finished.pop(key, None)
+            self._owner[key] = attempt_id
+            self._retired.discard((key, attempt_id))
+
     def prime(self, step: int, node: str, attempt_id: str) -> None:
         """Take ``attempt_id`` as the owner of ``(step, node)`` without a chunk.
 

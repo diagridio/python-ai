@@ -18,6 +18,7 @@ from diagrid.agent.core.workflow.stream_log import (
     StateLogStreamConfig,
     UnitWant,
     batch_key,
+    end_key,
     escape_key_part,
     head_key,
     wire_event,
@@ -99,8 +100,10 @@ class TestWriter(unittest.TestCase):
         batch = batch_key("lgstream", "wf:1", 0, "research#0", writer.attempt, 0)
         head = head_key("lgstream", "wf:1", 0, "research#0")
         self.assertEqual(store.metadata[batch], {"ttlInSeconds": "100"})
+        end = end_key("lgstream", "wf:1", 0, "research#0", writer.attempt)
         self.assertEqual(store.metadata[head], {"ttlInSeconds": "2400"})
-        self.assertEqual(store.saves, [[batch, head]])
+        self.assertEqual(store.metadata[end], {"ttlInSeconds": "2400"})
+        self.assertEqual(store.saves, [[batch, head, end]])
 
     def test_a_write_error_never_raises_and_is_retried(self):
         store = FakeLogStore()
@@ -162,16 +165,40 @@ class TestWriter(unittest.TestCase):
         head = store.get(head_key("lgstream", "wf:1", 0, "research#0"))
         self.assertEqual(head["attempt"], second.attempt)
 
-    def test_a_done_unit_blocks_a_late_attempt(self):
+    def test_a_late_attempt_keeps_the_head_but_logs_its_own_chunks(self):
         store = FakeLogStore()
         first = _writer(store)
-        first.put(_event("research#0", 0))
+        first.put(_event("research#0", 0, attempt="a1"))
         first.finish(done=True)
         late = _writer(store)
-        late.put(_event("research#0", 0))
+        late.put(_event("research#0", 0, attempt="a2"))
+        late.put(_event("research#0", 1, attempt="a2"))
         late.finish(done=True)
         head = store.get(head_key("lgstream", "wf:1", 0, "research#0"))
         self.assertEqual(head["attempt"], first.attempt)
+        # the workflow used the late attempt: a reader told so reads it
+        reader = LogReader(store, _config(), "wf:1")
+        chunk = reader.read(
+            [UnitWant(0, "research#0", attempt=first.attempt[:8], winner=late.attempt)]
+        )[0]
+        self.assertTrue(chunk.reset)
+        self.assertTrue(chunk.done)
+        self.assertEqual(chunk.attempt, late.attempt)
+        self.assertEqual(_datas(chunk), ["research#0-0", "research#0-1"])
+
+    def test_a_reader_follows_the_winner_of_concurrent_attempts(self):
+        store = FakeLogStore()
+        a = _writer(store)
+        b = _writer(store)
+        a.put(_event("research#0", 0, attempt="a"))
+        b.put(_event("research#0", 5, attempt="b"))
+        b.finish(done=True)
+        a.finish(done=True)
+        reader = LogReader(store, _config(), "wf:1")
+        for winner, want in ((a, ["research#0-0"]), (b, ["research#0-5"])):
+            chunk = reader.read([UnitWant(0, "research#0", winner=winner.attempt)])[0]
+            self.assertEqual(chunk.attempt, winner.attempt)
+            self.assertEqual(_datas(chunk), want)
 
     def test_events_keep_their_identity_on_the_wire(self):
         event = StreamEvent(

@@ -57,11 +57,14 @@ def run_status(run: Any) -> Dict[str, Any]:
     """The custom status of a run: what a stream reader needs to find its
     units, and the interrupt the run waits on."""
     from .interrupts import STATUS_INTERRUPT, STATUS_INTERRUPT_SEQ
+    from .stream_attempts import STATUS_ATTEMPTS
 
     status: Dict[str, Any] = {}
     if (run.config or {}).get(STREAM_RUN_KEY):
         status[STATUS_EXECUTED] = run.executed
         status[STATUS_BRANCHES] = run.branches
+        if run.attempts:
+            status[STATUS_ATTEMPTS] = run.attempts
     if run.interrupt_seq:
         status[STATUS_INTERRUPT_SEQ] = run.interrupt_seq
     if run.interrupt:

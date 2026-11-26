@@ -339,6 +339,8 @@ class ExecuteNodeOutput:
     #: The task called ``interrupt()``: ``[{"id", "value"}]``; it wrote nothing
     #: and runs again when the run is resumed.
     interrupts: Optional[List[Dict[str, Any]]] = None
+    #: The attempt this execution logged its stream chunks under, if any.
+    stream_attempt: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -359,6 +361,8 @@ class ExecuteNodeOutput:
                 data["route_error"] = self.route_error
         if self.interrupts:
             data["interrupts"] = list(self.interrupts)
+        if self.stream_attempt:
+            data["stream_attempt"] = self.stream_attempt
         return data
 
     @classmethod
@@ -374,6 +378,7 @@ class ExecuteNodeOutput:
             route_sends=list(data.get("route_sends") or []),
             route_error=data.get("route_error"),
             interrupts=data.get("interrupts"),
+            stream_attempt=data.get("stream_attempt"),
         )
 
 
@@ -464,6 +469,8 @@ class EvaluateConditionOutput:
     next_nodes: List[str] = field(default_factory=list)
     error: Optional[str] = None
     sends: List[Dict[str, Any]] = field(default_factory=list)
+    #: The attempt this execution logged its stream chunks under, if any.
+    stream_attempt: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -472,6 +479,8 @@ class EvaluateConditionOutput:
         }
         if self.sends:
             data["sends"] = list(self.sends)
+        if self.stream_attempt:
+            data["stream_attempt"] = self.stream_attempt
         return data
 
     @classmethod
@@ -480,6 +489,7 @@ class EvaluateConditionOutput:
             next_nodes=data.get("next_nodes", []),
             error=data.get("error"),
             sends=list(data.get("sends") or []),
+            stream_attempt=data.get("stream_attempt"),
         )
 
 
@@ -575,6 +585,9 @@ class GraphWorkflowOutput:
     branches: Optional[List[List[Any]]] = None
     thread_saved: Optional[bool] = None
     thread_error: Optional[str] = None
+    #: The attempt of each unit's output the run used (``"<step>:<unit>"``),
+    #: for the stream only.
+    attempts: Optional[Dict[str, str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -593,6 +606,8 @@ class GraphWorkflowOutput:
         if self.thread_saved is not None:
             data["thread_saved"] = self.thread_saved
             data["thread_error"] = self.thread_error
+        if self.attempts:
+            data["attempts"] = dict(self.attempts)
         return data
 
     @classmethod
@@ -610,4 +625,5 @@ class GraphWorkflowOutput:
             branches=data.get("branches"),
             thread_saved=data.get("thread_saved"),
             thread_error=data.get("thread_error"),
+            attempts=data.get("attempts"),
         )

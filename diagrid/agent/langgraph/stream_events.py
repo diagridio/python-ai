@@ -111,7 +111,7 @@ def started_event(workflow_id: str, thread_id: str) -> Any:
     )
 
 
-_STREAM_ONLY_KEYS = (EXECUTED_KEY, BRANCHES_KEY, FINAL_STATE_KEY)
+_STREAM_ONLY_KEYS = (EXECUTED_KEY, BRANCHES_KEY, FINAL_STATE_KEY, "attempts")
 
 
 def without_executed(event: Dict[str, Any]) -> Dict[str, Any]:
