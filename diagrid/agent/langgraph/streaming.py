@@ -31,6 +31,7 @@ from diagrid.agent.core.workflow.stream import (
     display_step,
 )
 
+from .task_identity import TaskIdentity, configurable_metadata
 from .task_events import (
     DEBUG,
     TASKS,
@@ -56,9 +57,6 @@ REFUSED_MODES = {
         "GET /agent/run/{workflow_id}."
     ),
 }
-
-# Configurable keys LangChain never copies into metadata (they are secrets).
-_UNTRACED_CONFIGURABLE = frozenset(("api_key",))
 
 # Key of the run_async terminal event that lists the nodes each step ran. It
 # serves the stream (see stream_unavailable_event) and is not part of a result.
@@ -191,6 +189,13 @@ class NodeStreamer:
         self._node = node
         self._task_id = task_id
         self._triggers = tuple(triggers) if triggers else None
+        self._identity = TaskIdentity(
+            step=step,
+            node=node,
+            task_id=task_id,
+            triggers=self._triggers,
+            path=self._path,
+        )
         self._attempt_id = uuid.uuid4().hex
         self._seq = itertools.count()
         # A node may emit from several threads (parallel tool calls); seq is
@@ -204,14 +209,8 @@ class NodeStreamer:
     def metadata(self) -> Dict[str, Any]:
         """The ``langgraph_*`` keys the Pregel loop sets on a task's config."""
         return {
-            # Pregel numbers the first node after START as step 1.
-            "langgraph_step": display_step(self._step),
-            "langgraph_node": self._node,
-            # Every trigger channel of the node, sorted, as Pregel lists them.
-            "langgraph_triggers": self._triggers or (f"branch:to:{self._node}",),
-            "langgraph_path": self._path or ("__pregel_pull", self._node),
-            "langgraph_checkpoint_ns": f"{self._node}:{self._task_id}",
-            "checkpoint_ns": f"{self._node}:{self._task_id}",
+            **self._identity.metadata(),
+            "checkpoint_ns": self._identity.checkpoint_ns,
         }
 
     def _emit(self, ns: Tuple[str, ...], mode: str, data: Any) -> None:
@@ -408,22 +407,8 @@ class NodeStreamer:
         return patched
 
     def _configurable_metadata(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """What native LangGraph copies from ``configurable`` into metadata.
-
-        ``thread_id`` and the other primitive, non-private configurable values,
-        so a client keying on ``metadata["thread_id"]`` sees what it would
-        from ``CompiledStateGraph.astream``.
-        """
-        derived = {
-            key: value
-            for key, value in (config.get("configurable") or {}).items()
-            if not key.startswith("__")
-            and isinstance(value, (str, int, float, bool))
-            and key not in _UNTRACED_CONFIGURABLE
-        }
-        if self._thread_id:
-            derived.setdefault("thread_id", self._thread_id)
-        return derived
+        """What native LangGraph copies from ``configurable`` into metadata."""
+        return configurable_metadata(config, self._thread_id)
 
 
 def normalize_stream_mode(stream_mode: Any) -> Tuple[List[str], bool]:

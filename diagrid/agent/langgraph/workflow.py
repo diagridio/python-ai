@@ -66,6 +66,7 @@ from diagrid.agent.core.workflow.stream import (
 from .node_routes import route_in_node
 from .stream_values import state_values
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
+from .task_identity import TaskIdentity
 from .values import (
     coerce_to_default,
     decode_value,
@@ -1189,6 +1190,7 @@ def _node_config(
     ctx: WorkflowActivityContext,
     name: str,
     streamer: Optional[NodeStreamer],
+    identity: Optional[TaskIdentity] = None,
 ) -> Dict[str, Any]:
     """The config a node or conditional edge runs under, built from ``base``.
 
@@ -1197,17 +1199,45 @@ def _node_config(
     (``configurable["thread_id"]``), a ``Runtime`` (deep agent middleware
     requires one, and sandbox/state backends resolve the owning workflow from
     ``runtime.execution_info.thread_id``) and, in a streamed run, the stream
-    handler.
+    handler. ``identity`` sets the task's ``langgraph_*`` metadata, streamed
+    run or not, as the Pregel loop sets it on every task.
     """
     config = dict(base) if base else {}
     config[CONF] = dict(config.get(CONF) or {})
     resolved = thread_id or config.get("thread_id") or getattr(ctx, "workflow_id", None)
     config[CONF].setdefault("thread_id", resolved)
+    if identity is not None:
+        static = get_node_static_config(identity.node) or StaticConfig()
+        config["metadata"] = identity.config_metadata(config, static, resolved)
     if CONFIG_KEY_RUNTIME not in config[CONF]:
         config[CONF][CONFIG_KEY_RUNTIME] = _build_node_runtime(
             resolved, ctx, name, streamer.writer if streamer else None
         )
     return streamer.patch_config(config) if streamer else config
+
+
+def _task_identity(
+    ctx: WorkflowActivityContext, node_name: str, step: int, send_index: Optional[int]
+) -> TaskIdentity:
+    """The task a node (or one of its routers) runs as, as Pregel names it."""
+    return TaskIdentity(
+        step=step,
+        node=node_name,
+        task_id=getattr(ctx, "task_id", ""),
+        triggers=_task_triggers(node_name, send_index),
+        path=None if send_index is None else (PUSH_TRIGGER, send_index, False),
+    )
+
+
+def _call_identity(call: _NodeCall) -> TaskIdentity:
+    """The task this node execution runs as."""
+    send = call.node_input.send
+    return _task_identity(
+        call.ctx,
+        call.node_name,
+        call.node_input.step or 0,
+        None if send is None else send["slot"],
+    )
 
 
 def _runnable_config(call: _NodeCall) -> Dict[str, Any]:
@@ -1218,6 +1248,7 @@ def _runnable_config(call: _NodeCall) -> Dict[str, Any]:
         ctx=call.ctx,
         name=call.node_name,
         streamer=call.streamer,
+        identity=_call_identity(call),
     )
     # Inject CONFIG_KEY_READ / CONFIG_KEY_SEND so that deepagents
     # StateBackend (sandbox tools) can read/write the "files"
@@ -1269,6 +1300,7 @@ def _plain_node_config(call: _NodeCall) -> Dict[str, Any]:
         ctx=call.ctx,
         name=call.node_name,
         streamer=call.streamer,
+        identity=_call_identity(call),
     )
 
 
@@ -1634,6 +1666,9 @@ def _call_condition(
         ctx=ctx,
         name=cond_input.condition_name,
         streamer=streamer,
+        identity=_task_identity(
+            ctx, cond_input.source_node, cond_input.step or 0, cond_input.send_slot
+        ),
     )
 
     def run() -> Any:
