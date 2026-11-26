@@ -357,7 +357,9 @@ not pick one:
   lists its last 128 steps (a reader further behind catches up on the older
   steps when the run ends) and which it reads about every 2 seconds while a
   node is streaming, as Dapr returns the status only together with the run's
-  input. `StateLogStreamConfig` sets the store, key prefix, TTLs, batch
+  input, and once more when a run pauses or fails, so the chunks of the step
+  it ended in (an `__interrupt__` chunk, say) always come before the final
+  event. `StateLogStreamConfig` sets the store, key prefix, TTLs, batch
   sizes and read interval:
 
   ```python
@@ -410,8 +412,11 @@ with a checkpointer: the workflow is the checkpoint, so no checkpointer is
 needed for this.
 
 - The stream sends LangGraph's `updates` chunk `{"__interrupt__": [...]}` (each
-  interrupt's `value` and `id`; `Interrupt` objects in `astream`) and ends with
-  the event `workflow_interrupted` (`workflow_id`, `thread_id`, `interrupts`).
+  interrupt's `value` and `id`; `Interrupt` objects in `astream`), on any
+  replica, and ends with the event `workflow_interrupted` (`workflow_id`,
+  `thread_id`, `interrupts`), whose SSE id is `v1.end`: a reconnect with it
+  gets only the run's next final event (`workflow_interrupted` again while it
+  waits). The stream of the resume (below) carries the rest of the run.
   `invoke` returns `{"__interrupt__": [Interrupt(...)]}`.
 - The workflow waits durably for the answer: in its history, not in process
   memory, so the app may restart or scale meanwhile. The other nodes of the

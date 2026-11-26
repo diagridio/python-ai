@@ -38,7 +38,7 @@ from diagrid.agent.core.workflow.stream_log import (
 from .activity_stream import STATUS_BRANCHES, STATUS_EXECUTED, STATUS_EXECUTED_FROM
 from .interrupts import INTERRUPT_KEY, as_interrupts
 from .stream_attempts import attempts_of, unit_key
-from .stream_events import encode_chunk, stream_failure_event
+from .stream_events import STILL_RUNNING_KEY, encode_chunk, stream_failure_event
 from .streaming import BRANCHES_KEY, EXECUTED_KEY, SUPPORTED_MODES
 
 logger = logging.getLogger(__name__)
@@ -164,7 +164,7 @@ class LogFollower:
         #: Units the client had in full or in part before this stream: the
         #: stream does not report them missing.
         self._seen = seen if seen is not None else set()
-        #: Polls since the run's status was last read (see ``_run_status``).
+        #: Polls since the run's status was last read (see ``_run_statuses``).
         self._polls_since_status = STATUS_EVERY
         #: The last step whose ``values`` chunk went out (here or before a
         #: reconnect): every unit of a step logs it, and it is sent once.
@@ -249,10 +249,11 @@ class LogFollower:
     async def _read_once(self, final: Optional[Dict[str, Any]]) -> None:
         if self._cursor.at_end:
             return
-        status = await self._run_status(final)
-        if status is not None:
-            if final is None and self._behind_window(status):
-                return  # the final event lists every step: read in order then
+        for status in await self._run_statuses(final):
+            if status is not final and self._behind_window(status):
+                if final is None:
+                    return  # the final event lists every step: read in order then
+                continue  # learning these steps first would leave a gap
             self._learn(units_of(status))
             winners = attempts_of(status)
             for key, state in self._units.items():
@@ -303,9 +304,9 @@ class LogFollower:
             if not self._cursor.skips_step(unit[0])
         }
 
-    async def _run_status(
+    async def _run_statuses(
         self, final: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+    ) -> List[Dict[str, Any]]:
         """The run's status, when there may be something new in it.
 
         New units appear when a step starts, and the run says which attempt
@@ -314,15 +315,23 @@ class LogFollower:
         unit whose writes failed must not hold the stream back for good).
         Dapr returns the status only with the run's input and output, so this
         is the expensive read of a poll.
+
+        Once the run ended, the final event lists its units when it completed.
+        An interrupted or failed run's final does not, and the step it ended
+        in may have started after the last read: the status is read once more,
+        so the stream drains every unit before it closes. A stream that failed
+        while the run goes on has nothing more to read.
         """
         if final is not None:
-            return final
+            if EXECUTED_KEY in final or final.get(STILL_RUNNING_KEY):
+                return [final]
+            return [final, await asyncio.to_thread(self._status) or {}]
         self._polls_since_status += 1
         writing = any(not state.complete for state in self._units.values())
         if writing and self._polls_since_status < STATUS_EVERY:
-            return None
+            return []
         self._polls_since_status = 0
-        return await asyncio.to_thread(self._status) or {}
+        return [await asyncio.to_thread(self._status) or {}]
 
     def _behind_window(self, status: Dict[str, Any]) -> bool:
         """Whether the status no longer lists steps this reader still needs.
