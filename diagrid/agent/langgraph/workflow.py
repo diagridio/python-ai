@@ -68,8 +68,13 @@ from .activity_stream import (
     transport_of,
 )
 from .interrupts import (
+    ROUTER_INTERRUPT_ERROR,
+    DroppedInterrupt,
+    TaskResumes,
     interrupt_config,
     interrupt_payloads,
+    nested_interrupts,
+    router_interrupt_conf,
     settle_interrupts,
     without_resume_writes,
 )
@@ -1114,6 +1119,8 @@ class _NodeCall:
     pending_sends: list
     #: Where the node's routers write their chunks, in a streamed run.
     sink: Optional[StreamSink] = None
+    #: The task's resume values, shared by the node, its subgraphs and routers.
+    resumes: TaskResumes = field(default_factory=TaskResumes)
 
     @property
     def node_name(self) -> str:
@@ -1276,6 +1283,7 @@ def _interrupt_conf(call: _NodeCall) -> Dict[str, Any]:
         stop=node_input.recursion_limit,
         resume=node_input.resume,
         send=call.pending_sends.extend,
+        resumes=call.resumes,
     )
 
 
@@ -1336,9 +1344,10 @@ def _run_node(call: _NodeCall) -> Any:
     # get_stream_writer() must find a (no-op) writer when the run is not streamed.
     with set_config_context(ambient) as ctx_:  # type: ignore[arg-type]
         try:
-            return ctx_.run(run)
+            result = ctx_.run(run)
         except ParentCommand as exc:
             return _parent_command_result(exc, call.node_name)
+    return nested_interrupts(result, call.resumes, call.node_name)
 
 
 def _parent_command_result(exc: ParentCommand, node_name: str) -> Command:
@@ -1480,7 +1489,7 @@ def _node_output(call: _NodeCall, result: Any) -> Dict[str, Any]:
     routed: Dict[str, Any] = {}
     if call.node_input.routes:
         routed = route_in_node(
-            call.ctx, call.node_input, writes, call.sink
+            call.ctx, call.node_input, writes, call.sink, _interrupt_conf(call)
         ).output_fields()
     if call.streamer:
         call.streamer.updates(raw_writes)
@@ -1542,6 +1551,7 @@ def execute_node_activity(
             streamer=_make_streamer(ctx, node_input, config, writer),
             pending_sends=[],
             sink=writer,
+            resumes=TaskResumes(node_input.resume),
         )
         _send_values(
             ctx,
@@ -1553,6 +1563,7 @@ def execute_node_activity(
         # Under the LangSmith parent trace the runner opened, so LLM calls nest in it.
         try:
             result = _run_with_stream_hooks(call, _langsmith_parent(config))
+            output = _node_output(call, result)
         except GraphInterrupt as paused:
             # Not a failure: the task waits for a resume and runs again then.
             interrupts = interrupt_payloads(paused)
@@ -1561,7 +1572,8 @@ def execute_node_activity(
             return ExecuteNodeOutput(
                 node_name=node_name, interrupts=interrupts
             ).to_dict()
-        output = _node_output(call, result)
+        except DroppedInterrupt as e:  # retrying would drop it again
+            return ExecuteNodeOutput(node_name=node_name, error=str(e)).to_dict()
         done = True
         return output
     finally:
@@ -1634,6 +1646,7 @@ def _call_condition(
     cond_func: Callable,
     state: Any,
     sink: Optional[StreamSink],
+    interrupt_conf: Optional[Dict[str, Any]] = None,
 ) -> Any:
     """Call a conditional edge's function and return what it routed to.
 
@@ -1668,6 +1681,7 @@ def _call_condition(
             ctx, cond_input.source_node, cond_input.step or 0, cond_input.send_slot
         ),
     )
+    config[CONF].update(interrupt_conf or router_interrupt_conf(cond_input))
 
     def run() -> Any:
         # A LangChain Runnable (e.g. RunnableCallable from Deep Agents
@@ -1714,7 +1728,10 @@ def evaluate_condition_activity(
             0,
             writer,
         )
-        output = evaluate_condition(ctx, cond_input, writer).to_dict()
+        try:
+            output = evaluate_condition(ctx, cond_input, writer).to_dict()
+        except GraphInterrupt:
+            output = EvaluateConditionOutput(error=ROUTER_INTERRUPT_ERROR).to_dict()
         done = True
         return output
     finally:
@@ -1726,6 +1743,7 @@ def evaluate_condition(
     ctx: WorkflowActivityContext,
     cond_input: EvaluateConditionInput,
     sink: Optional[StreamSink],
+    interrupt_conf: Optional[Dict[str, Any]] = None,
 ) -> EvaluateConditionOutput:
     """Call a conditional edge's function and say where it routes, or the error.
 
@@ -1751,7 +1769,9 @@ def evaluate_condition(
     # add_conditional_edges path is one) traces itself, so without a parent
     # each evaluation lands in LangSmith as a separate top-level trace.
     with _under_parent_trace(cond_input.config):
-        result = _call_condition(ctx, cond_input, cond_func, state, sink)
+        result = _call_condition(
+            ctx, cond_input, cond_func, state, sink, interrupt_conf
+        )
     return _route(cond_input, result)
 
 

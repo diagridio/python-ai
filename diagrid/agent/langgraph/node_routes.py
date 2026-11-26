@@ -88,13 +88,17 @@ def route_in_node(
     node_input: ExecuteNodeInput,
     writes: List[NodeWrite],
     sink: Optional[StreamSink],
+    interrupt_conf: Optional[Dict[str, Any]] = None,
 ) -> RouteOutcome:
     """Evaluate the node's conditional edges on the state with ``writes`` applied.
 
     The routers stream as they do in the condition activity: as the source
     node, keyed by edge and task, so a later fallback attempt of one reads as
-    that router's retry, not the node's.
+    that router's retry, not the node's. ``interrupt_conf`` is the task's
+    ``interrupt()`` scratchpad: a router that interrupts pauses the task.
     """
+    from langgraph.errors import GraphInterrupt
+
     from .workflow import ReducerError, evaluate_condition
 
     try:
@@ -107,7 +111,9 @@ def route_in_node(
     for route in node_input.routes or []:
         cond_input = _route_input(node_input, route, state)
         try:
-            output = evaluate_condition(ctx, cond_input, sink)
+            output = evaluate_condition(ctx, cond_input, sink, interrupt_conf)
+        except GraphInterrupt:
+            raise
         except Exception:
             logger.warning(
                 "Router %r of node %r raised inside the node's activity; the "
