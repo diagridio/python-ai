@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 MAX_BUFFERED_EVENTS = 10_000
 
 UPDATES = "updates"
+#: The graph's state after a step. Every activity of the next step is handed
+#: that state and offers it; the sink keeps the first offer of each step.
+VALUES = "values"
 NODE_RESET = "node_reset"
 STREAM_UNAVAILABLE = "stream_unavailable"
 STREAM_DROPPED = "stream_dropped"
@@ -124,6 +127,9 @@ class InProcessSink:
     ownership and emits a ``node_reset`` event so consumers can drop the
     partial text; the old attempt's chunks are then ignored. After a node's
     ``updates`` chunk was accepted, chunks from any other attempt are dropped.
+
+    A ``values`` chunk is the same whoever sends it, so the first one for a key
+    is kept and any later one dropped, with no ``node_reset``.
     """
 
     def __init__(self, workflow_id: str, loop: asyncio.AbstractEventLoop) -> None:
@@ -134,6 +140,7 @@ class InProcessSink:
         self._owner: Dict[Tuple[int, str], str] = {}
         self._finished: Dict[Tuple[int, str], str] = {}
         self._retired: set = set()
+        self._values: set = set()
         self._closed = False
         self._dropped = 0
 
@@ -141,6 +148,11 @@ class InProcessSink:
         key = (event.step, event.node)
         with self._lock:
             if self._closed:
+                return
+            if event.mode == VALUES:
+                if key not in self._values:
+                    self._values.add(key)
+                    self._enqueue(event)
                 return
             if self._finished.get(key, event.attempt_id) != event.attempt_id:
                 return

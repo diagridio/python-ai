@@ -251,6 +251,9 @@ class ExecuteNodeInput:
             for the activity to evaluate once the node returns, as LangGraph
             runs a router inside its node's task. ``None`` when the workflow
             evaluates them itself (an instance from before routing moved here).
+        output_channels: The graph's output channels, set only in a streamed
+            run: the activity sends the state it is handed (the state after the
+            previous step) as a ``values`` chunk when the step wrote one of them.
     """
 
     node_name: str
@@ -261,6 +264,7 @@ class ExecuteNodeInput:
     send: Optional[Dict[str, Any]] = None
     recursion_limit: Optional[int] = None
     routes: Optional[List[Dict[str, Any]]] = None
+    output_channels: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -277,6 +281,8 @@ class ExecuteNodeInput:
             data["recursion_limit"] = self.recursion_limit
         if self.routes is not None:
             data["routes"] = self.routes
+        if self.output_channels is not None:
+            data["output_channels"] = self.output_channels
         return data
 
     @classmethod
@@ -290,6 +296,7 @@ class ExecuteNodeInput:
             send=data.get("send"),
             recursion_limit=data.get("recursion_limit"),
             routes=data.get("routes"),
+            output_channels=data.get("output_channels"),
         )
 
 
@@ -380,6 +387,9 @@ class EvaluateConditionInput:
             task, apart from the node's other tasks of the step.
         recursion_limit: The run's step limit as a LangGraph ``recursion_limit``
             (see ``ExecuteNodeInput``).
+        output_channels: Set only for a START edge of a streamed run: the
+            activity sends the input as the first ``values`` chunk (see
+            ``ExecuteNodeInput``).
     """
 
     source_node: str
@@ -391,6 +401,7 @@ class EvaluateConditionInput:
     step: Optional[int] = None
     send_slot: Optional[int] = None
     recursion_limit: Optional[int] = None
+    output_channels: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -407,6 +418,8 @@ class EvaluateConditionInput:
             data["send_slot"] = self.send_slot
         if self.recursion_limit is not None:
             data["recursion_limit"] = self.recursion_limit
+        if self.output_channels is not None:
+            data["output_channels"] = self.output_channels
         return data
 
     @classmethod
@@ -421,6 +434,7 @@ class EvaluateConditionInput:
             step=data.get("step"),
             send_slot=data.get("send_slot"),
             recursion_limit=data.get("recursion_limit"),
+            output_channels=data.get("output_channels"),
         )
 
 

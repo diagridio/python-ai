@@ -34,6 +34,7 @@ from diagrid.agent.core.workflow.stream import (
     KEEPALIVE_EVENT,
     WORKFLOW_STARTED,
     UPDATES,
+    VALUES,
     InProcessSink,
     StreamClosed,
     StreamEvent,
@@ -50,6 +51,7 @@ from .models import (
 )
 from .streaming import (
     EXECUTED_KEY,
+    FINAL_STATE_KEY,
     STREAM_RUN_KEY,
     StaticConfig,
     FAILED_STATUSES,
@@ -886,6 +888,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     "status": output.status,
                     **({"error": output.error} if output.error else {}),
                     **({EXECUTED_KEY: output.executed} if with_executed else {}),
+                    # the state it ended with, for the stream's last values chunk
+                    **(
+                        {FINAL_STATE_KEY: output.channel_state.to_dict()}
+                        if streamed and output.channel_state is not None
+                        else {}
+                    ),
                 }
 
             async for event in self._poll_workflow(
@@ -917,8 +925,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
     ) -> AsyncIterator[Any]:
         """Stream a run like ``CompiledStateGraph.astream``.
 
-        ``messages``, ``updates`` and ``custom`` are supported; one mode yields
-        bare chunks, a list of modes yields ``(mode, chunk)``. The chunks have
+        ``messages``, ``updates``, ``custom``, ``values``, ``tasks`` and
+        ``debug`` are supported (``checkpoints`` is refused: there are no
+        LangGraph checkpoints); one mode yields bare chunks, a list of modes
+        yields ``(mode, chunk)``. The chunks have
         the shape native ``astream`` yields: ``messages`` are
         ``(message_chunk, metadata)``, ``updates`` are ``{node: update}`` with
         the values as the node returned them (``None`` for a node that wrote
@@ -993,6 +1003,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         sink = self._stream_registry.open(workflow_id)
         task: Optional["asyncio.Task[None]"] = None
         seen_nodes: Set[Tuple[int, str]] = set()
+        values_sent: Set[int] = set()
         try:
             # Before the pump schedules the workflow: an activity can write the
             # moment it is scheduled, and the event must come before its chunks.
@@ -1014,11 +1025,19 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     # Unregister before handing over the result: chunks a late
                     # activity attempt writes from here on are dropped.
                     self._stream_registry.close(workflow_id, sink)
-                    for event in closing_events(item, seen_nodes, workflow_id):
+                    for event in closing_events(
+                        item,
+                        seen_nodes,
+                        workflow_id,
+                        output_channels=self._graph_config.output_channels,
+                        values_sent=values_sent,
+                    ):
                         yield event
                     return
                 if isinstance(item, StreamEvent) and item.mode == UPDATES:
                     seen_nodes.add((item.step, item.node))
+                if isinstance(item, StreamEvent) and item.mode == VALUES:
+                    values_sent.add(item.step)
                 yield item
         finally:
             # Also reached when the consumer goes away (client disconnect,

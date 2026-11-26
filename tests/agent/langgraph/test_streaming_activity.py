@@ -264,8 +264,11 @@ class TestHandlerDrift(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(LOGGER, level="ERROR") as logs:
             items = await self._run_streamed("wf-drift-1")
             await self._run_streamed("wf-drift-2")
-        # the node ran, its update still streams, and the cause is logged once
-        self.assertEqual([i.mode for i in items], ["updates"])
+        # the node ran, its update and task events still stream, and the cause
+        # is logged once
+        self.assertEqual(
+            [i.mode for i in items], ["tasks", "debug", "updates", "tasks", "debug"]
+        )
         self.assertEqual(len(logs.records), 1)
         self.assertIn("messages", logs.records[0].getMessage())
 

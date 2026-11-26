@@ -84,7 +84,11 @@ class TestTasksMatchNative(_FakeDaprTest):
 
     async def test_a_parallel_step(self):
         native, ours = await _both(
-            _fan_out_graph(), "tasks-fan", {"log": []}, ["tasks", "updates"]
+            # with messages: the fan-out's model answers differently when it streams
+            _fan_out_graph(),
+            "tasks-fan",
+            {"log": []},
+            ["tasks", "updates", "messages"],
         )
         self.assertEqual(
             _canonical(_stable(ours, keep_ids=False)),

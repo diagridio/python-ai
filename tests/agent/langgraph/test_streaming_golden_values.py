@@ -111,6 +111,7 @@ class TestValuesMatchNative(_FakeDaprTest):
             ("values-quiet-last", _golden_graph(), INPUT),
         ):
             with self.subTest(case=name):
+                self.setUp()
                 native, ours = await _both(
                     compiled, name, graph_input, ["values", "updates"]
                 )

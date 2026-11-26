@@ -24,16 +24,37 @@ from langgraph.errors import GraphRecursionError
 from diagrid.agent.core.workflow.stream import (
     STREAM_UNAVAILABLE,
     UPDATES,
+    VALUES,
     StreamEvent,
     StreamSink,
     display_step,
+)
+
+from .task_events import (
+    DEBUG,
+    TASKS,
+    debug_event,
+    task_id,
+    task_metadata,
+    task_result,
+    task_start,
 )
 
 logger = logging.getLogger(__name__)
 
 MESSAGES = "messages"
 CUSTOM = "custom"
-SUPPORTED_MODES = (MESSAGES, UPDATES, CUSTOM)
+SUPPORTED_MODES = (MESSAGES, UPDATES, CUSTOM, VALUES, TASKS, DEBUG)
+# Modes LangGraph has and the runner refuses, with the reason it gives.
+REFUSED_MODES = {
+    "checkpoints": (
+        "stream_mode 'checkpoints' is not supported: the Dapr workflow runner "
+        "keeps no LangGraph checkpoints (the workflow history is the run's "
+        "durable record), so there are no checkpoint ids to stream or pass back. "
+        "Read the full state from the run's final event or from "
+        "GET /agent/run/{workflow_id}."
+    ),
+}
 
 # Configurable keys LangChain never copies into metadata (they are secrets).
 _UNTRACED_CONFIGURABLE = frozenset(("api_key",))
@@ -41,6 +62,9 @@ _UNTRACED_CONFIGURABLE = frozenset(("api_key",))
 # Key of the run_async terminal event that lists the nodes each step ran. It
 # serves the stream (see stream_unavailable_event) and is not part of a result.
 EXECUTED_KEY = "executed"
+# Key of the run_async terminal event of a streamed run that holds the state it
+# ended with, for the stream's last ``values`` chunk; also not part of a result.
+FINAL_STATE_KEY = "channel_state"
 
 # Set in the workflow config of a run someone is streaming, so an activity that
 # finds no sink to write to knows that is a problem and not just a plain run.
@@ -301,6 +325,34 @@ class NodeStreamer:
         """``Runtime.stream_writer``: what ``get_stream_writer()`` returns."""
         self._emit((), CUSTOM, chunk)
 
+    @property
+    def _event_task_id(self) -> str:
+        """The id of this task in its ``tasks`` events."""
+        return task_id(self._workflow_id, self._step, self._sink_node)
+
+    def _emit_task(self, payload: Dict[str, Any]) -> None:
+        """A ``tasks`` event, and the same event as ``debug`` sends it."""
+        self._emit((), TASKS, payload)
+        self._emit((), DEBUG, debug_event(display_step(self._step), payload))
+
+    def task_started(
+        self, node_input: Any, config: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Send the task's start event, as LangGraph does when a step starts it."""
+        config = config or {}
+        metadata = task_metadata(
+            self._static.metadata(config.get("metadata")),
+            self._static.tags(config.get("tags")),
+        )
+        triggers = self.metadata["langgraph_triggers"]
+        self._emit_task(
+            task_start(self._event_task_id, self._node, node_input, triggers, metadata)
+        )
+
+    def task_finished(self, writes: List[Tuple[str, Any]]) -> None:
+        """Send the task's result event: its writes, after its ``updates`` chunk."""
+        self._emit_task(task_result(self._event_task_id, self._node, writes))
+
     def updates(self, writes: List[Tuple[str, Any]]) -> None:
         """Emit the node's ``(channel, value)`` writes as ``{node: update}``.
 
@@ -369,6 +421,11 @@ def normalize_stream_mode(stream_mode: Any) -> Tuple[List[str], bool]:
     """Return ``(modes, is_list)``; reject modes the runner cannot provide."""
     is_list = isinstance(stream_mode, (list, tuple))
     modes = list(stream_mode) if is_list else [stream_mode]
+    refused = [
+        REFUSED_MODES[m] for m in modes if isinstance(m, str) and m in REFUSED_MODES
+    ]
+    if refused:
+        raise ValueError(refused[0])
     unsupported = [m for m in modes if m not in SUPPORTED_MODES]
     if unsupported:
         raise ValueError(
@@ -406,14 +463,15 @@ def _plain_data(value: Any) -> Any:
 def to_wire(mode: str, data: Any) -> Any:
     """JSON-ready form of a chunk for a transport.
 
-    ``messages``, ``updates`` and ``custom`` chunks can carry LangChain objects
-    next to arbitrary values a node chose to return or write. ``dumpd`` turns
+    Every chunk of a stream mode can carry LangChain objects (messages in a
+    ``values`` state, a task's input) next to arbitrary values a node chose to
+    return or write. ``dumpd`` turns
     the objects into the form ``langchain_core.load.load`` restores, so a client
     sees the same objects an in-process ``astream`` consumer does; everything
     else becomes plain data first (see :func:`_plain_data`). Control events go
     as they are.
     """
-    if mode in (MESSAGES, UPDATES, CUSTOM):
+    if mode in SUPPORTED_MODES:
         return dumpd(_plain_data(data))
     return data
 

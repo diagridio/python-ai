@@ -17,8 +17,10 @@ from diagrid.agent.core.workflow.stream import (
     StreamEvent,
 )
 
+from .stream_values import final_values
 from .streaming import (
     EXECUTED_KEY,
+    FINAL_STATE_KEY,
     GraphRunError,
     StreamControl,
     run_error,
@@ -106,11 +108,15 @@ def started_event(workflow_id: str, thread_id: str) -> Any:
     )
 
 
+_STREAM_ONLY_KEYS = (EXECUTED_KEY, FINAL_STATE_KEY)
+
+
 def without_executed(event: Dict[str, Any]) -> Dict[str, Any]:
-    """``event`` minus the per-step node list, which is for the stream only."""
-    if EXECUTED_KEY not in event:
+    """``event`` minus what is for the stream only: the per-step node list and
+    the state the run ended with."""
+    if not any(key in event for key in _STREAM_ONLY_KEYS):
         return event
-    return {k: v for k, v in event.items() if k != EXECUTED_KEY}
+    return {k: v for k, v in event.items() if k not in _STREAM_ONLY_KEYS}
 
 
 async def next_item(sink: Any, keepalive: bool) -> Any:
@@ -192,10 +198,26 @@ def route_astream_item(
 
 
 def closing_events(
-    closed: StreamClosed, seen_nodes: Set[Tuple[int, str]], workflow_id: str
+    closed: StreamClosed,
+    seen_nodes: Set[Tuple[int, str]],
+    workflow_id: str,
+    *,
+    output_channels: Optional[List[str]] = None,
+    values_sent: Optional[Set[int]] = None,
 ) -> List[Any]:
-    """The items a stream ends with: ``stream_unavailable`` if due, then the final."""
+    """The items a stream ends with.
+
+    The ``values`` chunk of the state the run ended with (when the run got to
+    the end of a step and no activity sent it), ``stream_unavailable`` if due,
+    then the final event.
+    """
     out: List[Any] = []
+    if output_channels:
+        last = final_values(
+            closed.final, output_channels, values_sent or set(), workflow_id
+        )
+        if last is not None:
+            out.append(last)
     unavailable = stream_unavailable_event(closed.final, seen_nodes, workflow_id)
     if unavailable is not None:
         logger.warning(

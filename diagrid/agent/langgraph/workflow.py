@@ -64,6 +64,7 @@ from diagrid.agent.core.workflow.stream import (
 )
 
 from .node_routes import route_in_node
+from .stream_values import state_values
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
 from .values import (
     coerce_to_default,
@@ -521,6 +522,13 @@ class _Run:
     #: Deferred nodes that were triggered and wait for nothing else to be pending.
     held: List[str] = field(default_factory=list)
 
+    @property
+    def output_channels(self) -> Optional[List[str]]:
+        """What an activity of a streamed run sends ``values`` chunks of."""
+        if not (self.config or {}).get(STREAM_RUN_KEY):
+            return None
+        return list(self.graph_config.output_channels)
+
     def finish(
         self, step: int, status: str, error: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -833,6 +841,7 @@ def _run_nodes(
             send=send,
             recursion_limit=run.recursion_limit,
             routes=_node_routes(run, node_name) if run.route_in_node else None,
+            output_channels=run.output_channels,
         )
         activity: Any = execute_node_activity
         if run.node_activities_by_name:
@@ -937,6 +946,8 @@ def _follow_edge(
         step=step,
         send_slot=send_slot,
         recursion_limit=run.recursion_limit,
+        # a START edge reads the input: the state of the run's first values chunk
+        output_channels=run.output_channels if source_node == START else None,
     )
     # By name, so the runner's own activity (the one that knows its stream
     # registry) runs, not the module-level function.
@@ -1417,6 +1428,7 @@ def _run_with_stream_hooks(call: _NodeCall, parent: Optional[str]) -> Any:
     """
     streamer = call.streamer
     if streamer:
+        streamer.task_started(call.state, call.config)
         streamer.node_started(call.state, call.config)
     try:
         if parent:
@@ -1457,6 +1469,7 @@ def _node_output(call: _NodeCall, result: Any) -> Dict[str, Any]:
         ).output_fields()
     if call.streamer:
         call.streamer.updates(raw_writes)
+        call.streamer.task_finished(raw_writes)
     goto, sends = _result_to_gotos(result)
     return ExecuteNodeOutput(
         node_name=call.node_name,
@@ -1504,10 +1517,41 @@ def execute_node_activity(
         registry=stream_registry,
     )
 
+    _send_values(
+        ctx,
+        node_input.channel_state,
+        node_input.output_channels,
+        node_input.step or 0,
+        stream_registry,
+    )
     # Under the LangSmith parent trace the runner opened, so LLM calls nest in it.
     result = _run_with_stream_hooks(call, _langsmith_parent(config))
 
     return _node_output(call, result)
+
+
+def _send_values(
+    ctx: WorkflowActivityContext,
+    channel_state: ChannelState,
+    output_channels: Optional[List[str]],
+    step: int,
+    registry: Optional[StreamSinkRegistry],
+) -> None:
+    """Offer the state this activity was handed as the ``values`` chunk of ``step``.
+
+    It is the state after the previous step (the input for step 0), which
+    every activity of ``step`` is handed: the sink keeps the first offer, which
+    comes before any of the step's own chunks.
+    """
+    if not output_channels:
+        return
+    workflow_id = getattr(ctx, "workflow_id", None)
+    sink = get_stream_sink(workflow_id, registry=registry)
+    if sink is None:
+        return
+    event = state_values(str(workflow_id), step, channel_state, output_channels)
+    if event is not None:
+        sink.put(event)
 
 
 def _node_state(node_input: ExecuteNodeInput) -> Any:
@@ -1611,6 +1655,13 @@ def evaluate_condition_activity(
     module's).
     """
     cond_input = EvaluateConditionInput.from_dict(input_data)
+    _send_values(
+        ctx,
+        cond_input.channel_state,
+        cond_input.output_channels,
+        0,
+        stream_registry,
+    )
     return evaluate_condition(ctx, cond_input, stream_registry).to_dict()
 
 

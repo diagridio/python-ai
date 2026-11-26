@@ -368,6 +368,9 @@ class TestTwoRunsAtOnce(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(runner.stream_registry.get("wf-B"))
 
 
+TASK_MODES = ("tasks", "debug")
+
+
 class TestRetryWhileTheOldAttemptIsStillRunning(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         clear_registries()
@@ -423,7 +426,8 @@ class TestRetryWhileTheOldAttemptIsStillRunning(unittest.IsolatedAsyncioTestCase
                 break
             items.append(item)
 
-        shown = [(e.mode, e.data) for e in items]
+        # a task's start and result events are not what this is about
+        shown = [(e.mode, e.data) for e in items if e.mode not in TASK_MODES]
         self.assertEqual(
             shown,
             [
@@ -488,7 +492,8 @@ class TestRetryWhileTheOldAttemptIsStillRunning(unittest.IsolatedAsyncioTestCase
             item = await sink.get()
             if isinstance(item, StreamClosed):
                 break
-            shown.append((item.mode, item.data))
+            if item.mode not in TASK_MODES:
+                shown.append((item.mode, item.data))
         self.assertEqual(
             shown,
             [

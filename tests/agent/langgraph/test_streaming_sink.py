@@ -364,14 +364,15 @@ class TestRetryDedupe(unittest.IsolatedAsyncioTestCase):
         await asyncio.to_thread(execute_node_activity, _Ctx("wf-retry"), payload)
         got = await self._drain(sink)
         self.assertEqual(
-            [(e.mode, e.data) for e in got if e.mode != "updates"],
+            [(e.mode, e.data) for e in got if e.mode in ("custom", "node_reset")],
             [
                 ("custom", "try-1"),
                 ("node_reset", {"node": "flaky", "step": 3}),
                 ("custom", "try-2"),
             ],
         )
-        self.assertEqual(got[-1].mode, "updates")
+        # the retry's update closes the node; only its task result follows it
+        self.assertEqual([e.mode for e in got][-3:], ["updates", "tasks", "debug"])
 
 
 class TestStreamSinkRegistry(unittest.IsolatedAsyncioTestCase):
