@@ -62,7 +62,7 @@ from .interrupts import interrupted_event
 from .invoke_result import command_resume, invoke_resume, wait_invoke_result
 from .reconnect import add_reconnect_route, resume_events
 from .resume_run import add_resume_route, resume_run_events
-from .stream_drain import SseEncoder, drain, parse_output
+from .stream_drain import SseEncoder, drain, encode_final, parse_output
 from .stream_source import (
     custom_status,
     open_source,
@@ -1337,8 +1337,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             logger.exception("Streaming run failed")
             workflow_id = encoder.workflow_id if encoder else None
             failed = stream_failure_event(e, "StreamError", bool(workflow_id))
-            yield (
-                "workflow_failed",
+            yield encode_final(
+                encoder,
                 normalize_final(
                     failed,
                     workflow_id=workflow_id,

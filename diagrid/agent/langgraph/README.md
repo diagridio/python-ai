@@ -286,8 +286,11 @@ Every event carries an SSE `id`. With the state-store transport (see
 [Streaming across replicas](#streaming-across-replicas)) the id is a cursor
 into the run's event log that any replica can resume from: `v1.start` on
 `workflow_started`, `v1.end` on the final event, and in between the position
-after that chunk (a control event repeats the id of the chunk before it). With
-the in-process transport the events are numbered from 1 on each connection.
+after that chunk (a control event repeats the id of the chunk before it). A
+`workflow_failed` with `workflow_still_running: true` is not the run's end: it
+repeats the id of the last chunk too (on a reconnect, before any chunk, the id
+the client sent). With the in-process transport the events are numbered from 1
+on each connection.
 
 #### Reconnecting
 
@@ -295,7 +298,12 @@ A client that lost its stream (a network drop, a proxy timeout, the serving
 process restarting) reconnects with `GET /agent/run/{workflow_id}/stream`,
 sending the last id it received as the `Last-Event-ID` header (a browser
 `EventSource` does this by itself) or, when it cannot set headers, as the
-`last_event_id` query parameter. Any replica answers it. The response is the
+`last_event_id` query parameter. A stream can also end in-band while the run
+goes on: when the serving replica's sidecar goes away (the pod is deleted,
+say) the stream ends with `workflow_failed` whose `workflow_still_running` is
+`true` (`error_type` `StreamReadError`, `PollError` or `StreamError`). Treat
+that as a lost stream, not a failed run: reconnect with its id, which is the
+last chunk's, and the stream goes on from there. Any replica answers it. The response is the
 same SSE stream from that point on: `workflow_started`, then the chunks the
 client has not seen, then the live ones, then the final event with the run's
 result. Nothing is repeated and nothing is skipped. Without an id, or with one
@@ -343,8 +351,9 @@ not pick one:
   backoff; a write never fails a node. If a node's
   chunks still never reach the log, the stream ends with `stream_unavailable`
   whose `reason` is `write_failed`. A store that cannot be read ends the
-  stream with `workflow_failed` (`error_type` `StreamReadError`), never with an
-  empty stream. A stream finds a run's tasks in the run's custom status, which
+  stream with `workflow_failed` (`error_type` `StreamReadError`,
+  `workflow_still_running: true`, the last chunk's id: see
+  [Reconnecting](#reconnecting)), never with an empty stream. A stream finds a run's tasks in the run's custom status, which
   lists its last 128 steps (a reader further behind catches up on the older
   steps when the run ends) and which it reads about every 2 seconds while a
   node is streaming, as Dapr returns the status only together with the run's

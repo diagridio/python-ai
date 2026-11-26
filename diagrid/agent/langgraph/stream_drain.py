@@ -20,11 +20,17 @@ from diagrid.agent.core.workflow.stream import (
     StreamClosed,
     StreamEvent,
 )
-from diagrid.agent.core.workflow.stream_cursor import END_ID, START_ID
+from diagrid.agent.core.workflow.stream_cursor import (
+    END_ID,
+    START_ID,
+    encode_cursor,
+    parse_cursor,
+)
 
 from .models import GraphWorkflowOutput
 from .stream_events import (
     KEEPALIVE,
+    STILL_RUNNING_KEY,
     closing_events,
     count_unencodable,
     encode_chunk,
@@ -127,9 +133,12 @@ class SseIds:
     numbered per connection (``()`` leaves that to the framer).
     """
 
-    def __init__(self, replayable: bool) -> None:
+    def __init__(self, replayable: bool, resume_from: Optional[str] = None) -> None:
         self._replayable = replayable
-        self._last = START_ID
+        #: Where the client is: the cursor it reconnected with, until a chunk.
+        self._last = (
+            encode_cursor(parse_cursor(resume_from)) if resume_from else START_ID
+        )
 
     def of(self, item: StreamEvent) -> Tuple[str, ...]:
         if not self._replayable:
@@ -141,16 +150,30 @@ class SseIds:
         # a control event reuses the cursor of the chunk it follows
         return (self._last,)
 
-    def final(self) -> Tuple[str, ...]:
-        return (END_ID,) if self._replayable else ()
+    def final(self, event: Dict[str, Any]) -> Tuple[str, ...]:
+        """The id of the event a stream ends with.
+
+        ``v1.end`` says the client has the run's end. A stream that failed
+        while the run goes on has not: its failure repeats the last chunk's
+        cursor, so a reconnect with it (what an ``EventSource`` does) gets the
+        rest of the run.
+        """
+        if not self._replayable:
+            return ()
+        return (self._last,) if event.get(STILL_RUNNING_KEY) else (END_ID,)
 
 
 class SseEncoder:
-    """``(event, data[, id])`` for each item of a stream, as ``frame_sse`` takes it."""
+    """``(event, data[, id])`` for each item of a stream, as ``frame_sse`` takes it.
 
-    def __init__(self, modes: List[str], replayable: bool) -> None:
+    ``resume_from`` is the id a reconnecting client sent.
+    """
+
+    def __init__(
+        self, modes: List[str], replayable: bool, resume_from: Optional[str] = None
+    ) -> None:
         self._modes = modes
-        self._ids = SseIds(replayable)
+        self._ids = SseIds(replayable, resume_from)
         self.unencodable = 0
         self.workflow_id: Optional[str] = None
 
@@ -167,5 +190,22 @@ class SseEncoder:
             wire, ok = encode_chunk(item)
             self.unencodable += 0 if ok else 1
             return (item.mode, wire, *event_id)
-        final = count_unencodable(item, self.unencodable)
-        return (item["type"], final, *self._ids.final())
+        return self.encode_final(item)
+
+    def encode_final(self, event: Dict[str, Any]) -> Tuple[Any, ...]:
+        """The SSE item of the event a stream ends with."""
+        final = count_unencodable(event, self.unencodable)
+        return (event["type"], final, *self._ids.final(event))
+
+
+def encode_final(
+    encoder: Optional[SseEncoder], event: Dict[str, Any]
+) -> Tuple[Any, ...]:
+    """The SSE item of a final event sent when the stream itself raised.
+
+    With an encoder it carries the id the stream got to (see
+    :meth:`SseIds.final`); a stream refused before it had one numbers it.
+    """
+    if encoder is None:
+        return (event["type"], event)
+    return encoder.encode_final(event)

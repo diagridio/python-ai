@@ -27,7 +27,7 @@ from .activity_stream import parse_status
 from .interrupt_ids import partial_map_error
 from .interrupts import RESUME_EVENT, pending_interrupt, resume_taken
 from .reconnect import _thread_of, follow_final
-from .stream_drain import SseEncoder, drain
+from .stream_drain import SseEncoder, drain, encode_final
 from .stream_events import started_event, stream_failure_event, without_executed
 from .stream_source import custom_status, open_source
 from .streaming import normalize_final, normalize_stream_mode
@@ -190,8 +190,8 @@ async def _resume_sse(
     except Exception as e:
         logger.exception("Resumed run %s failed to stream", workflow_id)
         failed = stream_failure_event(e, "StreamError", True)
-        yield (
-            "workflow_failed",
+        yield encode_final(
+            encoder,
             normalize_final(failed, workflow_id=workflow_id, thread_id=workflow_id),
         )
 

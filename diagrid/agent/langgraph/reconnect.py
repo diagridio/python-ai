@@ -25,7 +25,7 @@ from diagrid.agent.core.workflow.stream import (
 )
 from diagrid.agent.core.workflow.stream_cursor import parse_cursor
 
-from .stream_drain import SseEncoder, drain
+from .stream_drain import SseEncoder, drain, encode_final
 from .stream_events import (
     FINAL_EVENTS,
     KEEPALIVE,
@@ -188,7 +188,9 @@ async def resume_sse(
     runner: Any, workflow_id: str, last_event_id: Optional[str], modes: Any
 ) -> AsyncIterator[Tuple[Any, ...]]:
     """The SSE items of a reconnect; a failure of the stream ends it in-band."""
-    encoder = SseEncoder(modes, runner.stream_transport.replayable)
+    encoder = SseEncoder(
+        modes, runner.stream_transport.replayable, resume_from=last_event_id
+    )
     try:
         async for item in resume_events(
             runner, workflow_id, last_event_id, poll_interval=0.5, keepalive=True
@@ -199,8 +201,8 @@ async def resume_sse(
     except Exception as e:
         logger.exception("Reconnected stream of %s failed", workflow_id)
         failed = stream_failure_event(e, "StreamError", True)
-        yield (
-            "workflow_failed",
+        yield encode_final(
+            encoder,
             normalize_final(failed, workflow_id=workflow_id, thread_id=workflow_id),
         )
 

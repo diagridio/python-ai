@@ -143,6 +143,10 @@ def failure_event(
     return workflow_failed({}, str(error), error_type or type(error).__name__)
 
 
+#: Key of a ``workflow_failed`` event for a failure of the stream, not the run.
+STILL_RUNNING_KEY = "workflow_still_running"
+
+
 def stream_failure_event(
     error: BaseException, stream_error_type: str, started: bool
 ) -> Dict[str, Any]:
@@ -157,7 +161,7 @@ def stream_failure_event(
         return failure_event(error)
     return {
         **failure_event(error, stream_error_type),
-        "workflow_still_running": True,
+        STILL_RUNNING_KEY: True,
     }
 
 
