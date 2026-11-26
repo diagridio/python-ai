@@ -69,9 +69,27 @@ class TestReconnectEndpoint(_Case):
                 )
                 got = _frames(resp.text)
                 self.assertEqual(got[0][1], "workflow_started")
-                self.assertEqual(got[0][0], START_ID)
+                # where the client resumed from, not v1.start: a drop right
+                # after it must not replay the whole run
+                self.assertEqual(got[0][0], frames[cut][0])
                 # no duplicates, no gaps: the events after the cut, same ids
                 self.assertEqual([(i, e, d) for i, e, d in got[1:]], frames[cut + 1 :])
+                again = _frames(
+                    http.get(
+                        f"/agent/run/{wf}/stream",
+                        headers={"Last-Event-ID": got[0][0]},
+                    ).text
+                )
+                self.assertEqual(again[1:], frames[cut + 1 :])
+
+    def test_a_new_stream_and_a_replay_from_the_start_begin_at_the_start(self):
+        runner = log_runner(_golden_graph(), "re-start-id")
+        frames = self._post(runner)
+        self.assertEqual(frames[0][0], START_ID)
+        wf = frames[0][2]["workflow_id"]
+        _wait_done(runner, wf)
+        got = _frames(TestClient(serve_app(runner)).get(f"/agent/run/{wf}/stream").text)
+        self.assertEqual(got[0][0], START_ID)
 
     def test_the_query_parameter_works_like_the_header(self):
         runner = log_runner(_golden_graph(), "re-query")

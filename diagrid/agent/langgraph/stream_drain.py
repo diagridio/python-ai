@@ -143,8 +143,9 @@ class SseIds:
     def of(self, item: StreamEvent) -> Tuple[str, ...]:
         if not self._replayable:
             return ()
-        if item.mode == WORKFLOW_STARTED:
-            return (START_ID,)
+        # workflow_started says where the stream starts: v1.start for a new
+        # run, the client's cursor on a reconnect (a drop right after it must
+        # not replay the run), or the one it carries
         if item.event_id:
             self._last = item.event_id
         # a control event reuses the cursor of the chunk it follows
