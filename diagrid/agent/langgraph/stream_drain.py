@@ -50,6 +50,11 @@ def parse_output(
         "steps": output.steps,
         "status": output.status,
         **({"error": output.error} if output.error else {}),
+        **(
+            {"thread_saved": False, "thread_error": output.thread_error}
+            if output.thread_saved is False
+            else {}
+        ),
         **({EXECUTED_KEY: output.executed} if streamed and output.executed else {}),
         **({BRANCHES_KEY: output.branches} if streamed and output.branches else {}),
         **(

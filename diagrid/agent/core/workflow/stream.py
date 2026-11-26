@@ -39,8 +39,16 @@ STREAM_DROPPED = "stream_dropped"
 STREAM_PURGED = "stream_purged"
 #: First event of a stream: the ids a client needs to find or stop its run.
 WORKFLOW_STARTED = "workflow_started"
+#: The run ended but its thread's state could not be saved (the output stands).
+THREAD_NOT_SAVED = "thread_not_saved"
 # Events about the stream itself, delivered whatever stream modes were asked for.
-CONTROL_MODES = (WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE, STREAM_PURGED)
+CONTROL_MODES = (
+    WORKFLOW_STARTED,
+    NODE_RESET,
+    STREAM_UNAVAILABLE,
+    STREAM_PURGED,
+    THREAD_NOT_SAVED,
+)
 #: Internal marker: a conditional edge's function finished streaming here. It
 #: tells the stream which routers ran in this process and never reaches a client.
 BRANCH_DONE = "branch_done"

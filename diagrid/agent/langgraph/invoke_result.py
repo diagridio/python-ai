@@ -10,6 +10,7 @@ a ``Command`` continues the thread.
 """
 
 import json
+import logging
 import time
 from typing import Any, Callable, Optional
 
@@ -20,6 +21,8 @@ from .interrupts import INTERRUPT_KEY, RESUME_EVENT, as_interrupts
 from .interrupts import interrupted_event, pending_interrupt
 from .models import GraphWorkflowOutput
 from .streaming import FAILED_STATUSES, normalize_final, run_error
+
+logger = logging.getLogger(__name__)
 
 #: The workflow output key of a graph whose whole state is one value.
 _ROOT = "__root__"
@@ -46,6 +49,13 @@ def _completed_output(state: Any, runner: Any, workflow_id: str, thread_id: str)
                 workflow_id=workflow_id,
                 thread_id=thread_id,
             )
+        )
+    if output.thread_saved is False:
+        logger.warning(
+            "Run %s completed, but the state of thread %r was not saved: %s",
+            workflow_id,
+            thread_id,
+            output.thread_error,
         )
     if runner._is_root_state() and _ROOT in output.output:
         return output.output[_ROOT]

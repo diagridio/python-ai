@@ -216,10 +216,15 @@ def load_thread(
 
 def save_thread(
     ctx: Any, thread_id: str, output: Dict[str, Any], retry_policy: Any
-) -> Generator[Any, Any, None]:
-    """Workflow step: keep the state the run ended with as its thread's."""
+) -> Generator[Any, Any, Dict[str, Any]]:
+    """Workflow step: keep the state the run ended with as its thread's.
+
+    Returns ``output``, or when the save failed (after its retries) ``output``
+    with ``thread_saved`` false and the reason: every node ran, so the run's
+    output stands. The failure is in the history, so a replay decides the same.
+    """
     if not output.get("channel_state"):
-        return
+        return output
     checkpoint = ThreadCheckpoint(
         thread_id=thread_id,
         checkpoint_id=str(ctx.instance_id),
@@ -227,8 +232,19 @@ def save_thread(
         steps=int(output.get("steps") or 0),
         status=str(output.get("status") or "completed"),
     )
-    yield ctx.call_activity(
-        SAVE_THREAD_ACTIVITY,
-        input=checkpoint.to_dict(),
-        retry_policy=retry_policy,
-    )
+    try:
+        yield ctx.call_activity(
+            SAVE_THREAD_ACTIVITY,
+            input=checkpoint.to_dict(),
+            retry_policy=retry_policy,
+        )
+    except Exception as e:  # the activity failed after its retries
+        if not ctx.is_replaying:
+            logger.warning(
+                "Run %s: the state of thread %r was not saved: %s",
+                ctx.instance_id,
+                thread_id,
+                e,
+            )
+        return {**output, "thread_saved": False, "thread_error": str(e)}
+    return output

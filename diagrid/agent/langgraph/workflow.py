@@ -642,7 +642,7 @@ def agent_workflow(
         )
     output = yield from _run_graph(run, workflow_input)
     if run.thread_state:
-        yield from save_thread(ctx, thread_id, output, run.retry_policy)
+        output = yield from save_thread(ctx, thread_id, output, run.retry_policy)
     return output
 
 

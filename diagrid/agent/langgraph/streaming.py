@@ -78,7 +78,8 @@ class StreamControl:
     """An event about the stream itself rather than a chunk of the run.
 
     ``kind`` is ``workflow_started`` (``{"workflow_id", "thread_id"}``, always
-    first), ``node_reset``, ``stream_unavailable``, ``stream_purged`` or
+    first), ``node_reset``, ``stream_unavailable``, ``stream_purged``,
+    ``thread_not_saved`` (``{"workflow_id", "thread_id", "error"}``) or
     ``stream_dropped``;
     ``data`` is its payload. ``astream`` hands these to its ``on_control``
     callback, and in list mode also yields them as ``(kind, data)``, except

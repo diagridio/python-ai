@@ -23,6 +23,7 @@ from diagrid.agent.core.workflow.stream import (
     NODE_RESET,
     STREAM_PURGED,
     STREAM_UNAVAILABLE,
+    THREAD_NOT_SAVED,
     UPDATES,
     WORKFLOW_STARTED,
     InProcessSink,
@@ -459,7 +460,13 @@ class TestControlModes(unittest.IsolatedAsyncioTestCase):
     def test_control_modes_are_the_events_about_the_stream_itself(self):
         self.assertEqual(
             set(CONTROL_MODES),
-            {WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE, STREAM_PURGED},
+            {
+                WORKFLOW_STARTED,
+                NODE_RESET,
+                STREAM_UNAVAILABLE,
+                STREAM_PURGED,
+                THREAD_NOT_SAVED,
+            },
         )
 
     def test_updates_are_a_stream_mode_not_a_control_event(self):
@@ -475,6 +482,7 @@ class TestControlModes(unittest.IsolatedAsyncioTestCase):
             NODE_RESET,
             STREAM_UNAVAILABLE,
             STREAM_PURGED,
+            THREAD_NOT_SAVED,
         ]
         sink = InProcessSink("wf", asyncio.get_running_loop())
         with mock.patch.object(stream, "MAX_BUFFERED_EVENTS", 1):

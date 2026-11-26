@@ -12,6 +12,7 @@ from diagrid.agent.core.workflow.stream import (
     CONTROL_MODES,
     NODE_RESET,
     STREAM_DROPPED,
+    THREAD_NOT_SAVED,
     WORKFLOW_STARTED,
     StreamClosed,
     StreamEvent,
@@ -199,6 +200,24 @@ def route_astream_item(
     return out, None
 
 
+def thread_not_saved_event(final: Dict[str, Any], workflow_id: str) -> StreamEvent:
+    """The warning that the run's thread state was not saved (its output stands)."""
+    return StreamEvent(
+        workflow_id=workflow_id,
+        step=-1,
+        node="",
+        attempt_id="",
+        seq=0,
+        ns=(),
+        mode=THREAD_NOT_SAVED,
+        data={
+            "workflow_id": workflow_id,
+            "thread_id": final.get("thread_id"),
+            "error": final.get("thread_error"),
+        },
+    )
+
+
 def closing_events(
     closed: StreamClosed,
     seen_nodes: Set[Tuple[int, str]],
@@ -238,6 +257,8 @@ def closing_events(
             [m["node"] for m in unavailable.data["missing_nodes"]],
         )
         out.append(unavailable)
+    if closed.final.get("thread_saved") is False:
+        out.append(thread_not_saved_event(closed.final, workflow_id))
     final = without_executed(closed.final)
     out.append({**final, "dropped": closed.dropped} if closed.dropped else final)
     return out

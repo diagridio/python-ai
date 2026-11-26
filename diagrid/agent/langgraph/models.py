@@ -561,6 +561,9 @@ class GraphWorkflowOutput:
         branches: The conditional edges evaluated in their own activity, as
             ``[step, sink key]`` (step ``-1`` for a START edge), for the same
             purpose. ``None`` when there were none.
+        thread_saved: ``False`` when the run's thread state could not be
+            saved (its output stands); ``None`` otherwise.
+        thread_error: Why the thread state was not saved.
     """
 
     output: Dict[str, Any] = field(default_factory=dict)
@@ -570,6 +573,8 @@ class GraphWorkflowOutput:
     error: Optional[str] = None
     executed: Optional[List[List[str]]] = None
     branches: Optional[List[List[Any]]] = None
+    thread_saved: Optional[bool] = None
+    thread_error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -585,6 +590,9 @@ class GraphWorkflowOutput:
             data["executed"] = self.executed
         if self.branches:
             data["branches"] = self.branches
+        if self.thread_saved is not None:
+            data["thread_saved"] = self.thread_saved
+            data["thread_error"] = self.thread_error
         return data
 
     @classmethod
@@ -600,4 +608,6 @@ class GraphWorkflowOutput:
             error=data.get("error"),
             executed=data.get("executed"),
             branches=data.get("branches"),
+            thread_saved=data.get("thread_saved"),
+            thread_error=data.get("thread_error"),
         )

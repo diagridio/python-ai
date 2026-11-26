@@ -32,6 +32,11 @@ def completed_result(state: Any) -> Dict[str, Any]:
         "steps": output.steps,
         "run_status": output.status,
         **({"error": output.error} if output.error else {}),
+        **(
+            {"thread_saved": False, "thread_error": output.thread_error}
+            if output.thread_saved is False
+            else {}
+        ),
     }
 
 
