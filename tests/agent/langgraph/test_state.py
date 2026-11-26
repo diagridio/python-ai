@@ -26,7 +26,7 @@ class TestDaprMemoryCheckpointer(TestCase):
 
         # Should save the checkpoint
         store.save.assert_any_call(
-            "langgraph-t1-checkpoint-cp1",
+            "langgraph:t1:checkpoint:cp1",
             {
                 "thread_id": "t1",
                 "checkpoint_id": "cp1",
@@ -37,7 +37,7 @@ class TestDaprMemoryCheckpointer(TestCase):
         )
         # Should save the index
         store.save.assert_any_call(
-            "langgraph-t1-index",
+            "langgraph:t1:index",
             {"checkpoints": ["cp1"], "latest": "cp1"},
         )
 
@@ -47,7 +47,7 @@ class TestDaprMemoryCheckpointer(TestCase):
 
         result = cp.load_checkpoint("t1", "cp1")
 
-        store.get.assert_called_with("langgraph-t1-checkpoint-cp1")
+        store.get.assert_called_with("langgraph:t1:checkpoint:cp1")
         self.assertEqual(result, {"channel_values": {"messages": ["hi"]}})
 
     def test_load_latest_checkpoint(self):
@@ -94,10 +94,10 @@ class TestDaprMemoryCheckpointer(TestCase):
 
         cp.delete_checkpoint("t1", "cp2")
 
-        store.delete.assert_called_once_with("langgraph-t1-checkpoint-cp2")
+        store.delete.assert_called_once_with("langgraph:t1:checkpoint:cp2")
         # Should update index
         store.save.assert_called_with(
-            "langgraph-t1-index",
+            "langgraph:t1:index",
             {"checkpoints": ["cp1"], "latest": "cp1"},
         )
 
