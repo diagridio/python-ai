@@ -46,8 +46,12 @@ RESUME_EVENT = "resume"
 #: Custom status: the pending interrupt, and the number of the last one.
 STATUS_INTERRUPT = "interrupt"
 STATUS_INTERRUPT_SEQ = "interrupt_seq"
-#: Custom status: the resume the run took last, ``{"seq", "id"}``.
+#: Custom status: the resume the run took last, ``{"seq", "id", "taken"}``;
+#: ``taken`` lists ``[seq, id]`` of the last :data:`RESUMES_KEPT` it took.
 STATUS_RESUMED = "resumed"
+#: Resumes the status keeps the winner of: a caller that lost one is told so
+#: even after the run took it and paused again.
+RESUMES_KEPT = 16
 #: The updates-chunk key LangGraph streams interrupts under.
 INTERRUPT_KEY = "__interrupt__"
 #: The final event of a stream whose run is waiting for a resume.
@@ -331,7 +335,7 @@ def settle_interrupts(
         values, resume_id = yield from _wait_resume(run.ctx, run.interrupt_seq, pending)
         run.interrupt = None
         # which resume the run took: a caller whose resume it ignored is told
-        run.resumed = {"seq": run.interrupt_seq, "id": resume_id}
+        run.resumed = _took(run.resumed, run.interrupt_seq, resume_id)
         publish(run)
         for item in pending:
             if item["id"] in values:
@@ -364,17 +368,28 @@ def _wait_resume(
             )
 
 
+def _took(
+    resumed: Optional[Dict[str, Any]], seq: int, resume_id: Optional[str]
+) -> Dict[str, Any]:
+    """The status's ``resumed`` once the run took ``resume_id`` for ``seq``."""
+    taken = list((resumed or {}).get("taken") or [])
+    taken = [*taken, [seq, resume_id]][-RESUMES_KEPT:]
+    return {"seq": seq, "id": resume_id, "taken": taken}
+
+
 def resume_taken(status: Dict[str, Any], seq: int, resume_id: str) -> Optional[bool]:
     """Whether the run took the resume ``resume_id`` of interrupt ``seq``.
 
     ``None`` while it is still waiting for one. A run started on a version
-    that does not say which resume it took is taken to have taken this one.
+    that does not say which resume it took (or past :data:`RESUMES_KEPT`
+    more interrupts since) is taken to have taken this one.
     """
     resumed = status.get(STATUS_RESUMED)
     if isinstance(resumed, dict) and int(resumed.get("seq") or 0) >= seq:
-        if int(resumed.get("seq") or 0) > seq:
-            return True  # the run is past it: nothing to tell
-        return resumed.get("id") in (None, resume_id)
+        winners = {int(s): w for s, w in resumed.get("taken") or []}
+        if int(resumed.get("seq") or 0) == seq:
+            winners.setdefault(seq, resumed.get("id"))
+        return winners.get(seq) in (None, resume_id)
     waiting = pending_interrupt(status)
     if waiting is not None and int(waiting.get("seq") or 0) == seq:
         return None

@@ -8,11 +8,15 @@ workflow takes the first and ignores the other. The caller whose value was
 ignored must be told, not handed a result its value had no part in.
 """
 
+import json
 import threading
 import time
-from typing import Any, List
+import unittest
+from typing import Any, Dict, List
 
 from fastapi.testclient import TestClient
+
+from diagrid.agent.langgraph.interrupts import resume_taken
 
 from .log_helpers import LogClient, log_runner
 from .streaming_helpers import serve_app
@@ -95,3 +99,41 @@ class TestConcurrentResumes(_RunnerTestCase):
         self.assertEqual(sorted([a.status_code, b.status_code]), [200, 409])
         won = a if a.status_code == 200 else b
         self.assertEqual(frames(won.text)[-1][1], "workflow_completed")
+
+
+class TestALoserAfterTheRunMovedOn(unittest.TestCase):
+    """The run took another resume and paused again before the loser looked."""
+
+    def _status(self) -> Dict[str, Any]:
+        return {
+            "resumed": {"seq": 3, "id": "won-3", "taken": [[2, "won-2"], [3, "won-3"]]},
+            "interrupt": {"seq": 4, "interrupts": [{"id": "x", "value": 1}]},
+        }
+
+    def test_the_loser_is_still_told(self):
+        self.assertIs(resume_taken(self._status(), 2, "lost-2"), False)
+
+    def test_the_winner_is_still_told_it_won(self):
+        self.assertIs(resume_taken(self._status(), 2, "won-2"), True)
+        self.assertIs(resume_taken(self._status(), 3, "won-3"), True)
+
+    def test_a_run_that_says_nothing_of_older_resumes_takes_it(self):
+        old = {"resumed": {"seq": 3, "id": "won-3"}}  # a run started earlier
+        self.assertIs(resume_taken(old, 2, "lost-2"), True)
+
+
+class TestTheRunKeepsWhichResumesItTook(_RunnerTestCase):
+    def test_each_interrupt_s_winner_stays_in_the_status(self):
+        runner = log_runner(_approval_graph(asks=2), "taken-list")
+        http = TestClient(serve_app(runner))
+        got = frames(http.post("/agent/run", json={**INPUT, "stream": True}).text)
+        wf = got[-1][2]["workflow_id"]
+        for value in ("A", "B"):
+            self.assertEqual(
+                http.post(
+                    f"/agent/run/{wf}/resume", json={"resume": value}
+                ).status_code,
+                200,
+            )
+        status = json.loads(runner._workflow_client.custom[wf])
+        self.assertEqual([seq for seq, _ in status["resumed"]["taken"]], [1, 2])
