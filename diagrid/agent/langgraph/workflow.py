@@ -63,6 +63,7 @@ from diagrid.agent.core.workflow.stream import (
     get_stream_sink,
 )
 
+from .node_routes import route_in_node
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
 from .values import (
     coerce_to_default,
@@ -143,6 +144,10 @@ NODE_ACTIVITY_NAMES_PATCH = "langgraph-node-activity-names"
 # scheduled its nodes in the order the edges were found, and ended at END, must
 # replay that way: the patch is what tells the two apart.
 STEP_ORDER_PATCH = "langgraph-step-order"
+# A node's conditional edges run inside the node's activity, as LangGraph runs a
+# router inside its node's task. An instance that scheduled a condition activity
+# after each node must replay that way: the patch is what tells the two apart.
+ROUTE_IN_NODE_PATCH = "langgraph-route-in-node"
 GENERIC_NODE_ACTIVITY = "execute_node_activity"
 CONDITION_ACTIVITY = "evaluate_condition_activity"
 # What LangGraph names the trigger (and path) of a task started by a ``Send``.
@@ -507,6 +512,9 @@ class _Run:
     #: counts against): the runner's own ``max_steps`` lets a run of exactly that
     #: many steps complete, which is a limit one above it.
     recursion_limit: Optional[int] = None
+    #: Whether a node's activity evaluates its conditional edges
+    #: (see :data:`ROUTE_IN_NODE_PATCH`).
+    route_in_node: bool = False
     #: The nodes that ran in each step, reported on the output so a streaming
     #: consumer can tell which node's chunks never arrived.
     executed: List[List[str]] = field(default_factory=list)
@@ -541,6 +549,7 @@ def _new_run(ctx: DaprWorkflowContext, workflow_input: GraphWorkflowInput) -> _R
     # patch as absent, and the answer is fixed for the rest of the execution.
     node_activities_by_name = ctx.is_patched(NODE_ACTIVITY_NAMES_PATCH)
     step_order = ctx.is_patched(STEP_ORDER_PATCH)
+    route_in_node = ctx.is_patched(ROUTE_IN_NODE_PATCH)
     return _Run(
         ctx=ctx,
         graph_config=workflow_input.graph_config,
@@ -560,6 +569,7 @@ def _new_run(ctx: DaprWorkflowContext, workflow_input: GraphWorkflowInput) -> _R
             if workflow_input.strict_limit
             else workflow_input.max_steps + 1
         ),
+        route_in_node=route_in_node,
     )
 
 
@@ -775,13 +785,15 @@ def _state_before_step(run: _Run, tasks: List["_Task"]) -> Optional[ChannelState
 
     With one task, the state after its writes is what its routers read, so
     nothing is kept. With several, a task's routers must not see its siblings'
-    writes, so the state before the step's writes is kept.
+    writes, so the state before the step's writes is kept. A task whose
+    activity evaluated its routers needs nothing.
     """
     if len(tasks) < 2:
         return None
     has_router = any(
         e.condition and e.source == t.node
         for t in tasks
+        if not t.output.routes_done
         for e in run.graph_config.edges
     )
     return copy.deepcopy(run.channel_state) if has_router else None
@@ -820,6 +832,7 @@ def _run_nodes(
             step=step,
             send=send,
             recursion_limit=run.recursion_limit,
+            routes=_node_routes(run, node_name) if run.route_in_node else None,
         )
         activity: Any = execute_node_activity
         if run.node_activities_by_name:
@@ -836,6 +849,16 @@ def _run_nodes(
     return [ExecuteNodeOutput.from_dict(result) for result in task_results]
 
 
+def _node_routes(run: _Run, node_name: str) -> Optional[List[Dict[str, Any]]]:
+    """The conditional edges of ``node_name``, for its activity to evaluate."""
+    routes = [
+        {"condition": edge.condition, "path_map": edge.path_map}
+        for edge in run.graph_config.edges
+        if edge.source == node_name and edge.condition
+    ]
+    return routes or None
+
+
 def _next_nodes(
     run: _Run,
     tasks: List[_Task],
@@ -850,7 +873,8 @@ def _next_nodes(
     evaluated once per task, on the state with only that task's writes (see
     :func:`_state_for_task`). Tasks are taken in the order LangGraph applies
     them, and each one's ``goto`` before its conditional edges, so the ``Send``
-    tasks come out numbered as LangGraph numbers them.
+    tasks come out numbered as LangGraph numbers them. A task whose activity
+    evaluated its conditional edges reports where they lead.
     """
     found = _Frontier()
     for task in tasks:
@@ -862,6 +886,8 @@ def _next_nodes(
             if not edge.condition:
                 found.add_nodes([edge.target])
                 continue
+            if task.output.routes_done:
+                continue
             try:
                 state = _state_for_task(run, before, task)
             except ReducerError as e:
@@ -871,6 +897,11 @@ def _next_nodes(
             )
             if error:
                 return found.result(error)
+        if task.output.routes_done:
+            if task.output.route_error:
+                return found.result(task.output.route_error)
+            found.add_nodes(task.output.next_nodes)
+            found.sends.extend(task.output.route_sends)
 
     # A join fires, once, in the step after the last of its sources ran.
     ran = {task.node for task in tasks}
@@ -993,6 +1024,8 @@ class _NodeCall:
     streamer: Optional[NodeStreamer]
     #: Side-channel writes queued via CONFIG_KEY_SEND while the node runs.
     pending_sends: list
+    #: Where the node's routers look for the run's stream sink.
+    registry: Optional[StreamSinkRegistry] = None
 
     @property
     def node_name(self) -> str:
@@ -1412,17 +1445,25 @@ def _node_output(call: _NodeCall, result: Any) -> Dict[str, Any]:
 
     Converts the result to writes, appends any side-channel writes queued via
     CONFIG_KEY_SEND (e.g. StateBackend writing to the "files" channel from
-    sandbox tools), and streams the node's update.
+    sandbox tools), evaluates the node's conditional edges when the workflow
+    asked for that, and then streams the node's update, as LangGraph does.
     """
     raw_writes = [*_result_to_raw_writes(result), *call.pending_sends]
+    writes = _serialize_writes(raw_writes)
+    routed: Dict[str, Any] = {}
+    if call.node_input.routes:
+        routed = route_in_node(
+            call.ctx, call.node_input, writes, call.registry
+        ).output_fields()
     if call.streamer:
         call.streamer.updates(raw_writes)
     goto, sends = _result_to_gotos(result)
     return ExecuteNodeOutput(
         node_name=call.node_name,
-        writes=_serialize_writes(raw_writes),
+        writes=writes,
         goto=goto,
         sends=sends,
+        **routed,
     ).to_dict()
 
 
@@ -1460,6 +1501,7 @@ def execute_node_activity(
         config=config,
         streamer=_make_streamer(ctx, node_input, config, stream_registry),
         pending_sends=[],
+        registry=stream_registry,
     )
 
     # Under the LangSmith parent trace the runner opened, so LLM calls nest in it.
@@ -1569,12 +1611,24 @@ def evaluate_condition_activity(
     module's).
     """
     cond_input = EvaluateConditionInput.from_dict(input_data)
+    return evaluate_condition(ctx, cond_input, stream_registry).to_dict()
 
+
+def evaluate_condition(
+    ctx: WorkflowActivityContext,
+    cond_input: EvaluateConditionInput,
+    stream_registry: Optional[StreamSinkRegistry],
+) -> EvaluateConditionOutput:
+    """Call a conditional edge's function and say where it routes, or the error.
+
+    What the condition activity does, and what a node activity does for each
+    of its node's conditional edges. An exception of the function propagates.
+    """
     cond_func = get_registered_condition(cond_input.condition_name)
     if cond_func is None:
         return EvaluateConditionOutput(
             error=f"Condition '{cond_input.condition_name}' not found in registry",
-        ).to_dict()
+        )
 
     state: Any = _with_managed(
         _reconstruct_state(cond_input.channel_state),
@@ -1590,7 +1644,7 @@ def evaluate_condition_activity(
     # each evaluation lands in LangSmith as a separate top-level trace.
     with _under_parent_trace(cond_input.config):
         result = _call_condition(ctx, cond_input, cond_func, state, stream_registry)
-    return _route(cond_input, result).to_dict()
+    return _route(cond_input, result)
 
 
 def _under_parent_trace(config: Optional[Dict[str, Any]]) -> Any:

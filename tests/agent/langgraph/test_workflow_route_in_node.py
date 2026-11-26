@@ -218,7 +218,9 @@ class TestASendTasksRouter(_FakeDaprTest):
         for index in (1, 2):
             with self.subTest(task=index):
                 modes = [
-                    (m, p if m == "custom" else p.get("w")) for m, p in _wire(ours)
+                    (m, p if m == "custom" else p.get("w"))
+                    for m, p in _wire(ours)
+                    if m in ("custom", "updates")
                 ]
                 self.assertLess(
                     modes.index(("custom", f"route-w{index}")),

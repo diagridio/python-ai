@@ -247,6 +247,10 @@ class ExecuteNodeInput:
         recursion_limit: The run's step limit as a LangGraph ``recursion_limit``
             (what ``RemainingSteps`` and ``IsLastStep`` count against), or
             ``None`` for a workflow that did not send it.
+        routes: The node's conditional edges, each ``{"condition", "path_map"}``,
+            for the activity to evaluate once the node returns, as LangGraph
+            runs a router inside its node's task. ``None`` when the workflow
+            evaluates them itself (an instance from before routing moved here).
     """
 
     node_name: str
@@ -256,6 +260,7 @@ class ExecuteNodeInput:
     step: Optional[int] = None
     send: Optional[Dict[str, Any]] = None
     recursion_limit: Optional[int] = None
+    routes: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -270,6 +275,8 @@ class ExecuteNodeInput:
             data["send"] = self.send
         if self.recursion_limit is not None:
             data["recursion_limit"] = self.recursion_limit
+        if self.routes is not None:
+            data["routes"] = self.routes
         return data
 
     @classmethod
@@ -282,6 +289,7 @@ class ExecuteNodeInput:
             step=data.get("step"),
             send=data.get("send"),
             recursion_limit=data.get("recursion_limit"),
+            routes=data.get("routes"),
         )
 
 
@@ -297,6 +305,13 @@ class ExecuteNodeOutput:
             in addition to the nodes its edges lead to
         sends: The ``Send`` objects of that ``goto``, each ``{"node", "arg"}``:
             every one runs its node once, on its argument
+        routes_done: Whether the activity evaluated the node's conditional
+            edges (``ExecuteNodeInput.routes``). ``False`` when it was not asked
+            to or a router raised: the workflow then evaluates them itself.
+        next_nodes: Where those conditional edges lead, when they were evaluated
+        route_sends: The ``Send`` tasks those conditional edges returned
+        route_error: Why routing failed (a ``path_map`` miss, a reducer that
+            raised on this task's writes): the run fails with it
     """
 
     node_name: str
@@ -304,6 +319,10 @@ class ExecuteNodeOutput:
     error: Optional[str] = None
     goto: List[str] = field(default_factory=list)
     sends: List[Dict[str, Any]] = field(default_factory=list)
+    routes_done: bool = False
+    next_nodes: List[str] = field(default_factory=list)
+    route_sends: List[Dict[str, Any]] = field(default_factory=list)
+    route_error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -315,6 +334,13 @@ class ExecuteNodeOutput:
             data["goto"] = list(self.goto)
         if self.sends:
             data["sends"] = list(self.sends)
+        if self.routes_done:
+            data["routes_done"] = True
+            data["next_nodes"] = list(self.next_nodes)
+            if self.route_sends:
+                data["route_sends"] = list(self.route_sends)
+            if self.route_error:
+                data["route_error"] = self.route_error
         return data
 
     @classmethod
@@ -325,6 +351,10 @@ class ExecuteNodeOutput:
             error=data.get("error"),
             goto=list(data.get("goto") or []),
             sends=list(data.get("sends") or []),
+            routes_done=bool(data.get("routes_done")),
+            next_nodes=list(data.get("next_nodes") or []),
+            route_sends=list(data.get("route_sends") or []),
+            route_error=data.get("route_error"),
         )
 
 
