@@ -38,9 +38,12 @@ STREAM_DROPPED = "stream_dropped"
 WORKFLOW_STARTED = "workflow_started"
 # Events about the stream itself, delivered whatever stream modes were asked for.
 CONTROL_MODES = (WORKFLOW_STARTED, NODE_RESET, STREAM_UNAVAILABLE)
-# What a full buffer never drops: the control events and node updates, which are
-# a stream mode of their own but cannot be re-sent either.
-_KEPT_WHEN_FULL = (*CONTROL_MODES, UPDATES)
+#: Internal marker: a conditional edge's function finished streaming here. It
+#: tells the stream which routers ran in this process and never reaches a client.
+BRANCH_DONE = "branch_done"
+# What a full buffer never drops: the control events, node updates and router
+# markers, which cannot be re-sent either.
+_KEPT_WHEN_FULL = (*CONTROL_MODES, UPDATES, BRANCH_DONE)
 
 #: Seconds an idle SSE stream waits before it sends a keepalive comment, so a
 #: proxy or load balancer does not cut it during a long tool call or LLM gap.

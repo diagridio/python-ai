@@ -521,6 +521,10 @@ class _Run:
     executed: List[List[str]] = field(default_factory=list)
     #: Deferred nodes that were triggered and wait for nothing else to be pending.
     held: List[str] = field(default_factory=list)
+    #: The conditional edges evaluated in their own activity, ``[step, sink
+    #: key]``, so a streaming consumer can tell which router's chunks never
+    #: arrived.
+    branches: List[List[Any]] = field(default_factory=list)
 
     @property
     def output_channels(self) -> Optional[List[str]]:
@@ -542,6 +546,7 @@ class _Run:
             channel_state=self.channel_state,
             steps=step,
             executed=self.executed,
+            branches=self.branches or None,
             status=status,
             **({"error": error} if error else {}),
         ).to_dict()
@@ -949,6 +954,7 @@ def _follow_edge(
         # a START edge reads the input: the state of the run's first values chunk
         output_channels=run.output_channels if source_node == START else None,
     )
+    run.branches.append([step, _branch_key(cond_input)])
     # By name, so the runner's own activity (the one that knows its stream
     # registry) runs, not the module-level function.
     cond_result = yield run.ctx.call_activity(
@@ -1640,7 +1646,10 @@ def _call_condition(
     # Runnable.invoke only sets the ambient config when tracing, and a plain
     # function never does: get_stream_writer() and the stream handler need it.
     with set_config_context(config) as ctx_:  # type: ignore[arg-type]
-        return ctx_.run(run)
+        result = ctx_.run(run)
+    if streamer:
+        streamer.branch_finished()
+    return result
 
 
 def evaluate_condition_activity(

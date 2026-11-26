@@ -22,6 +22,7 @@ from langchain_core.load.serializable import Serializable
 from langgraph.errors import GraphRecursionError
 
 from diagrid.agent.core.workflow.stream import (
+    BRANCH_DONE,
     STREAM_UNAVAILABLE,
     UPDATES,
     VALUES,
@@ -62,6 +63,9 @@ _UNTRACED_CONFIGURABLE = frozenset(("api_key",))
 # Key of the run_async terminal event that lists the nodes each step ran. It
 # serves the stream (see stream_unavailable_event) and is not part of a result.
 EXECUTED_KEY = "executed"
+# Key of the run_async terminal event that lists the conditional edges evaluated
+# in their own activity, as ``[step, sink key]``; for the stream only, too.
+BRANCHES_KEY = "branches"
 # Key of the run_async terminal event of a streamed run that holds the state it
 # ended with, for the stream's last ``values`` chunk; also not part of a result.
 FINAL_STATE_KEY = "channel_state"
@@ -353,6 +357,11 @@ class NodeStreamer:
         """Send the task's result event: its writes, after its ``updates`` chunk."""
         self._emit_task(task_result(self._event_task_id, self._node, writes))
 
+    def branch_finished(self) -> None:
+        """Mark this conditional edge's function as done streaming here."""
+        if self._branch:
+            self._emit((), BRANCH_DONE, None)
+
     def updates(self, writes: List[Tuple[str, Any]]) -> None:
         """Emit the node's ``(channel, value)`` writes as ``{node: update}``.
 
@@ -566,16 +575,26 @@ UNAVAILABLE_REASON = (
 )
 
 
+def _branches(final: Dict[str, Any]) -> List[Tuple[int, str]]:
+    """The ``(step, sink key)`` of each conditional edge run in its own activity."""
+    branches = final.get(BRANCHES_KEY)
+    if not isinstance(branches, list):
+        return []
+    return [(int(step), str(key)) for step, key in branches]
+
+
 def stream_unavailable_event(
     final: Dict[str, Any], seen: Set[Tuple[int, str]], workflow_id: str
 ) -> Optional[StreamEvent]:
     """The ``stream_unavailable`` event for a finished run, if it applies.
 
-    ``seen`` holds the ``(step, node)`` pairs whose ``updates`` chunk arrived;
-    every node that runs here sends one when it finishes, so an executed node
-    without one had its activity (or its last attempt) elsewhere, even when
-    other nodes of its step streamed here. A final without ``executed`` is
-    judged per step instead. A run
+    ``seen`` holds the ``(step, node)`` pairs whose ``updates`` chunk (or, for
+    a conditional edge, ``branch_done`` marker) arrived; every node that runs
+    here sends one when it finishes, so an executed node without one had its
+    activity (or its last attempt) elsewhere, even when other nodes of its step
+    streamed here. The conditional edges the workflow evaluated in their own
+    activity (``branches``) are judged the same way. A final without
+    ``executed`` is judged per step instead. A run
     that failed is just a failure, and one with no step count has nothing to
     report.
     """
@@ -585,10 +604,11 @@ def stream_unavailable_event(
     executed = final.get("executed")
     missing_nodes: List[Dict[str, Any]] = []
     if isinstance(executed, list):
+        ran = [(step, node) for step, nodes in enumerate(executed) for node in nodes]
+        ran.extend(_branches(final))
         missing_nodes = [
             {"step": display_step(step), "node": node}
-            for step, nodes in enumerate(executed)
-            for node in nodes
+            for step, node in sorted(ran, key=lambda pair: pair[0])
             if (step, node) not in seen
         ]
         missing = sorted({m["step"] for m in missing_nodes})

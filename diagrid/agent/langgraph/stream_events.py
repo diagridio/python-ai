@@ -19,6 +19,7 @@ from diagrid.agent.core.workflow.stream import (
 
 from .stream_values import final_values
 from .streaming import (
+    BRANCHES_KEY,
     EXECUTED_KEY,
     FINAL_STATE_KEY,
     GraphRunError,
@@ -108,7 +109,7 @@ def started_event(workflow_id: str, thread_id: str) -> Any:
     )
 
 
-_STREAM_ONLY_KEYS = (EXECUTED_KEY, FINAL_STATE_KEY)
+_STREAM_ONLY_KEYS = (EXECUTED_KEY, BRANCHES_KEY, FINAL_STATE_KEY)
 
 
 def without_executed(event: Dict[str, Any]) -> Dict[str, Any]:

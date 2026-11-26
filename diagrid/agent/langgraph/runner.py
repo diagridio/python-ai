@@ -30,6 +30,7 @@ from diagrid.agent.core.types.type import SupportedFrameworks
 from diagrid.agent.core.workflow import BaseWorkflowRunner
 from diagrid.agent.core.workflow.runner import fold_run_event
 from diagrid.agent.core.workflow.stream import (
+    BRANCH_DONE,
     CONTROL_MODES,
     KEEPALIVE_EVENT,
     WORKFLOW_STARTED,
@@ -50,6 +51,7 @@ from .models import (
     WaitingEdgeConfig,
 )
 from .streaming import (
+    BRANCHES_KEY,
     EXECUTED_KEY,
     FINAL_STATE_KEY,
     STREAM_RUN_KEY,
@@ -899,6 +901,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     "status": output.status,
                     **({"error": output.error} if output.error else {}),
                     **({EXECUTED_KEY: output.executed} if with_executed else {}),
+                    **(
+                        {BRANCHES_KEY: output.branches}
+                        if streamed and output.branches
+                        else {}
+                    ),
                     # the state it ended with, for the stream's last values chunk
                     **(
                         {FINAL_STATE_KEY: output.channel_state.to_dict()}
@@ -1049,6 +1056,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     ):
                         yield event
                     return
+                if isinstance(item, StreamEvent) and item.mode == BRANCH_DONE:
+                    # a router that ran here: internal, never sent on
+                    seen_nodes.add((item.step, item.node))
+                    continue
                 if isinstance(item, StreamEvent) and item.mode == UPDATES:
                     seen_nodes.add((item.step, item.node))
                 if isinstance(item, StreamEvent) and item.mode == VALUES:

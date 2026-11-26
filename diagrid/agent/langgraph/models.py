@@ -539,6 +539,9 @@ class GraphWorkflowOutput:
         executed: The nodes that ran in each step, in order. Lets a streaming
             consumer tell which node's chunks never arrived. ``None`` for an
             output written before the field existed.
+        branches: The conditional edges evaluated in their own activity, as
+            ``[step, sink key]`` (step ``-1`` for a START edge), for the same
+            purpose. ``None`` when there were none.
     """
 
     output: Dict[str, Any] = field(default_factory=dict)
@@ -547,6 +550,7 @@ class GraphWorkflowOutput:
     status: str = "completed"
     error: Optional[str] = None
     executed: Optional[List[List[str]]] = None
+    branches: Optional[List[List[Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -560,6 +564,8 @@ class GraphWorkflowOutput:
         }
         if self.executed is not None:
             data["executed"] = self.executed
+        if self.branches:
+            data["branches"] = self.branches
         return data
 
     @classmethod
@@ -574,4 +580,5 @@ class GraphWorkflowOutput:
             status=data.get("status", "completed"),
             error=data.get("error"),
             executed=data.get("executed"),
+            branches=data.get("branches"),
         )
