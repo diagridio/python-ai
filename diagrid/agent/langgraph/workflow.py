@@ -3,9 +3,7 @@
 
 """Dapr Workflow definitions for durable LangGraph execution."""
 
-import asyncio
 import base64
-import concurrent.futures
 import contextlib
 import copy
 import dataclasses
@@ -40,7 +38,7 @@ from langchain_core.messages import (
     convert_to_messages,
     message_chunk_to_message,
 )
-from langchain_core.runnables.config import run_in_executor, set_config_context
+from langchain_core.runnables.config import set_config_context
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from langgraph.runtime import Runtime
@@ -76,6 +74,13 @@ from .interrupts import (
     without_resume_writes,
 )
 from .node_routes import route_in_node
+from .runnable_call import (  # noqa: F401 (re-exported)
+    _BackgroundLoop,
+    _await_if_coroutine,
+    _background_loop,
+    _has_async_entry,
+    _invoke_runnable,
+)
 from .stream_values import state_values
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
 from .task_identity import TaskIdentity
@@ -392,8 +397,6 @@ def _close_langsmith_parent_trace_async(config: Optional[Dict[str, Any]]) -> Non
     run_id = config.get("langsmith_run_id")
     if not run_id:
         return
-
-    import threading
 
     def _do_close() -> None:
         try:
@@ -1097,25 +1100,6 @@ def _build_node_runtime(
         return Runtime(**extra)
 
 
-def _has_async_entry(runnable: Any) -> bool:
-    """Whether ``runnable`` has a real async entry point, which a node should use.
-
-    ``ToolNode`` has a sync ``func`` and an ``afunc``; its sync one cannot run
-    an ``async def`` tool (MCP adapter tools are such), its async one runs both,
-    A plain sync node also gets an ``afunc``, but
-    only a ``run_in_executor`` wrapper around its function: that is not one.
-
-    A composite (a compiled subgraph, a ``RunnableSequence``) has no function of
-    its own and no ``afunc``, but a step inside it may be an ``async def`` with
-    no sync entry, so it goes through ``ainvoke`` too: that runs a sync step in
-    an executor.
-    """
-    afunc = getattr(runnable, "afunc", None)
-    if afunc is None:
-        return not hasattr(runnable, "func") and hasattr(runnable, "ainvoke")
-    return not (isinstance(afunc, functools.partial) and afunc.func is run_in_executor)
-
-
 @dataclass
 class _NodeCall:
     """Everything one execution of a node needs, gathered by the activity."""
@@ -1185,83 +1169,6 @@ def _read_activity_channels(
     if isinstance(select, str):
         return source.get(select)
     return {k: source.get(k) for k in select if k in source}
-
-
-class _BackgroundLoop:
-    """One event loop per process, in a daemon thread, that async nodes run on.
-
-    An async client a node keeps (a chat model's HTTP connection pool) is bound
-    to the loop it was first used on. A loop made and closed for each activity
-    would break that client for the next activity, so every coroutine runs on
-    this one, which is never closed.
-
-    ``asyncio`` re-raises ``SystemExit`` and ``KeyboardInterrupt`` out of
-    ``run_forever``, which would end the loop's thread and leave every waiting
-    and later async node hanging. A node's own coroutine is guarded so those
-    fail that node alone, and a loop whose thread has died anyway is replaced.
-    """
-
-    #: Seconds between looks at whether the loop's thread is still alive.
-    _CHECK_SECONDS = 1.0
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
-
-    def _running_loop(self) -> Tuple[asyncio.AbstractEventLoop, threading.Thread]:
-        with self._lock:
-            alive = self._thread is not None and self._thread.is_alive()
-            if self._loop is None or self._loop.is_closed() or not alive:
-                loop = asyncio.new_event_loop()
-                thread = threading.Thread(
-                    target=loop.run_forever, name="langgraph-node-loop", daemon=True
-                )
-                thread.start()
-                self._loop, self._thread = loop, thread
-            assert self._loop is not None and self._thread is not None
-            return self._loop, self._thread
-
-    @staticmethod
-    async def _guarded(coro: Any) -> Any:
-        """``coro``, with an exit request turned into an error of the node."""
-        try:
-            return await coro
-        except (SystemExit, KeyboardInterrupt) as e:
-            raise RuntimeError(
-                f"The node raised {type(e).__name__}({', '.join(map(repr, e.args))}); "
-                "it fails the node, not the process"
-            ) from e
-
-    def run(self, coro: Any) -> Any:
-        """Run ``coro`` to completion on the loop and return its result.
-
-        ``run_coroutine_threadsafe`` starts the task in a copy of the calling
-        thread's context, so the ambient config ``set_config_context`` set for
-        the node is what the coroutine sees.
-        """
-        loop, thread = self._running_loop()
-        future = asyncio.run_coroutine_threadsafe(self._guarded(coro), loop)
-        while True:
-            concurrent.futures.wait([future], timeout=self._CHECK_SECONDS)
-            if future.done():
-                return future.result()
-            if not thread.is_alive():
-                future.cancel()
-                raise RuntimeError(
-                    "The event loop async nodes run on stopped while this node "
-                    "was running (something ended it, as SystemExit does)"
-                )
-
-
-_background_loop = _BackgroundLoop()
-
-
-def _await_if_coroutine(r: Any) -> Any:
-    """Run ``r`` to completion on the process's node loop if it is a coroutine."""
-    if asyncio.iscoroutine(r):
-        return _background_loop.run(r)
-    return r
 
 
 def _is_runnable(obj: Any) -> bool:
@@ -1370,13 +1277,6 @@ def _interrupt_conf(call: _NodeCall) -> Dict[str, Any]:
         resume=node_input.resume,
         send=call.pending_sends.extend,
     )
-
-
-def _invoke_runnable(runnable: Any, value: Any, config: Dict[str, Any]) -> Any:
-    """Call a Runnable; one with an async entry returns a coroutine to await."""
-    if _has_async_entry(runnable):
-        return runnable.ainvoke(value, config=config)
-    return runnable.invoke(value, config=config)
 
 
 def _call_plain(call: _NodeCall) -> Any:
