@@ -42,7 +42,6 @@ from .golden_harness import (
 )
 from .streaming_helpers import (
     INPUT,
-    _collect,
     _Ctx,
     _drain,
     parse_sse,
