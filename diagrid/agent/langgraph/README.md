@@ -79,15 +79,37 @@ result = runner.invoke(
 ```
 
 That is all. `thread_id` may also come as `config["configurable"]["thread_id"]`
-or, over HTTP, as `thread_id` in the request body. Each run starts from the
-state the thread's last run ended with and applies its input to it through the
-channels' reducers, as LangGraph does with a checkpointer. The state is kept in
-the app's Dapr state store (`agent-memory`, which a Catalyst app has), keyed by
-thread. To keep it elsewhere, compile the graph with a LangGraph checkpointer
-(`graph.compile(checkpointer=MemorySaver())`) or pass `checkpointer=` to the
-runner (a `DaprMemoryCheckpointer` on another store, or a LangGraph saver with
-the synchronous `get_tuple` and `put`). With none of these, `thread_id` only
-names the run and each run starts from its input alone.
+or, over HTTP, as `thread_id` (or `session_id`) in the request body. Each run
+starts from the state the thread's last run ended with and applies its input
+to it through the channels' reducers, as LangGraph does with a checkpointer.
+The state is kept in the app's Dapr state store (`agent-memory`, which a
+Catalyst app has, else the store the workflows use), keyed by thread; a
+thread keeps its last two checkpoints, which expire 30 days after its last
+run (`DaprMemoryCheckpointer(ttl_s=..., keep_checkpoints=...)`). Runs on one
+thread at the same time each start from the state before them, and the last
+one to end sets the thread's state.
+
+- **No thread id, no state.** A run without one is stateless: it starts from
+  its input alone and leaves nothing in the store. Its generated thread id
+  (a UUID) is only a label.
+- **Send only the new messages.** As with a LangGraph checkpointer, the input
+  is applied to the thread's state: a client that sends the whole history
+  every turn duplicates it, unless every message it resends carries the `id`
+  the run returned for it (`add_messages` then replaces it in place). Such a
+  client can also send no thread id and keep the history itself.
+- **Opting out.** `DaprWorkflowGraphRunner(..., continue_threads=False)` makes
+  every run stateless.
+- **Another store.** Pass `checkpointer=` to the runner: a
+  `DaprMemoryCheckpointer` on another Dapr store, or a LangGraph saver with
+  the synchronous `get_tuple` and `put` (a database saver). A graph compiled
+  with LangGraph's `MemorySaver` keeps threads in one process, which breaks
+  across replicas and restarts: the runner keeps them in the Dapr state store
+  instead (and logs a warning); without any store it uses the `MemorySaver`
+  and warns. With no store at all, `thread_id` only names the run.
+- **If the state cannot be saved** (the store is down past the retries), the
+  run still returns its output, with `thread_saved: false` and
+  `thread_error`, and a stream sends `thread_not_saved` before its final
+  event; the thread keeps the state it had before the run.
 
 ## Async Usage
 
@@ -357,6 +379,15 @@ expect events to arrive one by one as the nodes produce them, comment lines
 (`: keepalive`) to ignore while a node is quiet, and the stream to end right
 after `workflow_completed` or `workflow_failed`. If tokens arrive all at once
 at the end of the run, something in front of the app is buffering.
+
+**Put the endpoints behind the app's own authentication.** `GET
+/agent/run/{workflow_id}`, `GET /agent/run/{workflow_id}/stream` and `POST
+/agent/run/{workflow_id}/resume` answer anyone who knows a run's id, with the
+run's output, its stream and the power to resume it; the runner does not check
+who started a run. Workflow ids end in a random UUID, so they cannot be
+guessed, but they travel in responses and logs: deploy the app behind the
+authentication (and, where runs belong to users, the per-user checks) your
+API gateway or app already applies, as you would for `POST /agent/run`.
 
 ### Interrupts
 
