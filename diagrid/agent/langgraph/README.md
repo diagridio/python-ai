@@ -286,12 +286,14 @@ Every event carries an SSE `id`. With the state-store transport (see
 [Streaming across replicas](#streaming-across-replicas)) the id is a cursor
 into the run's event log that any replica can resume from: on
 `workflow_started` where the stream starts (`v1.start` for a new run, the id
-the client sent on a reconnect, so a drop right after it replays nothing),
+the client sent on a reconnect, and on the stream of a resume the position
+after the run's last chunk before it, so a drop right after it replays
+nothing),
 `v1.end` on the final event, and in between the position
 after that chunk (a control event repeats the id of the chunk before it). A
 `workflow_failed` with `workflow_still_running: true` is not the run's end: it
-repeats the id of the last chunk too (on a reconnect, before any chunk, the id
-the client sent). With the in-process transport the events are numbered from 1
+repeats the id of the last chunk too (before any chunk, the id of
+`workflow_started`). With the in-process transport the events are numbered from 1
 on each connection.
 
 #### Reconnecting

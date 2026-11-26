@@ -19,6 +19,7 @@ import asyncio
 import logging
 import time
 import uuid
+from dataclasses import replace
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, Set, Tuple
 
 from diagrid.agent.core.workflow.stream import frame_sse
@@ -142,7 +143,12 @@ async def resume_run_events(
             )
 
         pump_task = asyncio.create_task(pump())
-        yield started_event(workflow_id, thread_id)
+        started = started_event(workflow_id, thread_id)
+        if source.follower is not None:
+            # the stream starts after what the log held: a reconnect from
+            # here gets the rest of the run, not what came before the resume
+            started = replace(started, event_id=source.follower.event_id())
+        yield started
         async for item in drain(
             source,
             workflow_id=workflow_id,
