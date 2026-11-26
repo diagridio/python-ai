@@ -274,15 +274,15 @@ class TestRouterThatStreams(_Golden):
         ]
         self.assertTrue(router_tokens, "the router's tokens were lost")
         self.assertIn(("custom", "routing"), ours)
-        # a router's chunks are the source node's in native LangGraph
-        self.assertEqual(_canonical(ours), _canonical(native))
+        # a router runs inside its node's task, before the node's updates chunk
+        self._assert_same_sequence(native, ours)
 
     async def test_an_async_router_streams_too(self):
         native, ours = await _both(
             _router_graph(async_router=True), "router-async", {"log": []}
         )
         self.assertIn(("custom", "routing"), ours)
-        self.assertEqual(_canonical(ours), _canonical(native))
+        self._assert_same_sequence(native, ours)
 
     async def test_it_does_not_look_like_a_missing_stream(self):
         # the router's chunks are not a node's updates: no stream_unavailable
