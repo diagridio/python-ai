@@ -424,7 +424,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
 
         self._continue_threads = continue_threads
         self._thread_store = resolve_thread_store(
-            checkpointer, self._graph, self._state_store
+            checkpointer, self._graph, self._state_store, self._workflow_store_name
         )
         self._stream_transport = resolve_transport(
             self._given_transport,

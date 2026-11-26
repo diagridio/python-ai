@@ -62,6 +62,27 @@ class TestTransportChoice(_RunnerTestCase):
         self.assertIsInstance(runner.stream_transport, StateLogTransport)
         self.assertEqual(runner.stream_transport.store_name, "agent-workflow")
 
+    def test_the_workflow_state_store_keeps_threads_too(self):
+        # the default Catalyst app: continuation needs no setup either
+        with _discovered(workflow_store_name="agent-workflow"):
+            runner = DaprWorkflowGraphRunner(graph=_golden_graph(), name="t-wf-th")
+        store = runner._thread_store
+        self.assertIsNotNone(store)
+        self.assertEqual(
+            store._checkpointer._store.store_name,  # type: ignore[union-attr]
+            "agent-workflow",
+        )
+
+    def test_the_app_memory_store_keeps_threads_before_the_workflow_store(self):
+        with _discovered(
+            memory_store_name="agent-memory", workflow_store_name="agent-workflow"
+        ):
+            runner = DaprWorkflowGraphRunner(graph=_golden_graph(), name="t-mem-th")
+        self.assertEqual(
+            runner._thread_store._checkpointer._store.store_name,  # type: ignore[union-attr]
+            "agent-memory",
+        )
+
     def test_a_given_transport_wins(self):
         mine = StateLogTransport(StateLogStreamConfig(store_name="mine"))
         with _discovered(memory_store_name="agent-memory"):

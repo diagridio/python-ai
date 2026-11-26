@@ -94,13 +94,17 @@ class DaprThreadStore:
 
 
 def resolve_thread_store(
-    checkpointer: Any, graph: Any, state_store: Any
+    checkpointer: Any,
+    graph: Any,
+    state_store: Any,
+    workflow_store_name: Optional[str] = None,
 ) -> Optional[ThreadStore]:
     """The store a runner keeps its threads' state in, or ``None`` for none.
 
     The runner's own ``checkpointer`` first, then the one the graph was
-    compiled with, then the app's Dapr state store (``agent-memory``, which a
-    Catalyst app has). Without any of them a thread id is only a label.
+    compiled with, then the app's Dapr state store (``agent-memory``), else
+    the store the workflows use (``workflow_store_name``, which every
+    workflow app has). Without any of them a thread id is only a label.
 
     A graph compiled with an in-memory saver (``MemorySaver``, as LangGraph's
     examples do) keeps threads in one process, which breaks across replicas
@@ -109,6 +113,10 @@ def resolve_thread_store(
     """
     from .saver_store import SaverThreadStore, is_in_memory_saver, is_saver
 
+    if state_store is None and workflow_store_name:
+        from diagrid.agent.core.state import DaprStateStore
+
+        state_store = DaprStateStore(store_name=workflow_store_name)
     if checkpointer is not None:
         if isinstance(checkpointer, DaprMemoryCheckpointer):
             return DaprThreadStore(checkpointer)
