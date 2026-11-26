@@ -6,7 +6,6 @@
 import asyncio
 import json
 import logging
-import time
 import uuid
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -23,7 +22,6 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from dapr.ext.workflow import WorkflowStatus
 from langchain_core.runnables.config import DEFAULT_RECURSION_LIMIT
 from langgraph.types import Command
 
@@ -40,18 +38,15 @@ from .models import (
     EdgeConfig,
     GraphConfig,
     GraphWorkflowInput,
-    GraphWorkflowOutput,
     NodeConfig,
     WaitingEdgeConfig,
 )
 from .streaming import (
     STREAM_RUN_KEY,
     StaticConfig,
-    FAILED_STATUSES,
     StreamControl,
     normalize_final,
     normalize_stream_mode,
-    run_error,
 )
 from .stream_events import (
     FINAL_EVENTS,
@@ -63,7 +58,8 @@ from .stream_events import (
 from .langsmith_trace import ParentTrace, start_parent_trace
 from .run_status import completed_result, interrupted_result
 from .activity_stream import parse_status
-from .interrupts import INTERRUPT_KEY, as_interrupts, interrupted_event
+from .interrupts import interrupted_event
+from .invoke_result import invoke_resume, wait_invoke_result
 from .reconnect import add_reconnect_route, resume_events
 from .resume_run import add_resume_route, resume_run_events
 from .stream_drain import SseEncoder, drain, parse_output
@@ -810,6 +806,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             GraphRunError: The run failed (a node or a condition raised).
             RuntimeError: The workflow failed or was terminated.
         """
+        if isinstance(input, Command):
+            return invoke_resume(
+                self, input, workflow_id, poll_interval=poll_interval, timeout=timeout
+            )
         run = self._prepare_run(input, thread_id, config, workflow_id)
         workflow_id, thread_id, trace = run.workflow_id, run.thread_id, run.trace
 
@@ -820,73 +820,19 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             input=run.workflow_input,
             instance_id=workflow_id,
         )
-
-        start_time = time.time()
+        # a run that completed had its trace closed by workflow.py
+        completed: List[bool] = []
         try:
-            while True:
-                time.sleep(poll_interval)
-
-                if timeout and (time.time() - start_time) > timeout:
-                    raise TimeoutError(
-                        f"Workflow {workflow_id} timed out after {timeout}s"
-                    )
-
-                state = self._workflow_client.get_workflow_state(
-                    instance_id=workflow_id
-                )
-
-                if state is None:
-                    raise RuntimeError(f"Workflow {workflow_id} state not found")
-
-                paused = interrupted_event(
-                    parse_status(state.serialized_custom_status), workflow_id
-                )
-                if state.runtime_status == WorkflowStatus.RUNNING and paused:
-                    # As LangGraph's invoke: the interrupts, under __interrupt__.
-                    return {INTERRUPT_KEY: list(as_interrupts(paused["interrupts"]))}
-
-                if state.runtime_status == WorkflowStatus.COMPLETED:
-                    # Workflow completed normally; workflow.py already closes the trace.
-                    trace = None
-                    if state.serialized_output:
-                        output_dict = (
-                            json.loads(state.serialized_output)
-                            if isinstance(state.serialized_output, str)
-                            else state.serialized_output
-                        )
-                        output = GraphWorkflowOutput.from_dict(output_dict)
-                        if output.status in FAILED_STATUSES:
-                            # Not a result: a run that hit its step limit or
-                            # failed in a node raises.
-                            raise run_error(
-                                normalize_final(
-                                    {
-                                        "type": "workflow_completed",
-                                        "status": output.status,
-                                        "error": output.error,
-                                        "output": output.output,
-                                    },
-                                    workflow_id=workflow_id,
-                                    thread_id=thread_id,
-                                )
-                            )
-                        if self._is_root_state() and ROOT in output.output:
-                            return output.output[ROOT]
-                        return output.output
-                    return {}
-
-                elif state.runtime_status == WorkflowStatus.FAILED:
-                    error_msg = "Workflow failed"
-                    if state.failure_details:
-                        error_msg = getattr(
-                            state.failure_details, "message", str(state.failure_details)
-                        )
-                    raise RuntimeError(error_msg)
-
-                elif state.runtime_status == WorkflowStatus.TERMINATED:
-                    raise RuntimeError(f"Workflow {workflow_id} was terminated")
+            return wait_invoke_result(
+                self,
+                workflow_id,
+                thread_id,
+                poll_interval=poll_interval,
+                timeout=timeout,
+                on_completed=lambda: completed.append(True),
+            )
         finally:
-            if trace:
+            if trace and not completed:
                 trace.end()
 
     async def run_async(
