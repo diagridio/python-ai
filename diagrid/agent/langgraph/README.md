@@ -120,7 +120,7 @@ objects (`kind`, `data`):
 | `kind` | `data` | Meaning |
 |---|---|---|
 | `workflow_started` | `{"workflow_id", "thread_id"}` | Always the first event: the ids to use with `terminate_workflow` or `get_workflow_status`. Delivered only to `on_control`, never yielded. |
-| `node_reset` | `{"node", "step"}`, plus `"path"` for a `Send` task | A node was retried; drop its partial output. `node` and `step` are the `langgraph_node` and `langgraph_step` of that node's `messages` metadata (`step` is numbered from 1). A task started by a `Send` also carries `path`, the `langgraph_path` of its chunks (`["__pregel_push", index, false]`), which tells apart the tasks of one node in a step. A retry of a conditional edge's function (the function runs in its own activity, after the node's) also carries `branch`, the edge's function name: only what that function sent since the node's `updates` chunk is stale, not the node's own output. |
+| `node_reset` | `{"node", "step"}`, plus `"path"` for a `Send` task | A node was retried; drop its partial output. `node` and `step` are the `langgraph_node` and `langgraph_step` of that node's `messages` metadata (`step` is numbered from 1). A task started by a `Send` also carries `path`, the `langgraph_path` of its chunks (`["__pregel_push", index, false]`), which tells apart the tasks of one node in a step. A retry of a conditional edge's function also carries `branch`, the edge's function name. The function runs inside its node's activity, before the node's `updates` chunk, as in LangGraph; if it raises there, it runs again in an activity of its own, after that chunk, and only what the function sent is stale, not the node's own output. |
 | `stream_unavailable` | `{"workflow_id", "reason", "missing_steps", "missing_nodes"}` | The run finished but a node's chunks never arrived (see the limit below). `missing_nodes` is a list of `{"step", "node"}`, one per node of a step that streamed nothing, even when other nodes of that step did. Steps are numbered from 1, like `langgraph_step`. A `Send` task is named `node#k` there (`k` is its position among the step's `Send` tasks). |
 | `stream_dropped` | `{"dropped": n}` | The consumer fell behind and `n` token or custom chunks were dropped. `updates` are never dropped. |
 
@@ -223,11 +223,6 @@ they are left alone.
   was written, as in LangGraph. It must be something that serializer handles.
   A run's output (the `invoke` result and the final event) is JSON: such a value
   appears there as its dump (a `set` as a sorted list, a `datetime` as a string).
-- **Routers stream after their node's update.** The LLM tokens and
-  `get_stream_writer()` events of a conditional edge's function are sent as its
-  source node's (`langgraph_node` and step), as LangGraph does, but the router
-  runs after the node finished, so they follow that node's `updates` chunk
-  where LangGraph sends them before it.
 - **The `config` of `astream`, `invoke` and `run_async` travels as JSON.**
   `tags`, `metadata`, `configurable` and `recursion_limit` work; `recursion_limit`
   bounds the run's steps as LangGraph counts them: that many node steps run and
