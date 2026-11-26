@@ -73,6 +73,7 @@ from .stream_events import (
     without_executed,
 )
 from .langsmith_trace import ParentTrace, start_parent_trace
+from .run_status import completed_result
 from .limits import StepBound, step_bound
 from .workflow import (
     IS_LAST_STEP,
@@ -1114,6 +1115,10 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         else:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+    def _status_result(self, state: Any) -> Dict[str, Any]:
+        """A completed run's result, or a failed workflow's error."""
+        return completed_result(state) or super()._status_result(state)
 
     def _is_root_state(self) -> bool:
         """Whether the graph's whole state is one ``__root__`` channel."""

@@ -393,7 +393,21 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             "last_updated_at": (
                 str(state.last_updated_at) if state.last_updated_at else None
             ),
+            **self._status_result(state),
         }
+
+    def _status_result(self, state: Any) -> dict[str, Any]:
+        """What :meth:`get_workflow_status` adds about how the run ended.
+
+        A runner whose workflow output it can read overrides this; by default a
+        failed workflow carries its failure message and nothing else is added.
+        """
+        if state.runtime_status != WorkflowStatus.FAILED:
+            return {}
+        details = state.failure_details
+        if details is None:
+            return {"error": "Workflow failed"}
+        return {"error": str(getattr(details, "message", details))}
 
     def terminate_workflow(self, workflow_id: str) -> None:
         """Terminate a running workflow.
@@ -666,7 +680,8 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
 
         @app.get("/agent/run/{workflow_id}")
         async def get_status(workflow_id: str) -> dict:  # type: ignore[type-arg]
-            status = self.get_workflow_status(workflow_id)
+            # Off the loop: the state lookup is a blocking gRPC call.
+            status = await asyncio.to_thread(self.get_workflow_status, workflow_id)
             if status is None:
                 raise HTTPException(status_code=404, detail="Workflow not found")
             return status
