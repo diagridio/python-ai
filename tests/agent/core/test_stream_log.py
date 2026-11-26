@@ -186,6 +186,26 @@ class TestWriter(unittest.TestCase):
         self.assertEqual(chunk.attempt, late.attempt)
         self.assertEqual(_datas(chunk), ["research#0-0", "research#0-1"])
 
+    def test_a_concurrent_attempt_never_overwrites_a_done_head(self):
+        """Both attempts owned the head at their first flush; one finished first."""
+        store = FakeLogStore()
+        a = _writer(store)
+        b = _writer(store)
+        a.put(_event("research#0", 0, attempt="a"))
+        a._flush(done=False)
+        b.put(_event("research#0", 0, attempt="b"))
+        b._flush(done=False)
+        a.finish(done=True)
+        b.finish(done=True)
+        head = store.get(head_key("lgstream", "wf:1", 0, "research#0"))
+        self.assertEqual(head["attempt"], a.attempt)
+        self.assertTrue(head["done"])
+        # b's output is still in the log, through its end record
+        reader = LogReader(store, _config(), "wf:1")
+        chunk = reader.read([UnitWant(0, "research#0", winner=b.attempt)])[0]
+        self.assertEqual(_datas(chunk), ["research#0-0"])
+        self.assertEqual(chunk.attempt, b.attempt)
+
     def test_a_reader_follows_the_winner_of_concurrent_attempts(self):
         store = FakeLogStore()
         a = _writer(store)

@@ -262,6 +262,9 @@ class LogWriter:
             timer, self._timer = self._timer, None
         if timer is not None:
             timer.cancel()
+        # another attempt may have finished since the first flush: a done
+        # head is never overwritten, so look at the head again
+        self._blocked = None
         delay = self._config.final_flush_backoff_s
         for attempt in range(max(1, self._config.final_flush_attempts)):
             if attempt:
@@ -348,7 +351,10 @@ class LogWriter:
             return True
 
     def _is_blocked(self) -> bool:
-        """Whether an attempt that already finished owns the unit (read once)."""
+        """Whether an attempt that already finished owns the unit.
+
+        Read at the first flush and again at the last one.
+        """
         if self._blocked is None:
             key = head_key(
                 self._config.key_prefix, self._workflow_id, self._step, self._unit
