@@ -24,6 +24,13 @@ from .streaming import STREAM_RUN_KEY
 #: Custom status keys: the units of each step, and the routers run apart.
 STATUS_EXECUTED = "executed"
 STATUS_BRANCHES = "branches"
+#: Custom status key: the step the first entry of ``executed`` is.
+STATUS_EXECUTED_FROM = "executed_from"
+#: The steps whose units the custom status holds: the status is rewritten
+#: every step and read by every stream (with the run's input: Dapr returns it
+#: only with the payloads), so it must not grow with the run. A reader that
+#: needs older steps gets them from the run's output when it ends.
+STATUS_STEP_WINDOW = 128
 
 
 def transport_of(
@@ -61,10 +68,18 @@ def run_status(run: Any) -> Dict[str, Any]:
 
     status: Dict[str, Any] = {}
     if (run.config or {}).get(STREAM_RUN_KEY):
-        status[STATUS_EXECUTED] = run.executed
-        status[STATUS_BRANCHES] = run.branches
-        if run.attempts:
-            status[STATUS_ATTEMPTS] = run.attempts
+        first = max(0, len(run.executed) - STATUS_STEP_WINDOW)
+        status[STATUS_EXECUTED] = run.executed[first:]
+        status[STATUS_BRANCHES] = [b for b in run.branches if int(b[0]) >= first]
+        if first:
+            status[STATUS_EXECUTED_FROM] = first
+        attempts = {
+            key: attempt
+            for key, attempt in run.attempts.items()
+            if int(key.split(":", 1)[0]) >= first
+        }
+        if attempts:
+            status[STATUS_ATTEMPTS] = attempts
     if run.interrupt_seq:
         status[STATUS_INTERRUPT_SEQ] = run.interrupt_seq
     if run.interrupt:

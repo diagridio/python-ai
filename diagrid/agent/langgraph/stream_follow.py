@@ -35,7 +35,7 @@ from diagrid.agent.core.workflow.stream_log import (
     event_from_wire,
 )
 
-from .activity_stream import STATUS_BRANCHES, STATUS_EXECUTED
+from .activity_stream import STATUS_BRANCHES, STATUS_EXECUTED, STATUS_EXECUTED_FROM
 from .interrupts import INTERRUPT_KEY, as_interrupts
 from .stream_attempts import attempts_of, unit_key
 from .stream_events import encode_chunk, stream_failure_event
@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 BACKLOG_HIGH = 256
 #: Reads that fail in a row before the stream reports the store unreadable.
 READ_ATTEMPTS = 5
+#: Polls between reads of the run's status while a unit is still being written.
+STATUS_EVERY = 10
 
 Unit = Tuple[int, str]
 
@@ -82,8 +84,9 @@ def units_of(status: Dict[str, Any]) -> List[Unit]:
     """
     executed = status.get(STATUS_EXECUTED) or status.get(EXECUTED_KEY) or []
     branches = status.get(STATUS_BRANCHES) or status.get(BRANCHES_KEY) or []
+    first = int(status.get(STATUS_EXECUTED_FROM) or 0)
     units: List[Tuple[int, int, int, str]] = []
-    for step, keys in enumerate(executed):
+    for step, keys in enumerate(executed, start=first):
         for order, key in enumerate(keys):
             units.append((step, 0, order, str(key)))
     for order, (step, key) in enumerate(branches):
@@ -160,6 +163,8 @@ class LogFollower:
         #: Units the client had in full or in part before this stream: the
         #: stream does not report them missing.
         self._seen = seen if seen is not None else set()
+        #: Polls since the run's status was last read (see ``_run_status``).
+        self._polls_since_status = STATUS_EVERY
         #: The last step whose ``values`` chunk went out (here or before a
         #: reconnect): every unit of a step logs it, and it is sent once.
         self.values_through = (
@@ -240,11 +245,14 @@ class LogFollower:
     async def _read_once(self, final: Optional[Dict[str, Any]]) -> None:
         if self._cursor.at_end:
             return
-        status = final if final is not None else await asyncio.to_thread(self._status)
-        self._learn(units_of(status or {}))
-        winners = attempts_of(status)
-        for key, state in self._units.items():
-            state.winner = winners.get(unit_key(*key), state.winner)
+        status = await self._run_status(final)
+        if status is not None:
+            if final is None and self._behind_window(status):
+                return  # the final event lists every step: read in order then
+            self._learn(units_of(status))
+            winners = attempts_of(status)
+            for key, state in self._units.items():
+                state.winner = winners.get(unit_key(*key), state.winner)
         wants = [
             UnitWant(
                 unit[0],
@@ -265,6 +273,34 @@ class LogFollower:
                 self._purge(chunk)
                 continue
             await self._deliver(chunk)
+
+    async def _run_status(
+        self, final: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """The run's status, when there may be something new in it.
+
+        New units appear when a step starts, and the run says which attempt
+        it used when the next one does; while a known unit is still being
+        written the status is read only every :data:`STATUS_EVERY` polls (a
+        unit whose writes failed must not hold the stream back for good).
+        Dapr returns the status only with the run's input and output, so this
+        is the expensive read of a poll.
+        """
+        if final is not None:
+            return final
+        self._polls_since_status += 1
+        writing = any(not state.complete for state in self._units.values())
+        if writing and self._polls_since_status < STATUS_EVERY:
+            return None
+        self._polls_since_status = 0
+        return await asyncio.to_thread(self._status) or {}
+
+    def _behind_window(self, status: Dict[str, Any]) -> bool:
+        """Whether the status no longer lists steps this reader still needs."""
+        first = int(status.get(STATUS_EXECUTED_FROM) or 0)
+        if not first or self._cursor.skips_step(first - 1):
+            return False
+        return not any(step < first for step, _ in self._units)
 
     def _learn(self, units: List[Unit]) -> None:
         for unit in units:

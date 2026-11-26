@@ -317,7 +317,11 @@ not pick one:
   chunks still never reach the log, the stream ends with `stream_unavailable`
   whose `reason` is `write_failed`. A store that cannot be read ends the
   stream with `workflow_failed` (`error_type` `StreamReadError`), never with an
-  empty stream. `StateLogStreamConfig` sets the store, key prefix, TTLs, batch
+  empty stream. A stream finds a run's tasks in the run's custom status, which
+  lists its last 128 steps (a reader further behind catches up on the older
+  steps when the run ends) and which it reads about every 2 seconds while a
+  node is streaming, as Dapr returns the status only together with the run's
+  input. `StateLogStreamConfig` sets the store, key prefix, TTLs, batch
   sizes and read interval:
 
   ```python
