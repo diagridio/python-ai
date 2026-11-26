@@ -8,16 +8,23 @@
 workflow_id=...)`` raise the workflow's ``resume`` event and follow the same
 run to its end, or to its next interrupt. A stream of a resumed run carries
 what happens after the resume only.
+
+Two callers may resume the same interrupt at once: both raise the event, the
+run takes the first and ignores the other. Each resume carries an id, the run
+publishes the id it took, and the caller whose resume it ignored gets
+:class:`ResumeConflict` (``409``) instead of a result its value had no part in.
 """
 
 import asyncio
 import logging
+import time
+import uuid
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, Set, Tuple
 
 from diagrid.agent.core.workflow.stream import frame_sse
 
 from .activity_stream import parse_status
-from .interrupts import RESUME_EVENT, pending_interrupt
+from .interrupts import RESUME_EVENT, pending_interrupt, resume_taken
 from .reconnect import _thread_of, follow_final
 from .stream_drain import SseEncoder, drain
 from .stream_events import started_event, stream_failure_event, without_executed
@@ -29,6 +36,15 @@ logger = logging.getLogger(__name__)
 
 class NotInterrupted(ValueError):
     """The run is not waiting for a resume (it ended, or never paused)."""
+
+
+class ResumeConflict(NotInterrupted):
+    """Another resume of the same interrupt got to the run first."""
+
+
+#: Seconds a caller waits for the run to take its resume before following it
+#: anyway (a sidecar that is slow to deliver the event).
+TAKE_TIMEOUT_S = 30.0
 
 
 async def _pending(runner: Any, workflow_id: str) -> Tuple[int, str]:
@@ -50,11 +66,36 @@ async def _pending(runner: Any, workflow_id: str) -> Tuple[int, str]:
 
 
 async def _send_resume(runner: Any, workflow_id: str, seq: int, value: Any) -> None:
+    """Raise the resume and wait until the run took it (or another one)."""
+    resume_id = uuid.uuid4().hex
     await asyncio.to_thread(
         runner._workflow_client.raise_workflow_event,
         instance_id=workflow_id,
         event_name=RESUME_EVENT,
-        data={"seq": seq, "resume": value},
+        data={"seq": seq, "resume": value, "id": resume_id},
+    )
+    deadline = time.monotonic() + TAKE_TIMEOUT_S
+    while time.monotonic() < deadline:
+        taken = resume_taken(
+            await asyncio.to_thread(
+                custom_status, runner._workflow_client, workflow_id
+            ),
+            seq,
+            resume_id,
+        )
+        if taken is False:
+            raise ResumeConflict(
+                f"Interrupt {seq} of workflow {workflow_id!r} was already resumed "
+                "by another request"
+            )
+        if taken:
+            return
+        await asyncio.sleep(0.05)
+    logger.warning(
+        "Run %s did not take resume %s within %.0fs; following it anyway",
+        workflow_id,
+        resume_id,
+        TAKE_TIMEOUT_S,
     )
 
 
@@ -135,6 +176,8 @@ async def _resume_sse(
             out = encoder.encode(item)
             if out is not None:
                 yield out
+    except ResumeConflict:
+        raise  # before the first event: the route answers 409
     except Exception as e:
         logger.exception("Resumed run %s failed to stream", workflow_id)
         failed = stream_failure_event(e, "StreamError", True)
@@ -142,6 +185,12 @@ async def _resume_sse(
             "workflow_failed",
             normalize_final(failed, workflow_id=workflow_id, thread_id=workflow_id),
         )
+
+
+async def _after(first: Any, rest: AsyncIterator[Any]) -> AsyncIterator[Any]:
+    yield first
+    async for item in rest:
+        yield item
 
 
 def add_resume_route(app: Any, runner: Any) -> None:
@@ -172,8 +221,16 @@ def add_resume_route(app: Any, runner: Any) -> None:
         except NotInterrupted as e:
             raise HTTPException(status_code=409, detail=str(e))
         if body.get("stream") is True:
+            events = _resume_sse(runner, workflow_id, body["resume"], modes)
+            try:
+                # the first event comes once the run took this resume
+                first = await events.__anext__()
+            except (NotInterrupted, LookupError) as e:
+                await events.aclose()
+                code = 404 if isinstance(e, LookupError) else 409
+                raise HTTPException(status_code=code, detail=str(e))
             return StreamingResponse(
-                frame_sse(_resume_sse(runner, workflow_id, body["resume"], modes)),
+                frame_sse(_after(first, events)),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )

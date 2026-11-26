@@ -45,6 +45,8 @@ RESUME_EVENT = "resume"
 #: Custom status: the pending interrupt, and the number of the last one.
 STATUS_INTERRUPT = "interrupt"
 STATUS_INTERRUPT_SEQ = "interrupt_seq"
+#: Custom status: the resume the run took last, ``{"seq", "id"}``.
+STATUS_RESUMED = "resumed"
 #: The updates-chunk key LangGraph streams interrupts under.
 INTERRUPT_KEY = "__interrupt__"
 #: The final event of a stream whose run is waiting for a resume.
@@ -277,8 +279,10 @@ def settle_interrupts(
         run.interrupt_seq += 1
         run.interrupt = {"seq": run.interrupt_seq, "step": step, "interrupts": pending}
         publish(run)
-        values = yield from _wait_resume(run.ctx, run.interrupt_seq, pending)
+        values, resume_id = yield from _wait_resume(run.ctx, run.interrupt_seq, pending)
         run.interrupt = None
+        # which resume the run took: a caller whose resume it ignored is told
+        run.resumed = {"seq": run.interrupt_seq, "id": resume_id}
         publish(run)
         for item in pending:
             if item["id"] in values:
@@ -291,13 +295,37 @@ def settle_interrupts(
 
 def _wait_resume(
     ctx: Any, seq: int, pending: List[Dict[str, Any]]
-) -> Generator[Any, Any, Dict[str, Any]]:
-    """Wait for the resume of interrupt ``seq``; others (stale) are ignored."""
+) -> Generator[Any, Any, Tuple[Dict[str, Any], Optional[str]]]:
+    """Wait for the resume of interrupt ``seq``; others (stale) are ignored.
+
+    Returns the resume values and the id the resume was raised with.
+    """
     while True:
         event = yield ctx.wait_for_external_event(RESUME_EVENT)
         data = event if isinstance(event, dict) else {"resume": event}
         if data.get("seq") in (None, seq):
-            return resume_values(pending, data.get("resume"))
+            raised = data.get("id")
+            return (
+                resume_values(pending, data.get("resume")),
+                None if raised is None else str(raised),
+            )
+
+
+def resume_taken(status: Dict[str, Any], seq: int, resume_id: str) -> Optional[bool]:
+    """Whether the run took the resume ``resume_id`` of interrupt ``seq``.
+
+    ``None`` while it is still waiting for one. A run started on a version
+    that does not say which resume it took is taken to have taken this one.
+    """
+    resumed = status.get(STATUS_RESUMED)
+    if isinstance(resumed, dict) and int(resumed.get("seq") or 0) >= seq:
+        if int(resumed.get("seq") or 0) > seq:
+            return True  # the run is past it: nothing to tell
+        return resumed.get("id") in (None, resume_id)
+    waiting = pending_interrupt(status)
+    if waiting is not None and int(waiting.get("seq") or 0) == seq:
+        return None
+    return True
 
 
 def pending_interrupt(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:

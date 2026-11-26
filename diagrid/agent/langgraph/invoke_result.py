@@ -12,13 +12,14 @@ a ``Command`` continues the thread.
 import json
 import logging
 import time
+import uuid
 from typing import Any, Callable, Optional
 
 from dapr.ext.workflow import WorkflowStatus
 
 from .activity_stream import parse_status
 from .interrupts import INTERRUPT_KEY, RESUME_EVENT, as_interrupts
-from .interrupts import interrupted_event, pending_interrupt
+from .interrupts import interrupted_event, pending_interrupt, resume_taken
 from .models import GraphWorkflowOutput
 from .streaming import FAILED_STATUSES, normalize_final, run_error
 
@@ -107,6 +108,27 @@ def wait_invoke_result(
             raise RuntimeError(f"Workflow {workflow_id} was terminated")
 
 
+def _wait_taken(
+    client: Any, workflow_id: str, seq: int, resume_id: str, poll_interval: float
+) -> None:
+    """Wait until the run took this resume; another one taken raises."""
+    from .resume_run import TAKE_TIMEOUT_S, ResumeConflict
+
+    deadline = time.monotonic() + TAKE_TIMEOUT_S
+    while time.monotonic() < deadline:
+        state = client.get_workflow_state(instance_id=workflow_id)
+        status = parse_status(getattr(state, "serialized_custom_status", None))
+        taken = resume_taken(status, seq, resume_id)
+        if taken is False:
+            raise ResumeConflict(
+                f"Interrupt {seq} of workflow {workflow_id!r} was already resumed "
+                "by another request"
+            )
+        if taken:
+            return
+        time.sleep(min(poll_interval, 0.05))
+
+
 def invoke_resume(
     runner: Any,
     command: Any,
@@ -136,11 +158,13 @@ def invoke_resume(
     if state.runtime_status != WorkflowStatus.RUNNING or pending is None:
         raise ValueError(f"Workflow {workflow_id!r} is not waiting for a resume")
     seq = int(pending.get("seq") or 0)
+    resume_id = uuid.uuid4().hex
     client.raise_workflow_event(
         instance_id=workflow_id,
         event_name=RESUME_EVENT,
-        data={"seq": seq, "resume": command.resume},
+        data={"seq": seq, "resume": command.resume, "id": resume_id},
     )
+    _wait_taken(client, workflow_id, seq, resume_id, poll_interval)
     return wait_invoke_result(
         runner,
         workflow_id,

@@ -372,13 +372,21 @@ needed for this.
   `{"resume": <value>}` (add `"stream": true`, and `stream_mode` if you like,
   for SSE; without it the response is the run's result, as a plain `POST`
   returns it). In Python: `runner.astream(Command(resume=value),
+  workflow_id=...)` or `runner.invoke(Command(resume=value),
   workflow_id=...)`. The interrupted node runs again in the same run, on the
   same thread, and `interrupt()` returns the value; a dict keyed by interrupt
   ids answers several interrupts one by one. The stream of a resume carries
   what happens after it (starting with `node_reset` for the node that runs
   again) and ends with the final event, or with `workflow_interrupted` when a
   node asks again. A body without `resume` is a `422`, an unknown run a `404`,
-  and a run that is not waiting a `409`.
+  and a run that is not waiting a `409`. When two requests resume the same
+  interrupt at once, the run takes one and the other gets a `409` (before any
+  event, when it asked for a stream).
+- `interrupt()` pauses the run also when it is called in a subgraph the node
+  runs (a compiled subgraph added as the node, or one whose result the node
+  returns) and in the node's router (its conditional edge). A node that calls
+  a subgraph that pauses and drops its result fails with an error that says
+  so, rather than going on as if it had not paused.
 
 ### Limits
 

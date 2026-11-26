@@ -557,6 +557,8 @@ class _Run:
     interrupt: Optional[Dict[str, Any]] = None
     #: How many times the run was interrupted so far.
     interrupt_seq: int = 0
+    #: The resume the run took last, ``{"seq", "id"}``.
+    resumed: Optional[Dict[str, Any]] = None
     #: The attempt of each unit's output the run used (see ``stream_attempts``).
     attempts: Dict[str, str] = field(default_factory=dict)
 

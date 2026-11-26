@@ -12,7 +12,7 @@ of the app) run the nodes while the first one serves the stream.
 import json
 import threading
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from unittest import mock
 
 from dapr.ext.workflow import WorkflowStatus
@@ -58,7 +58,9 @@ class LogClient:
         self.failed: Dict[str, str] = {}
         self.custom: Dict[str, str] = {}
         self.inputs: Dict[str, Any] = {}
-        self._events: Dict[str, Any] = {}
+        #: Raised events per ``<instance>/<name>``, in order, as the engine
+        #: queues them: a second event is not lost while the first waits.
+        self._events: Dict[str, List[Any]] = {}
         self._cond = threading.Condition()
 
     def schedule_new_workflow(self, *, workflow: Any, input: Any, instance_id: str):
@@ -90,14 +92,17 @@ class LogClient:
 
     def raise_workflow_event(self, instance_id: str, event_name: str, data: Any = None):
         with self._cond:
-            self._events[f"{instance_id}/{event_name}"] = json.loads(json.dumps(data))
+            self._events.setdefault(f"{instance_id}/{event_name}", []).append(
+                json.loads(json.dumps(data))
+            )
             self._cond.notify_all()
 
     def wait_event(self, instance_id: str, name: str) -> Any:
         key = f"{instance_id}/{name}"
         with self._cond:
-            self._cond.wait_for(lambda: key in self._events, timeout=30)
-            return self._events.pop(key, None)
+            self._cond.wait_for(lambda: bool(self._events.get(key)), timeout=30)
+            queued = self._events.get(key) or []
+            return queued.pop(0) if queued else None
 
     def get_workflow_state(self, *, instance_id: str, fetch_payloads: bool = True):
         if instance_id not in self.inputs:

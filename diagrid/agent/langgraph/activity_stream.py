@@ -56,7 +56,7 @@ def activity_writer(
 def run_status(run: Any) -> Dict[str, Any]:
     """The custom status of a run: what a stream reader needs to find its
     units, and the interrupt the run waits on."""
-    from .interrupts import STATUS_INTERRUPT, STATUS_INTERRUPT_SEQ
+    from .interrupts import STATUS_INTERRUPT, STATUS_INTERRUPT_SEQ, STATUS_RESUMED
     from .stream_attempts import STATUS_ATTEMPTS
 
     status: Dict[str, Any] = {}
@@ -69,6 +69,8 @@ def run_status(run: Any) -> Dict[str, Any]:
         status[STATUS_INTERRUPT_SEQ] = run.interrupt_seq
     if run.interrupt:
         status[STATUS_INTERRUPT] = run.interrupt
+    if getattr(run, "resumed", None):
+        status[STATUS_RESUMED] = run.resumed
     return status
 
 
