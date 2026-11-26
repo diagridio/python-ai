@@ -144,6 +144,11 @@ class LogFollower:
         #: Units the client had in full or in part before this stream: the
         #: stream does not report them missing.
         self._seen = seen if seen is not None else set()
+        #: The last step whose ``values`` chunk went out (here or before a
+        #: reconnect): every unit of a step logs it, and it is sent once.
+        self.values_through = (
+            -1 if self._cursor.values_through is None else self._cursor.values_through
+        )
         self.purged = False
         #: Start after what the log holds when the follower starts (a resumed run).
         self._from_end = from_end
@@ -299,6 +304,11 @@ class LogFollower:
         state.consumed = chunk.start
         for wire in chunk.events:
             event = event_from_wire(wire, self._workflow_id, self._decode)
+            if event.mode == VALUES:
+                if event.step <= self.values_through:
+                    state.consumed += 1  # another unit's copy already went out
+                    continue
+                self.values_through = event.step
             await self._wait_for_room()
             key = (event.step, event.node)
             if state.replaced and event.mode != VALUES and key not in primed:
@@ -312,18 +322,28 @@ class LogFollower:
         while self._sink.backlog() >= BACKLOG_HIGH:
             await asyncio.sleep(0.01)
 
-    def event_id(self) -> str:
-        """The SSE id of the stream as it stands: a cursor any replica resumes."""
+    def event_id(self, values_through: Optional[int] = None) -> str:
+        """The SSE id of the stream as it stands: a cursor any replica resumes.
+
+        ``values_through`` is the step of a ``values`` chunk sent outside the
+        log (the run's final state), which the id then covers.
+        """
+        values = max(
+            self.values_through, -1 if values_through is None else values_through
+        )
+        through = None if values < 0 else values
         open_steps = [u[0] for u in self._order if not self._units[u].complete]
         if open_steps:
             base = min(open_steps)
         elif self._order:
             base = max(u[0] for u in self._order)
         else:
-            return encode_cursor(self._cursor)
+            return encode_cursor(replace(self._cursor, values_through=through))
         positions = tuple(
             (step, unit, (state.attempt or "")[:ATTEMPT_PREFIX], state.consumed)
             for (step, unit) in self._order
             if step >= base and (state := self._units[(step, unit)]).consumed > 0
         )
-        return encode_cursor(StreamCursor(base=base, positions=positions))
+        return encode_cursor(
+            StreamCursor(base=base, positions=positions, values_through=through)
+        )

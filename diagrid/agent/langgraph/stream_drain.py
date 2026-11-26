@@ -7,6 +7,7 @@ Shared by a new run's stream (``POST /agent/run``, ``astream``) and a
 reconnect (``GET /agent/run/{id}/stream``, ``astream_resume``).
 """
 
+from dataclasses import replace
 from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple
 
 from diagrid.agent.core.workflow.stream import (
@@ -79,12 +80,15 @@ async def drain(
     ``branch_done`` marker) arrived, for ``stream_unavailable``.
     """
     values_sent: Set[int] = set()
+    follower = source.follower
     while True:
         item = await next_item(source.sink, keepalive)
         if isinstance(item, StreamClosed):
             # Unregister before handing over the result: chunks a late
             # activity attempt writes from here on are dropped.
             await source.close()
+            if follower is not None:  # the client had these before a reconnect
+                values_sent.update(range(follower.values_through + 1))
             for event in closing_events(
                 item,
                 seen,
@@ -94,6 +98,13 @@ async def drain(
                 unavailable_reason=source.unavailable_reason,
                 purged=source.purged,
             ):
+                if (
+                    follower is not None
+                    and isinstance(event, StreamEvent)
+                    and event.mode == VALUES
+                ):
+                    # its own id: a reconnect from it does not send it again
+                    event = replace(event, event_id=follower.event_id(event.step))
                 yield event
             return
         if isinstance(item, StreamEvent) and item.mode == BRANCH_DONE:

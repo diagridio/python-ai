@@ -9,6 +9,8 @@ barriers, so every unit of a step below ``base`` was read in full; for the
 units of ``base`` and later that were read in part, ``positions`` holds the
 attempt (its first 8 characters) and how many of its events were read, as
 base64url JSON. The id grows with one step's parallelism, not with the run.
+A fourth part, ``.<step>``, is the last step whose ``values`` chunk the
+client has: every unit of a step logs that chunk, and it is sent once.
 
 ``v1.start`` replays from the beginning and ``v1.end`` means the final event
 was received. An id that does not parse replays from the start too.
@@ -39,6 +41,8 @@ class StreamCursor:
     positions: Tuple[Position, ...] = ()
     #: The client has the final event.
     at_end: bool = False
+    #: The last step whose ``values`` chunk the client has; ``None``: none.
+    values_through: Optional[int] = None
 
     def skips_step(self, step: int) -> bool:
         """Whether every unit of ``step`` was already read."""
@@ -56,13 +60,16 @@ def encode_cursor(cursor: StreamCursor) -> str:
     """The SSE id for ``cursor``."""
     if cursor.at_end:
         return END_ID
-    if cursor.base is None and not cursor.positions:
+    if cursor.base is None and not cursor.positions and cursor.values_through is None:
         return START_ID
     payload = json.dumps(
         [list(p) for p in cursor.positions], separators=(",", ":")
     ).encode()
     packed = base64.urlsafe_b64encode(payload).decode().rstrip("=")
-    return f"{VERSION}.{cursor.base if cursor.base is not None else -2}.{packed}"
+    text = f"{VERSION}.{cursor.base if cursor.base is not None else -2}.{packed}"
+    if cursor.values_through is not None:
+        text += f".{cursor.values_through}"
+    return text
 
 
 def parse_cursor(text: Optional[str]) -> StreamCursor:
@@ -76,8 +83,12 @@ def parse_cursor(text: Optional[str]) -> StreamCursor:
 
 
 def _parse(text: str) -> StreamCursor:
-    version, base, packed = text.split(".", 2)
-    if version != VERSION:
+    parts = text.split(".")
+    if len(parts) not in (3, 4):
+        raise ValueError(text)
+    version, base, packed = parts[:3]
+    values_through = int(parts[3]) if len(parts) == 4 else None
+    if version != VERSION or (values_through is not None and values_through < 0):
         raise ValueError(text)
     padded = packed + "=" * (-len(packed) % 4)
     raw = json.loads(base64.urlsafe_b64decode(padded.encode()))
@@ -85,7 +96,11 @@ def _parse(text: str) -> StreamCursor:
         raise ValueError(text)
     positions = tuple(_position(p) for p in raw)
     step = int(base)
-    return StreamCursor(base=None if step == -2 else step, positions=positions)
+    return StreamCursor(
+        base=None if step == -2 else step,
+        positions=positions,
+        values_through=values_through,
+    )
 
 
 def _position(item: object) -> Position:

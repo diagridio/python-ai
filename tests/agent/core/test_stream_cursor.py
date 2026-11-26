@@ -67,3 +67,21 @@ class TestStreamCursor(unittest.TestCase):
         cursor = StreamCursor(base=5, positions=((5, "a", "12345678", 1),))
         # small: grows with one step's parallelism, not with the run
         self.assertLess(len(encode_cursor(cursor)), 80)
+
+
+class TestValuesThrough(unittest.TestCase):
+    def test_the_last_values_step_round_trips(self):
+        cursor = StreamCursor(
+            base=1, positions=((1, "a", "abcd1234", 2),), values_through=1
+        )
+        self.assertEqual(parse_cursor(encode_cursor(cursor)), cursor)
+
+    def test_values_alone_is_not_the_start(self):
+        cursor = StreamCursor(values_through=0)
+        text = encode_cursor(cursor)
+        self.assertNotEqual(text, START_ID)
+        self.assertEqual(parse_cursor(text), cursor)
+
+    def test_an_id_without_it_still_parses(self):
+        cursor = StreamCursor(base=2, positions=())
+        self.assertIsNone(parse_cursor(encode_cursor(cursor)).values_through)
