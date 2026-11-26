@@ -24,6 +24,7 @@ from typing import Any, AsyncGenerator, AsyncIterator, Dict, Set, Tuple
 from diagrid.agent.core.workflow.stream import frame_sse
 
 from .activity_stream import parse_status
+from .interrupt_ids import partial_map_error
 from .interrupts import RESUME_EVENT, pending_interrupt, resume_taken
 from .reconnect import _thread_of, follow_final
 from .stream_drain import SseEncoder, drain
@@ -42,16 +43,21 @@ class ResumeConflict(NotInterrupted):
     """Another resume of the same interrupt got to the run first."""
 
 
+class InvalidResume(ValueError):
+    """A resume value the run's pending interrupts cannot take (``422``)."""
+
+
 #: Seconds a caller waits for the run to take its resume before following it
 #: anyway (a sidecar that is slow to deliver the event).
 TAKE_TIMEOUT_S = 30.0
 
 
-async def _pending(runner: Any, workflow_id: str) -> Tuple[int, str]:
+async def _pending(runner: Any, workflow_id: str, value: Any) -> Tuple[int, str]:
     """``(interrupt seq, thread id)`` of a run waiting for a resume.
 
     Raises ``LookupError`` for an unknown run, :class:`NotInterrupted` for a
-    run that is not waiting.
+    run that is not waiting, :class:`InvalidResume` for a ``value`` its
+    interrupts cannot take.
     """
     client = runner._workflow_client
     state = await asyncio.to_thread(client.get_workflow_state, instance_id=workflow_id)
@@ -62,6 +68,9 @@ async def _pending(runner: Any, workflow_id: str) -> Tuple[int, str]:
     )
     if pending is None:
         raise NotInterrupted(f"Workflow {workflow_id!r} is not waiting for a resume")
+    error = partial_map_error(pending["interrupts"], value)
+    if error is not None:
+        raise InvalidResume(error)
     return int(pending.get("seq") or 0), _thread_of(state, workflow_id)
 
 
@@ -108,7 +117,7 @@ async def resume_run_events(
     keepalive: bool,
 ) -> AsyncGenerator[Any, None]:
     """Resume the run and yield its stream from there, as ``_stream_events`` does."""
-    seq, thread_id = await _pending(runner, workflow_id)
+    seq, thread_id = await _pending(runner, workflow_id, value)
     client = runner._workflow_client
     seen: Set[Tuple[int, str]] = set()
     source = open_source(
@@ -153,7 +162,7 @@ async def resume_run_result(
     runner: Any, workflow_id: str, value: Any, *, poll_interval: float
 ) -> Dict[str, Any]:
     """Resume the run and wait for it: the body a plain ``POST /agent/run`` returns."""
-    seq, thread_id = await _pending(runner, workflow_id)
+    seq, thread_id = await _pending(runner, workflow_id, value)
     await _send_resume(runner, workflow_id, seq, value)
     final = await follow_final(
         runner, workflow_id, thread_id, poll_interval, after_seq=seq
@@ -176,8 +185,8 @@ async def _resume_sse(
             out = encoder.encode(item)
             if out is not None:
                 yield out
-    except ResumeConflict:
-        raise  # before the first event: the route answers 409
+    except (ResumeConflict, InvalidResume):
+        raise  # before the first event: the route answers 409 / 422
     except Exception as e:
         logger.exception("Resumed run %s failed to stream", workflow_id)
         failed = stream_failure_event(e, "StreamError", True)
@@ -215,9 +224,11 @@ def add_resume_route(app: Any, runner: Any) -> None:
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
         try:
-            await _pending(runner, workflow_id)
+            await _pending(runner, workflow_id, body["resume"])
         except LookupError:
             raise HTTPException(status_code=404, detail="Workflow not found")
+        except InvalidResume as e:
+            raise HTTPException(status_code=422, detail=str(e))
         except NotInterrupted as e:
             raise HTTPException(status_code=409, detail=str(e))
         if body.get("stream") is True:

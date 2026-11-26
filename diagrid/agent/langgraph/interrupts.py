@@ -35,6 +35,7 @@ import threading
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Tuple
 
+from . import interrupt_ids
 from .models import ExecuteNodeOutput
 
 #: The langgraph versions whose internals ``interrupt()`` support is built on.
@@ -90,14 +91,23 @@ class TaskResumes:
     ask the task's scratchpad for a resume value when they have none) share
     one order: the order the interrupts happened in on the run that paused.
     ``nested_missed`` is set when a subgraph asked and none was left: it
-    paused, and its interrupt must not be lost.
+    paused, and its interrupt must not be lost. A value the workflow tagged
+    with a nested interrupt's stable id goes to that interrupt only (see
+    :mod:`.interrupt_ids`), and an interrupt that paused here is reported
+    under its stable id.
     """
 
     def __init__(self, values: Optional[Sequence[Any]] = None) -> None:
-        self._values = tuple(values or ())
+        ordered, by_id = interrupt_ids.split(values or ())
+        self._values = tuple(ordered)
+        self._by_id = by_id
+        #: Answers of each nested interrupt id handed out so far.
+        self._by_id_used: Dict[str, int] = {}
         self._next = 0
         self._lock = threading.Lock()
         self.nested_missed = False
+        #: LangGraph's id of each nested interrupt that paused -> (stable id, path)
+        self._paused: Dict[str, Tuple[str, str]] = {}
 
     @property
     def values(self) -> List[Any]:
@@ -110,9 +120,21 @@ class TaskResumes:
             self._next += 1
             return index
 
-    def null_resume(self, consume: bool = False) -> Any:
-        """The next resume value, for an interrupt that has none of its own."""
+    def null_resume(self, consume: bool = False, namespace: str = "") -> Any:
+        """The resume value of an interrupt that has none of its own.
+
+        A nested interrupt the workflow answered by id gets its own value;
+        any other takes the next one in order.
+        """
+        nested = interrupt_ids.nested_ids(namespace) if namespace else None
         with self._lock:
+            if nested is not None:
+                answers = self._by_id.get(nested[1], [])
+                used = self._by_id_used.get(nested[1], 0)
+                if used < len(answers):
+                    if consume:
+                        self._by_id_used[nested[1]] = used + 1
+                    return answers[used]
             if self._next < len(self._values):
                 value = self._values[self._next]
                 if consume:
@@ -120,7 +142,22 @@ class TaskResumes:
                 return value
             if consume:
                 self.nested_missed = True
+                if nested is not None:
+                    self._paused[nested[0]] = (nested[1], nested[2])
             return None
+
+    def reported(self, interrupt_id: str) -> Tuple[str, Optional[str]]:
+        """``(id, path)`` an interrupt that paused here is reported under.
+
+        A nested one gets its stable id and path, unless another one that
+        paused has the same path: those keep LangGraph's ids (and no path).
+        """
+        with self._lock:
+            found = self._paused.get(interrupt_id)
+            if found is None:
+                return interrupt_id, None
+            twins = [p for p in self._paused.values() if p[0] == found[0]]
+            return (found[0], found[1]) if len(twins) == 1 else (interrupt_id, None)
 
 
 def interrupt_config(
@@ -146,7 +183,7 @@ def interrupt_config(
         stop=stop or 0,
         call_counter=lambda: next(calls),
         interrupt_counter=task.next_index,
-        get_null_resume=task.null_resume,
+        get_null_resume=lambda consume=False: task.null_resume(consume, namespace),
         resume=task.values,
         subgraph_counter=lambda: next(subgraphs),
     )
@@ -211,15 +248,27 @@ def nested_interrupts(result: Any, resumes: TaskResumes, node_name: str) -> Any:
     return result
 
 
-def interrupt_payloads(error: BaseException) -> List[Dict[str, Any]]:
-    """The interrupts a ``GraphInterrupt`` carries, as JSON."""
+def interrupt_payloads(
+    error: BaseException, resumes: Optional[TaskResumes] = None
+) -> List[Dict[str, Any]]:
+    """The interrupts a ``GraphInterrupt`` carries, as JSON.
+
+    With the task's ``resumes``, a subgraph's interrupt gets its stable id
+    and its path (see :mod:`.interrupt_ids`).
+    """
     found = error.args[0] if error.args else ()
     out = []
     for item in found or ():
+        interrupt_id = str(getattr(item, "id", ""))
+        path = None
+        if resumes is not None:
+            interrupt_id, path = resumes.reported(interrupt_id)
         payload: Dict[str, Any] = {
-            "id": str(getattr(item, "id", "")),
+            "id": interrupt_id,
             "value": _plain(getattr(item, "value", None)),
         }
+        if path:
+            payload[interrupt_ids.PATH_KEY] = path
         schema = getattr(item, "response_schema", None)
         if schema is not None:
             payload["response_schema"] = _plain(schema)
@@ -286,7 +335,11 @@ def settle_interrupts(
         publish(run)
         for item in pending:
             if item["id"] in values:
-                resumes.setdefault(item["task"], []).append(values[item["id"]])
+                value = values[item["id"]]
+                if item.get(interrupt_ids.PATH_KEY):
+                    # a subgraph's: its own value, whatever order they ask in
+                    value = interrupt_ids.tagged(item["id"], value)
+                resumes.setdefault(item["task"], []).append(value)
         again = yield from rerun(
             {task: resumes.get(task, []) for task in {p["task"] for p in pending}}
         )
@@ -334,6 +387,10 @@ def pending_interrupt(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return pending if isinstance(pending, dict) and pending.get("interrupts") else None
 
 
+#: Keys of a pending interrupt the workflow keeps for itself.
+_INTERNAL_KEYS = ("task", interrupt_ids.PATH_KEY)
+
+
 def interrupted_event(
     status: Dict[str, Any], workflow_id: str, after_seq: int = 0
 ) -> Optional[Dict[str, Any]]:
@@ -347,7 +404,7 @@ def interrupted_event(
         "status": "interrupted",
         "interrupt_seq": int(pending.get("seq") or 0),
         "interrupts": [
-            {k: v for k, v in item.items() if k != "task"}
+            {k: v for k, v in item.items() if k not in _INTERNAL_KEYS}
             for item in pending["interrupts"]
         ],
     }

@@ -18,6 +18,7 @@ from typing import Any, Callable, Optional
 from dapr.ext.workflow import WorkflowStatus
 
 from .activity_stream import parse_status
+from .interrupt_ids import partial_map_error
 from .interrupts import INTERRUPT_KEY, RESUME_EVENT, as_interrupts
 from .interrupts import interrupted_event, pending_interrupt, resume_taken
 from .models import GraphWorkflowOutput
@@ -157,6 +158,9 @@ def invoke_resume(
     pending = pending_interrupt(parse_status(state.serialized_custom_status))
     if state.runtime_status != WorkflowStatus.RUNNING or pending is None:
         raise ValueError(f"Workflow {workflow_id!r} is not waiting for a resume")
+    error = partial_map_error(pending["interrupts"], command.resume)
+    if error is not None:
+        raise ValueError(error)
     seq = int(pending.get("seq") or 0)
     resume_id = uuid.uuid4().hex
     client.raise_workflow_event(

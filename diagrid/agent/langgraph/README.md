@@ -427,6 +427,15 @@ needed for this.
   returns) and in the node's router (its conditional edge). A node that calls
   a subgraph that pauses and drops its result fails with an error that says
   so, rather than going on as if it had not paused.
+- Interrupts that pause together in one subgraph (its parallel nodes) each
+  keep their id until answered, and a dict keyed by their ids answers some
+  of them and leaves the others waiting. Their ids are not LangGraph's own
+  (a subgraph run here keeps no checkpoint of its own, so LangGraph's would
+  change on every run). The one exception: tasks a subgraph sends to one
+  node (`Send`) cannot be told apart from one run to the next, so their
+  interrupts must be answered all in one resume, with one value or a dict
+  naming every one of them; a dict that names only some is a `422`
+  (`ValueError` in Python).
 
 ### Limits
 

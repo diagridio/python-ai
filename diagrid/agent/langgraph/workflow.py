@@ -1574,7 +1574,7 @@ def execute_node_activity(
             output = _node_output(call, result)
         except GraphInterrupt as paused:
             # Not a failure: the task waits for a resume and runs again then.
-            interrupts = interrupt_payloads(paused)
+            interrupts = interrupt_payloads(paused, call.resumes)
             if call.streamer:
                 call.streamer.interrupted(interrupts)
             return with_attempt(
