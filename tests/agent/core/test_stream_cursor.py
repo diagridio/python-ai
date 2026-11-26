@@ -18,7 +18,10 @@ class TestStreamCursor(unittest.TestCase):
     def test_round_trip(self):
         cursor = StreamCursor(
             base=3,
-            positions=((3, "research#0", "a1b2c3d4", 7), (3, "review:branch:route", "ffff0000", 2)),
+            positions=(
+                (3, "research#0", "a1b2c3d4", 7),
+                (3, "review:branch:route", "ffff0000", 2),
+            ),
         )
         text = encode_cursor(cursor)
         self.assertTrue(text.startswith("v1.3."))
@@ -27,7 +30,9 @@ class TestStreamCursor(unittest.TestCase):
         self.assertIsNone(cursor.position(3, "other"))
 
     def test_negative_base_round_trips(self):
-        cursor = StreamCursor(base=-1, positions=((-1, "__start__:branch:c", "abcd1234", 1),))
+        cursor = StreamCursor(
+            base=-1, positions=((-1, "__start__:branch:c", "abcd1234", 1),)
+        )
         self.assertEqual(parse_cursor(encode_cursor(cursor)), cursor)
 
     def test_fixed_ids(self):
@@ -37,7 +42,16 @@ class TestStreamCursor(unittest.TestCase):
         self.assertEqual(encode_cursor(StreamCursor(at_end=True)), END_ID)
 
     def test_missing_or_junk_replays_from_the_start(self):
-        for junk in (None, "", "17", "v1", "v1.x.y", "v2.1.abc", "v1.1.!!!", "v1.1.e30"):
+        for junk in (
+            None,
+            "",
+            "17",
+            "v1",
+            "v1.x.y",
+            "v2.1.abc",
+            "v1.1.!!!",
+            "v1.1.e30",
+        ):
             with self.subTest(junk=junk):
                 self.assertEqual(parse_cursor(junk), StreamCursor())
 

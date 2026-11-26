@@ -32,7 +32,9 @@ def _config(**kw: Any) -> StateLogStreamConfig:
     return StateLogStreamConfig(**base)
 
 
-def _event(node: str, seq: int, mode: str = "messages", attempt: str = "att") -> StreamEvent:
+def _event(
+    node: str, seq: int, mode: str = "messages", attempt: str = "att"
+) -> StreamEvent:
     return StreamEvent("wf:1", 0, node, attempt, seq, (), mode, f"{node}-{seq}")
 
 
@@ -56,9 +58,7 @@ class TestKeys(unittest.TestCase):
         self.assertTrue(head_key("lgstream", "wf:1", 3, "n").endswith(":head"))
 
     def test_distinct_units_never_share_a_key(self):
-        self.assertNotEqual(
-            head_key("p", "w", 1, "a:b"), head_key("p", "w:1", 1, "b")
-        )
+        self.assertNotEqual(head_key("p", "w", 1, "a:b"), head_key("p", "w:1", 1, "b"))
 
 
 class TestWriter(unittest.TestCase):
@@ -110,9 +110,7 @@ class TestWriter(unittest.TestCase):
         self.assertEqual(writer.write_failures, 1)
         writer.put(_event("research#0", 1))
         writer.finish(done=True)
-        chunk = LogReader(store, _config(), "wf:1").read(
-            [UnitWant(0, "research#0")]
-        )[0]
+        chunk = LogReader(store, _config(), "wf:1").read([UnitWant(0, "research#0")])[0]
         self.assertEqual(_datas(chunk), ["research#0-0", "research#0-1"])
 
     def test_a_failed_last_flush_leaves_the_unit_not_done(self):
@@ -134,9 +132,7 @@ class TestWriter(unittest.TestCase):
         writer.put(_event("review:branch:route", 0, BRANCH_DONE))
         store.fail_saves = 0
         writer.finish(done=True)
-        chunk = LogReader(store, _config(), "wf:1").read(
-            [UnitWant(0, "research#0")]
-        )[0]
+        chunk = LogReader(store, _config(), "wf:1").read([UnitWant(0, "research#0")])[0]
         modes = [e["mode"] for e in chunk.events]
         self.assertIn(UPDATES, modes)
         self.assertIn(BRANCH_DONE, modes)
@@ -167,8 +163,17 @@ class TestWriter(unittest.TestCase):
 
     def test_events_keep_their_identity_on_the_wire(self):
         event = StreamEvent(
-            "wf", 2, "research#1", "att", 4, ("x",), "messages", "d",
-            display_node="research", path=("__pregel_push", 1, False), branch=None,
+            "wf",
+            2,
+            "research#1",
+            "att",
+            4,
+            ("x",),
+            "messages",
+            "d",
+            display_node="research",
+            path=("__pregel_push", 1, False),
+            branch=None,
         )
         wire = wire_event(event, lambda e: e.data)
         self.assertEqual(wire["node"], "research#1")

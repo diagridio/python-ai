@@ -222,9 +222,13 @@ class InProcessSink:
             self._closed = True
 
 
+def is_kept_when_full(mode: str) -> bool:
+    """Whether chunks of ``mode`` must survive a full buffer: they cannot be re-sent."""
+    return mode in _KEPT_WHEN_FULL
+
+
 def _is_kept_when_full(item: Any) -> bool:
-    """Chunks that must not be dropped: they cannot be re-sent."""
-    return isinstance(item, StreamEvent) and item.mode in _KEPT_WHEN_FULL
+    return isinstance(item, StreamEvent) and is_kept_when_full(item.mode)
 
 
 def _remember(runs: "OrderedDict[str, None]", workflow_id: str) -> None:
