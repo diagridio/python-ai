@@ -97,6 +97,44 @@ class DaprStateStore:
             return None
         return json.loads(response.data.decode())
 
+    def get_with_etag(self, key: str) -> tuple[Any | None, Optional[str]]:
+        """A value and its etag (``(None, None)`` when the key does not exist)."""
+        response = self._get_client().get_state(store_name=self._store_name, key=key)
+        if not response.data:
+            return None, None
+        return json.loads(response.data.decode()), (response.etag or None)
+
+    def save_with_etag(
+        self,
+        key: str,
+        value: Any,
+        etag: Optional[str],
+        metadata: Optional[dict[str, str]] = None,
+    ) -> bool:
+        """Save ``value`` only if the key still has ``etag`` (first-write wins).
+
+        ``etag`` ``None`` saves only a key that does not exist yet. Returns
+        ``False`` when another write got there first (the sidecar answers
+        ``ABORTED``); any other error propagates.
+        """
+        from dapr.clients.grpc._state import Concurrency, StateOptions
+
+        try:
+            self._get_client().save_state(
+                store_name=self._store_name,
+                key=key,
+                value=json.dumps(value),
+                etag=etag,
+                options=StateOptions(concurrency=Concurrency.first_write),
+                state_metadata=metadata,
+            )
+        except Exception as e:
+            if _is_etag_conflict(e):
+                logger.debug("Etag conflict on key=%s store=%s", key, self._store_name)
+                return False
+            raise
+        return True
+
     def delete(self, key: str) -> None:
         """Delete a key from the state store.
 
@@ -141,3 +179,16 @@ class DaprStateStore:
         if self._client is not None:
             self._client.close()
             self._client = None
+
+
+def _is_etag_conflict(error: Exception) -> bool:
+    """Whether a save failed because the key's etag changed (gRPC ``ABORTED``)."""
+    code = getattr(error, "code", None)
+    if not callable(code):
+        return False
+    try:
+        import grpc
+
+        return bool(code() == grpc.StatusCode.ABORTED)
+    except Exception:  # not a gRPC error after all
+        return False

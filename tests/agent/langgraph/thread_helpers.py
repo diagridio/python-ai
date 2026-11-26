@@ -5,7 +5,8 @@
 
 import copy
 import json
-from typing import Any, Callable, Dict, Optional
+import threading
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from langgraph.graph import END, START, MessagesState, StateGraph
 
@@ -22,7 +23,12 @@ class MemoryStateStore:
     def __init__(self, store_name: str = "agent-memory", **_: Any) -> None:
         self.store_name = store_name
         self.data: Dict[str, Any] = {}
+        self.metadata: Dict[str, Any] = {}
+        self.etags: Dict[str, int] = {}
         self.guard: Optional[Callable[[], None]] = None
+        #: Called between an etag read and its write: a concurrent writer.
+        self.between: Optional[Callable[[str], None]] = None
+        self._lock = threading.RLock()
 
     def _check(self) -> None:
         if self.guard is not None:
@@ -30,7 +36,30 @@ class MemoryStateStore:
 
     def save(self, key: str, value: Any, metadata: Any = None) -> None:
         self._check()
-        self.data[key] = json.loads(json.dumps(value))
+        with self._lock:
+            self.data[key] = json.loads(json.dumps(value))
+            self.metadata[key] = metadata
+            self.etags[key] = self.etags.get(key, 0) + 1
+
+    def get_with_etag(self, key: str) -> Tuple[Any, Optional[str]]:
+        self._check()
+        with self._lock:
+            etag = self.etags.get(key) if key in self.data else None
+            value = copy.deepcopy(self.data.get(key))
+        if self.between is not None:
+            self.between(key)
+        return value, None if etag is None else str(etag)
+
+    def save_with_etag(
+        self, key: str, value: Any, etag: Optional[str], metadata: Any = None
+    ) -> bool:
+        self._check()
+        with self._lock:
+            current = self.etags.get(key) if key in self.data else None
+            if (None if current is None else str(current)) != etag:
+                return False
+            self.save(key, value, metadata)
+            return True
 
     def get(self, key: str) -> Any:
         self._check()

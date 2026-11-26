@@ -119,3 +119,49 @@ class TestDaprStateStore(TestCase):
     def test_default_store_name(self):
         store = DaprStateStore()
         self.assertEqual(store.store_name, "agent-memory")
+
+
+class _Aborted(Exception):
+    """What the sidecar raises for an etag that no longer matches."""
+
+    def code(self):
+        import grpc
+
+        return grpc.StatusCode.ABORTED
+
+
+class TestDaprStateStoreEtags(TestCase):
+    @mock.patch("dapr.clients.DaprClient")
+    def test_get_with_etag_returns_the_value_and_its_etag(self, mock_dapr_cls):
+        response = mock.MagicMock(data=json.dumps({"a": 1}).encode(), etag="7")
+        mock_dapr_cls.return_value.get_state.return_value = response
+        self.assertEqual(DaprStateStore().get_with_etag("k"), ({"a": 1}, "7"))
+
+    @mock.patch("dapr.clients.DaprClient")
+    def test_a_missing_key_has_no_etag(self, mock_dapr_cls):
+        response = mock.MagicMock(data=b"", etag="")
+        mock_dapr_cls.return_value.get_state.return_value = response
+        self.assertEqual(DaprStateStore().get_with_etag("k"), (None, None))
+
+    @mock.patch("dapr.clients.DaprClient")
+    def test_save_with_etag_writes_first_write_wins(self, mock_dapr_cls):
+        from dapr.clients.grpc._state import Concurrency
+
+        ok = DaprStateStore(store_name="s").save_with_etag("k", [1], "7", {"t": "1"})
+        self.assertTrue(ok)
+        kwargs = mock_dapr_cls.return_value.save_state.call_args.kwargs
+        self.assertEqual(kwargs["etag"], "7")
+        self.assertEqual(kwargs["options"].concurrency, Concurrency.first_write)
+        self.assertEqual(kwargs["state_metadata"], {"t": "1"})
+        self.assertEqual(kwargs["value"], json.dumps([1]))
+
+    @mock.patch("dapr.clients.DaprClient")
+    def test_an_etag_mismatch_is_false_not_an_error(self, mock_dapr_cls):
+        mock_dapr_cls.return_value.save_state.side_effect = _Aborted("etag mismatch")
+        self.assertFalse(DaprStateStore().save_with_etag("k", 1, "7"))
+
+    @mock.patch("dapr.clients.DaprClient")
+    def test_other_errors_propagate(self, mock_dapr_cls):
+        mock_dapr_cls.return_value.save_state.side_effect = ConnectionError("down")
+        with self.assertRaises(ConnectionError):
+            DaprStateStore().save_with_etag("k", 1, None)

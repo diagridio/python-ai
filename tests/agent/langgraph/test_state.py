@@ -5,12 +5,16 @@
 
 from unittest import TestCase, mock
 
-from diagrid.agent.langgraph.state import DaprMemoryCheckpointer
+from diagrid.agent.langgraph.state import DEFAULT_THREAD_TTL_S, DaprMemoryCheckpointer
+
+
+TTL = {"ttlInSeconds": str(DEFAULT_THREAD_TTL_S)}
 
 
 class TestDaprMemoryCheckpointer(TestCase):
     def _make_checkpointer(self):
-        store = mock.MagicMock()
+        # a store without the etag calls: the index is written plainly
+        store = mock.MagicMock(spec=["get", "save", "delete", "close"])
         return DaprMemoryCheckpointer(state_store=store), store
 
     def test_save_checkpoint(self):
@@ -34,11 +38,13 @@ class TestDaprMemoryCheckpointer(TestCase):
                 "channel_versions": {"messages": 1},
                 "metadata": {},
             },
+            TTL,
         )
         # Should save the index
         store.save.assert_any_call(
             "langgraph:t1:index",
             {"checkpoints": ["cp1"], "latest": "cp1"},
+            TTL,
         )
 
     def test_load_checkpoint_by_id(self):
@@ -99,6 +105,7 @@ class TestDaprMemoryCheckpointer(TestCase):
         store.save.assert_called_with(
             "langgraph:t1:index",
             {"checkpoints": ["cp1"], "latest": "cp1"},
+            TTL,
         )
 
     def test_close(self):
