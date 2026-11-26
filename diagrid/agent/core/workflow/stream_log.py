@@ -24,6 +24,7 @@ the log outlived its TTL: the reader reports it purged.
 import itertools
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
@@ -55,6 +56,10 @@ class StateLogStreamConfig:
     #: Events an activity holds while the store refuses writes; past it,
     #: tokens and custom chunks are dropped, markers and updates never.
     max_buffered: int = MAX_BUFFERED_EVENTS
+    #: Tries at the last write of an activity (its ``updates`` and done head),
+    #: with a backoff that doubles from ``final_flush_backoff_s``.
+    final_flush_attempts: int = 4
+    final_flush_backoff_s: float = 0.05
 
 
 class LogStore(Protocol):
@@ -177,7 +182,9 @@ class LogWriter:
     Flushes every ``flush_interval_s``, every ``flush_max_chunks`` chunks and
     on :meth:`finish`, which writes synchronously, so the unit is complete
     before the activity returns. A failed write is logged and counted, and
-    the chunks are tried again with the next flush; it never fails the node.
+    the chunks are tried again with the next flush; the last flush, which
+    nothing follows, is tried again with backoff (``final_flush_attempts``).
+    A write never fails the node.
     """
 
     def __init__(
@@ -236,7 +243,20 @@ class LogWriter:
             timer, self._timer = self._timer, None
         if timer is not None:
             timer.cancel()
-        self._flush(done=done, final=True)
+        delay = self._config.final_flush_backoff_s
+        for attempt in range(max(1, self._config.final_flush_attempts)):
+            if attempt:
+                time.sleep(delay)
+                delay *= 2
+            if self._flush(done=done, final=True):
+                return
+        logger.warning(
+            "Stream log of %s (%s): the last write failed %d times; the unit's "
+            "last chunks are lost and readers report it as not written",
+            self._workflow_id,
+            self._unit,
+            self._config.final_flush_attempts,
+        )
 
     def _note_dropped(self) -> None:
         if not self.dropped:
@@ -253,16 +273,17 @@ class LogWriter:
             self._timer = None
         self._flush(done=False)
 
-    def _flush(self, *, done: bool, final: bool = False) -> None:
+    def _flush(self, *, done: bool, final: bool = False) -> bool:
+        """Write what is pending; whether nothing is left to write."""
         with self._flush_lock:
             with self._buffer_lock:
                 batch = list(self._pending)
             if not batch and not final:
-                return
+                return True
             if self._is_blocked():
                 with self._buffer_lock:
                     del self._pending[: len(batch)]
-                return
+                return True
             items: List[LogItem] = []
             if batch:
                 items.append(
@@ -280,7 +301,7 @@ class LogWriter:
                     )
                 )
             if not items and not done:
-                return
+                return True
             batches = self._batches + (1 if batch else 0)
             head = {
                 "attempt": self.attempt,
@@ -312,11 +333,12 @@ class LogWriter:
                     type(e).__name__,
                     e,
                 )
-                return
+                return False
             self._batches = batches
             self._events += len(batch)
             with self._buffer_lock:
                 del self._pending[: len(batch)]
+            return True
 
     def _is_blocked(self) -> bool:
         """Whether an attempt that already finished owns the unit (read once)."""

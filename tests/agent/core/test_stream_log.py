@@ -113,14 +113,26 @@ class TestWriter(unittest.TestCase):
         chunk = LogReader(store, _config(), "wf:1").read([UnitWant(0, "research#0")])[0]
         self.assertEqual(_datas(chunk), ["research#0-0", "research#0-1"])
 
-    def test_a_failed_last_flush_leaves_the_unit_not_done(self):
+    def test_a_transient_error_at_the_last_flush_is_retried(self):
         store = FakeLogStore()
-        writer = _writer(store)
+        writer = _writer(store, final_flush_backoff_s=0.001)
+        writer.put(_event("research#0", 0, UPDATES))
+        store.fail_saves = 2  # two errors in a row at the final flush
+        writer.finish(done=True)
+        head = store.get(head_key("lgstream", "wf:1", 0, "research#0"))
+        self.assertTrue(head["done"])
+        chunk = LogReader(store, _config(), "wf:1").read([UnitWant(0, "research#0")])[0]
+        self.assertEqual(_datas(chunk), ["research#0-0"])
+        self.assertEqual(writer.write_failures, 2)
+
+    def test_a_last_flush_that_keeps_failing_leaves_the_unit_not_done(self):
+        store = FakeLogStore()
+        writer = _writer(store, final_flush_attempts=3, final_flush_backoff_s=0.001)
         writer.put(_event("research#0", 0))
-        store.fail_saves = 5
+        store.fail_saves = 100
         writer.finish(done=True)
         self.assertIsNone(store.get(head_key("lgstream", "wf:1", 0, "research#0")))
-        self.assertGreaterEqual(writer.write_failures, 1)
+        self.assertEqual(writer.write_failures, 3)
 
     def test_a_full_buffer_never_drops_internal_markers(self):
         store = FakeLogStore()

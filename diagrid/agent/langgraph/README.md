@@ -309,7 +309,9 @@ not pick one:
   like `lgstream:<workflow id>:<step>:<task>:...` with `:` between path-escaped
   parts, batches expire after an hour and their index after a day. Chunks
   arrive about 150 to 250 ms later than in process, in small bursts. A failed
-  write is retried with the next batch and never fails a node; if a node's
+  write is retried with the next batch, and a node's last write (its `updates`
+  chunk), which no batch follows, is retried up to four times with backoff; a
+  write never fails a node. If a node's
   chunks still never reach the log, the stream ends with `stream_unavailable`
   whose `reason` is `write_failed`. A store that cannot be read ends the
   stream with `workflow_failed` (`error_type` `StreamReadError`), never with an
