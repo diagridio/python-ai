@@ -238,7 +238,24 @@ def _run_identity(
             "thread_id": thread,
         },
     }
-    return thread, workflow_id or f"graph-{thread}-{uuid.uuid4().hex[:8]}", run_config
+    return thread, workflow_id or f"graph-{thread}-{uuid.uuid4().hex}", run_config
+
+
+#: Run config key a stream sets for a run whose thread id it generated.
+_STATELESS_KEY = "__diagrid_stateless_run__"
+
+
+def _names_thread(thread_id: Optional[str], merged: Dict[str, Any]) -> bool:
+    """Whether the caller named the run's thread (else the run is stateless)."""
+    if merged.get(_STATELESS_KEY):
+        return False
+    return bool(thread_id or (merged.get("configurable") or {}).get("thread_id"))
+
+
+def _without_stateless_key(config: Optional[Dict[str, Any]]) -> Any:
+    if not config or _STATELESS_KEY not in config:
+        return config
+    return {k: v for k, v in config.items() if k != _STATELESS_KEY}
 
 
 async def _wait_scheduled(scheduled: asyncio.Event, pump: "asyncio.Task[None]") -> bool:
@@ -333,6 +350,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         stream_registry: Optional[StreamSinkRegistry] = None,
         checkpointer: Optional[Any] = None,
         stream_transport: Optional[StreamTransport] = None,
+        continue_threads: bool = True,
     ):
         """Initialize the runner.
 
@@ -359,7 +377,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 the synchronous API. Defaults to the checkpointer the graph was
                 compiled with, else the app's Dapr state store
                 (``agent-memory``) when it has one; with none, ``thread_id`` is
-                only a label.
+                only a label. A graph compiled with an in-memory saver
+                (``MemorySaver``) gets the app's Dapr state store instead, when
+                it has one: memory is per process, so it breaks across replicas.
+            continue_threads: Whether a run on a thread the caller names
+                (``thread_id``, ``session_id`` or ``configurable["thread_id"]``)
+                starts from that thread's state (default on). A run without a
+                thread id is always stateless.
             stream_transport: How a streamed run's chunks get from its
                 activities to its stream. By default the state-store event
                 log (``StateLogTransport``) when the app has a state store,
@@ -398,6 +422,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         # max_iterations instead of a hardcoded default (read by DeepAgentsMapper).
         self._graph._diagrid_max_steps = self._max_steps  # type: ignore[attr-defined]
 
+        self._continue_threads = continue_threads
         self._thread_store = resolve_thread_store(
             checkpointer, self._graph, self._state_store
         )
@@ -624,8 +649,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         """Everything ``invoke`` and ``run_async`` settle before scheduling the run."""
         if not self._started:
             raise RuntimeError("Runner not started. Call start() first.")
+        named = _names_thread(thread_id, {**self._run_config(config), **(config or {})})
+        config = _without_stateless_key(config)
+        merged = self._run_config(config)
         thread_id, workflow_id, caller_config = _run_identity(
-            config, self._run_config(config), thread_id, workflow_id
+            config, merged, thread_id, workflow_id
         )
         bound = self._step_bound(config)
         run_config = self._run_config(caller_config)
@@ -652,7 +680,9 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             pending_nodes=[],
             config=run_config,
             thread_id=thread_id,
-            thread_state=self._thread_store is not None,
+            thread_state=named
+            and self._continue_threads
+            and self._thread_store is not None,
         ).to_dict()
         json.dumps(workflow_input)
         return _RunSetup(workflow_id, thread_id, run_config, trace, workflow_input)
@@ -1057,10 +1087,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         ``thread_id``). With ``keepalive`` set, :data:`KEEPALIVE` is yielded
         whenever nothing arrived for ``SSE_KEEPALIVE_SECONDS``.
         """
+        merged = self._run_config(config)
+        named = _names_thread(thread_id, merged)
         thread_id, workflow_id, run_config = _run_identity(
-            config, self._run_config(config), thread_id, workflow_id
+            config, merged, thread_id, workflow_id
         )
         run_config = {**run_config, STREAM_RUN_KEY: True}
+        if not named:
+            run_config[_STATELESS_KEY] = True
         seen_nodes: Set[Tuple[int, str]] = set()
         source = open_source(
             self._stream_transport,
@@ -1252,7 +1286,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         request: dict,
         session_id: str,  # type: ignore[type-arg]
     ) -> AsyncIterator[dict[str, Any]]:
-        thread_id = request.get("thread_id") or request.get("session_id") or session_id
+        # only a thread the caller names carries state: no id, a stateless run
+        thread_id = request.get("thread_id") or request.get("session_id")
 
         graph_input = self._request_to_input(request)
 
@@ -1280,7 +1315,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         Ends with ``workflow_completed`` or ``workflow_failed``, whose data is
         the run's full terminal event. The base runner frames the pairs.
         """
-        thread_id = request.get("thread_id") or request.get("session_id") or session_id
+        # only a thread the caller names carries state: no id, a stateless run
+        thread_id = request.get("thread_id") or request.get("session_id")
         encoder: Optional[SseEncoder] = None
         try:
             modes, _ = normalize_stream_mode(

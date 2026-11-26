@@ -595,7 +595,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
         session_id = request.get(
-            "session_id", request.get("thread_id", uuid.uuid4().hex[:8])
+            "session_id", request.get("thread_id", uuid.uuid4().hex)
         )
         return StreamingResponse(
             frame_sse(self._serve_stream(request, session_id, on_result=on_result)),
@@ -664,7 +664,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
             """Run the agent and collect the result."""
             session_id = request.get(
                 "session_id",
-                request.get("thread_id", uuid.uuid4().hex[:8]),
+                request.get("thread_id", uuid.uuid4().hex),
             )
             result: dict[str, Any] = {}
             async for event in runner_ref._serve_run(

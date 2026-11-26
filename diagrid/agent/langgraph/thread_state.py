@@ -101,24 +101,49 @@ def resolve_thread_store(
     The runner's own ``checkpointer`` first, then the one the graph was
     compiled with, then the app's Dapr state store (``agent-memory``, which a
     Catalyst app has). Without any of them a thread id is only a label.
+
+    A graph compiled with an in-memory saver (``MemorySaver``, as LangGraph's
+    examples do) keeps threads in one process, which breaks across replicas
+    and restarts: the app's Dapr state store is used instead when there is
+    one, and either way a warning says so.
     """
-    from .saver_store import SaverThreadStore, is_saver
+    from .saver_store import SaverThreadStore, is_in_memory_saver, is_saver
 
     if checkpointer is not None:
         if isinstance(checkpointer, DaprMemoryCheckpointer):
             return DaprThreadStore(checkpointer)
         if is_saver(checkpointer):
+            if is_in_memory_saver(checkpointer):
+                logger.warning(_IN_MEMORY_WARNING, type(checkpointer).__name__)
             return SaverThreadStore(checkpointer, _state_channels(graph))
         raise TypeError(
             "checkpointer must be a DaprMemoryCheckpointer or a LangGraph "
             f"checkpoint saver, not {type(checkpointer).__name__}"
         )
     own = getattr(graph, "checkpointer", None)
+    if is_in_memory_saver(own) and state_store is not None:
+        logger.warning(
+            "The graph was compiled with %s, which keeps threads in this process "
+            "only; the runner keeps them in the app's Dapr state store %r "
+            "instead, so they survive restarts and work across replicas",
+            type(own).__name__,
+            getattr(state_store, "store_name", None),
+        )
+        return DaprThreadStore(DaprMemoryCheckpointer(state_store=state_store))
     if is_saver(own):
+        if is_in_memory_saver(own):
+            logger.warning(_IN_MEMORY_WARNING, type(own).__name__)
         return SaverThreadStore(own, _state_channels(graph))
     if state_store is not None:
         return DaprThreadStore(DaprMemoryCheckpointer(state_store=state_store))
     return None
+
+
+_IN_MEMORY_WARNING = (
+    "Threads are kept in %s, in this process only: a thread's state is lost on "
+    "a restart and not seen by another replica. Give the app a Dapr state "
+    "store (Catalyst apps have one) or a durable checkpointer"
+)
 
 
 def _state_channels(graph: Any) -> List[str]:

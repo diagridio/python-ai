@@ -27,6 +27,15 @@ def is_saver(obj: Any) -> bool:
     return isinstance(obj, BaseCheckpointSaver)
 
 
+def is_in_memory_saver(obj: Any) -> bool:
+    """Whether ``obj`` is LangGraph's in-process saver (``MemorySaver``)."""
+    try:
+        from langgraph.checkpoint.memory import InMemorySaver
+    except ImportError:  # pragma: no cover - langgraph without checkpoints
+        return False
+    return isinstance(obj, InMemorySaver)
+
+
 def _config(thread_id: str) -> Dict[str, Any]:
     return {"configurable": {"thread_id": thread_id, "checkpoint_ns": _ROOT_NS}}
 
