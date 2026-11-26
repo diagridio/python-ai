@@ -10,10 +10,13 @@ a Runnable with a real async entry point is called through ``ainvoke``.
 import asyncio
 import concurrent.futures
 import functools
+import logging
 import threading
 from typing import Any, Dict, Optional, Tuple
 
 from langchain_core.runnables.config import run_in_executor
+
+logger = logging.getLogger(__name__)
 
 
 def _has_async_entry(runnable: Any) -> bool:
@@ -114,6 +117,44 @@ def _await_if_coroutine(r: Any) -> Any:
 
 def _invoke_runnable(runnable: Any, value: Any, config: Dict[str, Any]) -> Any:
     """Call a Runnable; one with an async entry returns a coroutine to await."""
-    if _has_async_entry(runnable):
-        return runnable.ainvoke(value, config=config)
-    return runnable.invoke(value, config=config)
+    if not _has_async_entry(runnable):
+        return runnable.invoke(value, config=config)
+    if getattr(runnable, "func", None) is not None:
+        return _ainvoke_or_sync(runnable, value, config)
+    return runnable.ainvoke(value, config=config)
+
+
+def _is_sync_only_middleware(error: BaseException) -> bool:
+    """Whether ``error`` is a middleware that has only a sync wrap hook.
+
+    LangChain's ``AgentMiddleware`` raises it from ``awrap_model_call`` /
+    ``awrap_tool_call`` when only ``wrap_model_call`` / ``wrap_tool_call`` is
+    defined, before the wrapped call runs.
+    """
+    text = str(error)
+    return (
+        isinstance(error, NotImplementedError)
+        and "Asynchronous implementation of awrap_" in text
+        and "is not available" in text
+    )
+
+
+async def _ainvoke_or_sync(runnable: Any, value: Any, config: Dict[str, Any]) -> Any:
+    """``ainvoke``, or ``invoke`` for a node whose middleware is sync-only.
+
+    Only a node with its own sync function falls back: the error comes before
+    the model or tool call it wraps, so nothing ran twice. A composite (a
+    subgraph) is not retried, as its earlier steps did run.
+    """
+    try:
+        return await runnable.ainvoke(value, config=config)
+    except NotImplementedError as e:
+        if not _is_sync_only_middleware(e):
+            raise
+        logger.info(
+            "A middleware of node %r has only a sync wrap hook; running the node "
+            "through its sync entry",
+            getattr(runnable, "name", None),
+        )
+        # in an executor, with this context: the ambient config goes with it
+        return await run_in_executor(config, runnable.invoke, value, config=config)

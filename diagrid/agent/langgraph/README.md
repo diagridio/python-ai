@@ -446,6 +446,14 @@ needed for this.
   the run says which attempt it used when that step starts) and then the used
   attempt's chunks; a replay has the used attempt only. The in-process
   transport keeps the first attempt that finished.
+- **Middleware with only a sync wrap hook.** The runner calls a node that has
+  an async entry point (an agent's model and tool nodes do) through
+  `ainvoke`, where an `AgentMiddleware` that defines only `wrap_model_call` or
+  `wrap_tool_call` raises. The runner then runs that node through its sync
+  entry, so such an agent works when it is the graph the runner runs. An
+  agent added as a subgraph node of another graph runs as one call, which is
+  not repeated: give its middleware the async variant too
+  (`awrap_model_call`, `awrap_tool_call`).
 - **Node code must not count attempts in process memory.** A retried node may
   run in another process, so a counter kept in a module or a closure does not
   see the earlier attempt. Keep such state in the graph's state or a store.
