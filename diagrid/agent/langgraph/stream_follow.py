@@ -222,7 +222,7 @@ class LogFollower:
             self._seen.add((chunk.step, chunk.unit))
 
     async def _read_once(self, final: Optional[Dict[str, Any]]) -> None:
-        if self.purged or self._cursor.at_end:
+        if self._cursor.at_end:
             return
         status = final if final is not None else await asyncio.to_thread(self._status)
         self._learn(units_of(status or {}))
@@ -243,7 +243,7 @@ class LogFollower:
         for chunk in chunks:
             if chunk.purged:
                 self._purge(chunk)
-                return
+                continue
             await self._deliver(chunk)
 
     def _learn(self, units: List[Unit]) -> None:
@@ -265,9 +265,26 @@ class LogFollower:
         self._order.sort(key=lambda u: u[0])
 
     def _purge(self, chunk: UnitChunk) -> None:
+        """A unit whose batches expired: skip what is gone, read on from there.
+
+        A run that waited on ``interrupt()`` past the batch TTL lost its first
+        steps' chunks, but what came after the resume is in the log: the
+        stream says ``stream_purged`` once and goes on. The unit stays open, so
+        a later attempt of it (the resumed task) is read from its start.
+        """
+        state = self._units[(chunk.step, chunk.unit)]
+        state.attempt = chunk.attempt
+        state.from_batch = chunk.batches
+        state.consumed = state.total = chunk.total
+        state.skip = 0
+        state.done = chunk.done
+        self._seen.add((chunk.step, chunk.unit))
+        if self.purged:
+            return
         self.purged = True
         logger.warning(
-            "The stream log of %s is purged (unit %s of step %s): it outlived its TTL",
+            "The stream log of %s is purged (unit %s of step %s): it outlived its "
+            "TTL; streaming what is left",
             self._workflow_id,
             chunk.unit,
             chunk.step,
