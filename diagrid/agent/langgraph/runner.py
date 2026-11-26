@@ -239,6 +239,16 @@ def _run_identity(
     return thread, workflow_id or f"graph-{thread}-{uuid.uuid4().hex[:8]}", run_config
 
 
+async def _wait_scheduled(scheduled: asyncio.Event, pump: "asyncio.Task[None]") -> bool:
+    """Wait until the workflow is scheduled or the pump ends; whether it was."""
+    waiter = asyncio.ensure_future(scheduled.wait())
+    try:
+        await asyncio.wait({waiter, pump}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        waiter.cancel()
+    return scheduled.is_set()
+
+
 @dataclass(frozen=True)
 class _RunSetup:
     """What a run needs once its identity, config and input are settled."""
@@ -1004,10 +1014,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         task: Optional["asyncio.Task[None]"] = None
         seen_nodes: Set[Tuple[int, str]] = set()
         values_sent: Set[int] = set()
+        scheduled = asyncio.Event()
         try:
-            # Before the pump schedules the workflow: an activity can write the
-            # moment it is scheduled, and the event must come before its chunks.
-            sink.put(started_event(workflow_id, thread_id))
             task = asyncio.create_task(
                 self._pump_run(
                     sink,
@@ -1017,8 +1025,14 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     run_config,
                     poll_interval,
                     on_result,
+                    scheduled,
                 )
             )
+            # Only once the workflow exists: a client (or another replica) that
+            # looks the run up on this event must find it. Chunks an activity
+            # writes meanwhile wait in the sink, so they still come after it.
+            if await _wait_scheduled(scheduled, task):
+                yield started_event(workflow_id, thread_id)
             while True:
                 item = await next_item(sink, keepalive)
                 if isinstance(item, StreamClosed):
@@ -1055,8 +1069,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         run_config: Dict[str, Any],
         poll_interval: float,
         on_result: Optional[Callable[[Dict[str, Any]], None]],
+        scheduled: Optional[asyncio.Event] = None,
     ) -> None:
-        """Follow the run, publish its result, and close ``sink`` with the final."""
+        """Follow the run, publish its result, and close ``sink`` with the final.
+
+        ``scheduled`` is set once ``run_async`` reports the workflow started,
+        which it does after ``schedule_new_workflow`` returned.
+        """
         final: Dict[str, Any] = {}
         result: Dict[str, Any] = {}
         try:
@@ -1067,6 +1086,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 workflow_id=workflow_id,
                 poll_interval=poll_interval,
             ):
+                if event["type"] == "workflow_started" and scheduled is not None:
+                    scheduled.set()
                 fold_run_event(result, without_executed(event))
                 if event["type"] in FINAL_EVENTS:
                     final = event
