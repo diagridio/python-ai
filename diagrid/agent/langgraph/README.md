@@ -219,6 +219,26 @@ sent as `{"unserializable": "<its repr>"}`, counted in the final event's
 removed before the graph (or your `input_mapper`) sees it. On a plain request
 they are left alone.
 
+`GET /agent/run/{workflow_id}` reports a run by the id in `workflow_started`:
+`status` is the workflow's runtime status, and once the run has completed the
+body also has the `output` and `steps` a plain `POST /agent/run` returns for
+it, `run_status` (`completed`, `error` or `max_steps_reached`) and `error`
+when there is one. A workflow that failed carries its `error`. An unknown id is
+a `404`.
+
+#### Behind a proxy
+
+Anything between the client and the app (nginx, an ingress, a load balancer)
+must pass the response through as it is written, not buffer it. The response
+already sends `X-Accel-Buffering: no` and `Cache-Control: no-cache`, which
+nginx and the nginx ingress honour; for any other proxy, turn response
+buffering off for `POST /agent/run`, and keep its idle timeout above 15
+seconds so the keepalive comments hold the connection open. A client should
+expect events to arrive one by one as the nodes produce them, comment lines
+(`: keepalive`) to ignore while a node is quiet, and the stream to end right
+after `workflow_completed` or `workflow_failed`. If tokens arrive all at once
+at the end of the run, something in front of the app is buffering.
+
 ### Limits
 
 - **Single replica.** Chunks travel from the activity to the HTTP connection
@@ -227,6 +247,16 @@ they are left alone.
   activity logs a warning once per run and the stream sends `stream_unavailable`
   before it ends. The run and its result are not affected. Delivery across
   replicas is not implemented yet.
+- **A dropped connection cannot be resumed.** If the connection drops (a
+  network failure, a proxy timeout, the app's process restarting), the events
+  sent while the client was away are lost and the stream cannot be reopened.
+  The run is not affected: Dapr keeps running it, on this process or after a
+  restart. The client polls `GET /agent/run/{workflow_id}`, with the id from
+  `workflow_started`, until the run is finished, and reads the result from
+  that response.
+- **Node code must not count attempts in process memory.** A retried node may
+  run in another process, so a counter kept in a module or a closure does not
+  see the earlier attempt. Keep such state in the graph's state or a store.
 - **A disconnect does not cancel the run.** The stream closes but the Dapr
   workflow runs to completion; `terminate_workflow` stops it, and the ids in
   `workflow_started` let a client that lost its connection `GET
