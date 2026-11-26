@@ -12,8 +12,9 @@ import concurrent.futures
 import functools
 import logging
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables.config import run_in_executor
 
 logger = logging.getLogger(__name__)
@@ -157,4 +158,6 @@ async def _ainvoke_or_sync(runnable: Any, value: Any, config: Dict[str, Any]) ->
             getattr(runnable, "name", None),
         )
         # in an executor, with this context: the ambient config goes with it
-        return await run_in_executor(config, runnable.invoke, value, config=config)
+        return await run_in_executor(
+            cast(RunnableConfig, config), runnable.invoke, value, config=config
+        )

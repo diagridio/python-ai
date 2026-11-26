@@ -1345,7 +1345,11 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             failed = stream_failure_event(e, "StreamError", bool(workflow_id))
             yield (
                 "workflow_failed",
-                normalize_final(failed, workflow_id=workflow_id, thread_id=thread_id),
+                normalize_final(
+                    failed,
+                    workflow_id=workflow_id,
+                    thread_id=thread_id or workflow_id or "",
+                ),
             )
 
     def _add_routes(self, app: Any) -> None:

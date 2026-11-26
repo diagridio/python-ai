@@ -167,7 +167,7 @@ async def resume_run_result(
 
 async def _resume_sse(
     runner: Any, workflow_id: str, value: Any, modes: Any
-) -> AsyncIterator[Tuple[Any, ...]]:
+) -> AsyncGenerator[Tuple[Any, ...], None]:
     encoder = SseEncoder(modes, runner.stream_transport.replayable)
     try:
         async for item in resume_run_events(

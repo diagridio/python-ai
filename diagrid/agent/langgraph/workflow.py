@@ -585,7 +585,7 @@ class _Run:
             branches=self.branches or None,
             attempts=self.attempts or None,
             status=status,
-            **({"error": error} if error else {}),
+            error=error or None,
         ).to_dict()
 
 
