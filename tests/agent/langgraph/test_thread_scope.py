@@ -103,6 +103,22 @@ class TestGeneratedIds(_FakeDaprTest):
         )
 
 
+class TestThreadIdsOverHttp(_FakeDaprTest):
+    def test_a_thread_id_with_the_actor_separator_is_refused(self):
+        runner = log_runner(chat_graph(), "scope-sep")
+        http = TestClient(serve_app(runner))
+        for key in ("thread_id", "session_id"):
+            for stream in (True, False):
+                with self.subTest(key=key, stream=stream):
+                    response = http.post(
+                        "/agent/run",
+                        json={**turn("hi"), key: "a||b", "stream": stream},
+                    )
+                    self.assertEqual(response.status_code, 422, response.text)
+                    self.assertIn("||", response.text)
+        self.assertEqual(runner._workflow_client.inputs, {})
+
+
 class TestResentHistory(_FakeDaprTest):
     def test_messages_resent_with_their_ids_are_not_duplicated(self):
         runner = _runner("scope-resend")

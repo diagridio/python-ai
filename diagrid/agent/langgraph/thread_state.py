@@ -93,6 +93,33 @@ class DaprThreadStore:
         )
 
 
+#: Dapr's actor key separator: no key or workflow id may hold it.
+ACTOR_SEPARATOR = "||"
+
+
+def request_thread_id(request: Dict[str, Any]) -> Optional[str]:
+    """The thread an HTTP request names (``thread_id`` or ``session_id``).
+
+    Only a thread the caller names carries state: no id, a stateless run.
+    """
+    return request.get("thread_id") or request.get("session_id")
+
+
+def validate_run_request(request: Dict[str, Any]) -> None:
+    """Refuse a request whose thread id cannot be part of a Dapr key.
+
+    The thread id goes into the run's workflow id and its state keys; Dapr
+    reserves ``||`` in both.
+    """
+    for name in ("thread_id", "session_id"):
+        value = request.get(name)
+        if value is not None and ACTOR_SEPARATOR in str(value):
+            raise ValueError(
+                f"{name} must not contain {ACTOR_SEPARATOR!r}: Dapr reserves it "
+                "in state keys and workflow ids"
+            )
+
+
 def resolve_thread_store(
     checkpointer: Any,
     graph: Any,

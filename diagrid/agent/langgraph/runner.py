@@ -73,7 +73,9 @@ from .thread_state import (
     SAVE_THREAD_ACTIVITY,
     make_load_activity,
     make_save_activity,
+    request_thread_id,
     resolve_thread_store,
+    validate_run_request,
 )
 from .limits import StepBound, step_bound
 from .workflow import (
@@ -1286,15 +1288,13 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         request: dict,
         session_id: str,  # type: ignore[type-arg]
     ) -> AsyncIterator[dict[str, Any]]:
-        # only a thread the caller names carries state: no id, a stateless run
-        thread_id = request.get("thread_id") or request.get("session_id")
-
         graph_input = self._request_to_input(request)
-
+        thread_id = request_thread_id(request)
         async for event in self.run_async(input=graph_input, thread_id=thread_id):
             yield event
 
     _supports_serve_stream = True
+    _validate_run_request = staticmethod(validate_run_request)
 
     _DEFAULT_STREAM_MODES = ["messages", "updates", "custom"]
 
@@ -1315,8 +1315,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         Ends with ``workflow_completed`` or ``workflow_failed``, whose data is
         the run's full terminal event. The base runner frames the pairs.
         """
-        # only a thread the caller names carries state: no id, a stateless run
-        thread_id = request.get("thread_id") or request.get("session_id")
+        thread_id = request_thread_id(request)
         encoder: Optional[SseEncoder] = None
         try:
             modes, _ = normalize_stream_mode(

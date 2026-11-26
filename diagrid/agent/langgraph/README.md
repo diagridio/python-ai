@@ -79,13 +79,16 @@ result = runner.invoke(
 ```
 
 That is all. `thread_id` may also come as `config["configurable"]["thread_id"]`
-or, over HTTP, as `thread_id` (or `session_id`) in the request body. Each run
+or, over HTTP, as `thread_id` (or `session_id`) in the request body (one that
+holds `||`, which Dapr reserves in keys, is a `422`). Each run
 starts from the state the thread's last run ended with and applies its input
 to it through the channels' reducers, as LangGraph does with a checkpointer.
 The state is kept in the app's Dapr state store (`agent-memory`, which a
 Catalyst app has, else the store the workflows use), keyed by thread; a
 thread keeps its last two checkpoints, which expire 30 days after its last
-run (`DaprMemoryCheckpointer(ttl_s=..., keep_checkpoints=...)`). Runs on one
+run (`DaprMemoryCheckpointer(ttl_s=..., keep_checkpoints=...)`; it keeps at
+least two, so a run never loses the one it is loading to a concurrent save).
+Runs on one
 thread at the same time each start from the state before them, and the last
 one to end sets the thread's state.
 

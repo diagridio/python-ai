@@ -682,6 +682,10 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
 
         @app.post("/agent/run")
         async def run_agent(request: dict) -> Any:  # type: ignore[type-arg]
+            try:
+                self._validate_run_request(request)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e))
             # Only the JSON value true streams. Anything else ("false", an
             # object) is a plain request whose "stream" key may be the graph's own.
             if request.get("stream") is True and self._supports_serve_stream:
@@ -749,6 +753,13 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
 
     def _add_routes(self, app: Any) -> None:
         """Register a runner's own routes on the ``serve()`` app. Default: none."""
+        return None
+
+    def _validate_run_request(self, request: dict) -> None:  # type: ignore[type-arg]
+        """Raise ``ValueError`` if a ``POST /agent/run`` (any kind) is invalid.
+
+        The client gets a 422 and no run starts. Default: accept all.
+        """
         return None
 
     def _validate_stream_request(self, request: dict) -> None:  # type: ignore[type-arg]

@@ -55,9 +55,34 @@ class TestExpiryAndPruning(unittest.TestCase):
             cp.load_checkpoint("t1")["channel_values"], {"messages": ["cp4"]}
         )
 
-    def test_keep_checkpoints_must_be_positive(self):
-        with self.assertRaises(ValueError):
-            DaprMemoryCheckpointer(state_store=MemoryStateStore(), keep_checkpoints=0)  # type: ignore[arg-type]
+    def test_keep_checkpoints_must_be_at_least_two(self):
+        # with one, a concurrent save deletes the checkpoint a load was reading
+        for keep in (0, 1):
+            with self.assertRaises(ValueError):
+                DaprMemoryCheckpointer(
+                    state_store=MemoryStateStore(), keep_checkpoints=keep
+                )  # type: ignore[arg-type]
+
+    def test_a_checkpoint_pruned_under_a_load_is_read_from_a_fresh_index(self):
+        store = MemoryStateStore()
+        cp = DaprMemoryCheckpointer(state_store=store)  # type: ignore[arg-type]
+        other = DaprMemoryCheckpointer(state_store=store)  # type: ignore[arg-type]
+        _save(cp, "t1", "cp1")
+        real_get = store.get
+        raced = []
+
+        def racing_get(key: str) -> Any:
+            found = real_get(key)
+            if key.endswith(":index") and not raced:
+                # two saves land between the index read and the checkpoint read
+                raced.append(key)
+                _save(other, "t1", "cp2")
+                _save(other, "t1", "cp3")
+            return found
+
+        store.get = racing_get  # type: ignore[method-assign]
+        loaded = cp.load_checkpoint("t1")
+        self.assertEqual(loaded["channel_values"], {"messages": ["cp3"]})
 
 
 class TestConcurrentRuns(unittest.TestCase):
@@ -122,3 +147,33 @@ class TestOldKeyFormat(unittest.TestCase):
         self.assertEqual(
             cp.load_checkpoint("t1")["channel_values"], {"messages": ["cp2"]}
         )
+
+
+class _RefusingStore(MemoryStateStore):
+    """Refuses keys as Dapr does: ``||`` is the actor separator; ``broken`` fails."""
+
+    def __init__(self, broken: str = "") -> None:
+        super().__init__()
+        self.broken = broken
+
+    def get(self, key: str) -> Any:
+        if "||" in key or (self.broken and key == self.broken):
+            raise RuntimeError(f"state store refused key {key!r}")
+        return super().get(key)
+
+
+class TestThreadIdsTheOldKeysCannotHold(unittest.TestCase):
+    def test_a_thread_id_with_the_actor_separator_never_reads_the_old_keys(self):
+        cp = DaprMemoryCheckpointer(state_store=_RefusingStore())  # type: ignore[arg-type]
+        self.assertIsNone(cp.load_checkpoint("a||b"))
+        self.assertEqual(cp.list_checkpoints("a||b"), [])
+        _save(cp, "a||b", "cp1")
+        self.assertEqual(
+            cp.load_checkpoint("a||b")["channel_values"], {"messages": ["cp1"]}
+        )
+
+    def test_an_old_index_that_cannot_be_read_is_skipped(self):
+        store = _RefusingStore(broken="langgraph-t1-index")
+        cp = DaprMemoryCheckpointer(state_store=store)  # type: ignore[arg-type]
+        with self.assertLogs("diagrid.agent.langgraph.state", "WARNING"):
+            self.assertIsNone(cp.load_checkpoint("t1"))
