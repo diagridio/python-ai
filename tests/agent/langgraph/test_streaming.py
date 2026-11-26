@@ -78,7 +78,7 @@ class TestAstream(_RunnerTestCase, unittest.IsolatedAsyncioTestCase):
     async def test_unsupported_mode_and_subgraphs(self):
         runner = self._runner()
         with self.assertRaises(ValueError):
-            await _collect(runner.astream(INPUT, stream_mode="values"))
+            await _collect(runner.astream(INPUT, stream_mode="bogus"))
         with self.assertRaises(NotImplementedError):
             await _collect(runner.astream(INPUT, subgraphs=True))
 

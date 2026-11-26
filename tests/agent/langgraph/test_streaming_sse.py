@@ -473,7 +473,7 @@ class TestStreamRouteDecision(_RouteCase):
 
 class TestInvalidStreamRequest(_RouteCase):
     def test_an_unsupported_stream_mode_is_rejected_before_the_stream_starts(self):
-        for mode in ("bogus", ["messages", "values"], 7):
+        for mode in ("bogus", ["messages", "bogus"], 7):
             with self.subTest(stream_mode=mode):
                 self.setUp()
                 resp, started = self._post(

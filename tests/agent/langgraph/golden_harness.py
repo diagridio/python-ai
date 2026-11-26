@@ -165,7 +165,9 @@ class _ReactModel(BaseChatModel):
             yield gen
 
 
-async def _both(compiled: Any, name: str, graph_input: Any) -> Tuple[List, List]:
+async def _both(
+    compiled: Any, name: str, graph_input: Any, modes: List[str] = MODES
+) -> Tuple[List, List]:
     native = [
         item
         async for item in compiled.astream(
@@ -175,7 +177,7 @@ async def _both(compiled: Any, name: str, graph_input: Any) -> Tuple[List, List]
                 "tags": ["x"],
                 "metadata": {"foo": "bar"},
             },
-            stream_mode=MODES,
+            stream_mode=modes,
         )
     ]
     runner = DaprWorkflowGraphRunner(graph=compiled, name=name)
@@ -188,7 +190,7 @@ async def _both(compiled: Any, name: str, graph_input: Any) -> Tuple[List, List]
                 thread_id="t1",
                 config={"tags": ["x"], "metadata": {"foo": "bar"}},
                 workflow_id=f"wf-{name}",
-                stream_mode=MODES,
+                stream_mode=modes,
                 poll_interval=0.01,
             )
         )
