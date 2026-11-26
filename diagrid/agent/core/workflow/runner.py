@@ -696,6 +696,7 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
                 app, pubsub_name, subscribe_topic, _run_and_collect
             )
 
+        self._add_routes(app)
         uvicorn.run(app, host=host, port=port)
 
     # ------------------------------------------------------------------
@@ -740,6 +741,10 @@ class BaseWorkflowRunner(SignalMixin, AgentRegistryMixin, ABC):
     # implement ``_serve_stream`` (used by ``POST /agent/run`` with
     # ``"stream": true``).
     _supports_serve_stream = False
+
+    def _add_routes(self, app: Any) -> None:
+        """Register a runner's own routes on the ``serve()`` app. Default: none."""
+        return None
 
     def _validate_stream_request(self, request: dict) -> None:  # type: ignore[type-arg]
         """Raise ``ValueError`` if a streaming request is invalid.
