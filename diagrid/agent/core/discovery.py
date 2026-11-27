@@ -41,6 +41,10 @@ class DiscoveredComponents:
     registry_store_name: Optional[str] = None
     """``state`` type component named ``agent-registry``."""
 
+    workflow_store_name: Optional[str] = None
+    """The ``state`` type component workflows keep their state in (the actor
+    state store): every workflow app has one."""
+
     runtime_conf: dict[str, str] = field(default_factory=dict)
     """Config loaded from ``agent-runtime`` statestore key ``agent_runtime``."""
 
@@ -53,6 +57,7 @@ def discover_components() -> DiscoveredComponents:
     - ``state`` type + name ``agent-memory`` -> ``memory_store_name``
     - ``pubsub`` type + name ``agent-pubsub`` -> ``pubsub_name``
     - ``state`` type + name ``agent-registry`` -> ``registry_store_name``
+    - ``state`` type with the ``ACTOR`` capability -> ``workflow_store_name``
     - ``state`` type + name ``agent-runtime`` -> loads ``agent_runtime`` key into ``runtime_conf``
 
     Returns ``DiscoveredComponents()`` with empty defaults on sidecar error.
@@ -80,6 +85,10 @@ def discover_components() -> DiscoveredComponents:
 
                 if "pubsub" in ctype and cname == "agent-pubsub":
                     result.pubsub_name = cname
+
+                capabilities = getattr(component, "capabilities", None) or ()
+                if "state" in ctype and "ACTOR" in capabilities:
+                    result.workflow_store_name = cname
 
                 if "state" in ctype and cname == "agent-registry":
                     result.registry_store_name = cname

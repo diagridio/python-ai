@@ -40,7 +40,9 @@ Example:
     ```
 """
 
+from diagrid.agent.core.workflow.stream import StreamSinkRegistry
 from diagrid.agent.langgraph.runner import DaprWorkflowGraphRunner
+from diagrid.agent.langgraph.streaming import GraphRunError, StreamControl
 from diagrid.agent.langgraph.state import DaprMemoryCheckpointer
 from diagrid.agent.langgraph.models import (
     ChannelState,
@@ -69,6 +71,10 @@ from diagrid.agent.langgraph.workflow import (
 __all__ = [
     # Main runner
     "DaprWorkflowGraphRunner",
+    # Streaming
+    "GraphRunError",
+    "StreamControl",
+    "StreamSinkRegistry",
     # State
     "DaprMemoryCheckpointer",
     # Models

@@ -5,12 +5,16 @@
 
 from unittest import TestCase, mock
 
-from diagrid.agent.langgraph.state import DaprMemoryCheckpointer
+from diagrid.agent.langgraph.state import DEFAULT_THREAD_TTL_S, DaprMemoryCheckpointer
+
+
+TTL = {"ttlInSeconds": str(DEFAULT_THREAD_TTL_S)}
 
 
 class TestDaprMemoryCheckpointer(TestCase):
     def _make_checkpointer(self):
-        store = mock.MagicMock()
+        # a store without the etag calls: the index is written plainly
+        store = mock.MagicMock(spec=["get", "save", "delete", "close"])
         return DaprMemoryCheckpointer(state_store=store), store
 
     def test_save_checkpoint(self):
@@ -26,7 +30,7 @@ class TestDaprMemoryCheckpointer(TestCase):
 
         # Should save the checkpoint
         store.save.assert_any_call(
-            "langgraph-t1-checkpoint-cp1",
+            "langgraph:t1:checkpoint:cp1",
             {
                 "thread_id": "t1",
                 "checkpoint_id": "cp1",
@@ -34,11 +38,13 @@ class TestDaprMemoryCheckpointer(TestCase):
                 "channel_versions": {"messages": 1},
                 "metadata": {},
             },
+            TTL,
         )
         # Should save the index
         store.save.assert_any_call(
-            "langgraph-t1-index",
+            "langgraph:t1:index",
             {"checkpoints": ["cp1"], "latest": "cp1"},
+            TTL,
         )
 
     def test_load_checkpoint_by_id(self):
@@ -47,7 +53,7 @@ class TestDaprMemoryCheckpointer(TestCase):
 
         result = cp.load_checkpoint("t1", "cp1")
 
-        store.get.assert_called_with("langgraph-t1-checkpoint-cp1")
+        store.get.assert_called_with("langgraph:t1:checkpoint:cp1")
         self.assertEqual(result, {"channel_values": {"messages": ["hi"]}})
 
     def test_load_latest_checkpoint(self):
@@ -94,11 +100,12 @@ class TestDaprMemoryCheckpointer(TestCase):
 
         cp.delete_checkpoint("t1", "cp2")
 
-        store.delete.assert_called_once_with("langgraph-t1-checkpoint-cp2")
+        store.delete.assert_called_once_with("langgraph:t1:checkpoint:cp2")
         # Should update index
         store.save.assert_called_with(
-            "langgraph-t1-index",
+            "langgraph:t1:index",
             {"checkpoints": ["cp1"], "latest": "cp1"},
+            TTL,
         )
 
     def test_close(self):
