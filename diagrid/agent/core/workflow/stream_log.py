@@ -302,8 +302,10 @@ class LogWriter:
                 batch = list(self._pending)
             if not batch and not final:
                 return True
-            if not batch and not done:
-                return True
+            if not batch and not done and self._batches:
+                return True  # the head written with the last batch says it all
+            # A failed attempt that logged nothing still writes its head: a
+            # reader then knows the unit was written, not that its log expired.
             batches = self._batches + (1 if batch else 0)
             head = {
                 "attempt": self.attempt,

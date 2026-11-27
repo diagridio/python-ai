@@ -58,8 +58,22 @@ class TestResumeStreamIds(_RunnerTestCase):
         self.assertNotEqual(started_id, START_ID)
         _wait(lambda: wf in runner._workflow_client.done)
         again = self._reconnect(http, wf, started_id)
-        # exactly what the resume's stream carried: nothing from before it
-        self.assertEqual(again[1:], rest[1:])
+        # exactly what the resume's stream carried: nothing from before it.
+        # The ids may differ: a live reader may not yet know a unit whose last
+        # event it sent is done, a replay does, and both cursors resume alike.
+        self.assertEqual(
+            [(e, d) for _, e, d in again[1:]], [(e, d) for _, e, d in rest[1:]]
+        )
+        pairs = zip(rest[1:-1], again[1:-1])
+        for i, ((live_id, event, _), (replay_id, _, _)) in enumerate(pairs, start=1):
+            if event == "node_reset":
+                continue  # a control event repeats the id of the chunk before it
+            want = [(e, d) for _, e, d in rest[i + 1 :]]
+            for cursor in (live_id, replay_id):
+                with self.subTest(event=i, cursor=cursor):
+                    got = self._reconnect(http, wf, cursor)
+                    # the rest of the stream after event i: no repeat, no gap
+                    self.assertEqual([(e, d) for _, e, d in got[1:]], want)
 
     def test_a_failure_before_the_first_chunk_carries_the_same_id(self):
         runner, http, got = self._interrupted("ids-broken")

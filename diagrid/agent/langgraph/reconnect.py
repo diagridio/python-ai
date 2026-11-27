@@ -15,7 +15,16 @@ the result.
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, Optional, Set, Tuple
+from typing import (
+    Any,
+    AsyncGenerator,
+    AsyncIterator,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+)
 
 from diagrid.agent.core.workflow import stream as stream_module
 from diagrid.agent.core.workflow.stream import (
@@ -26,6 +35,7 @@ from diagrid.agent.core.workflow.stream import (
 from diagrid.agent.core.workflow.stream_cursor import parse_cursor
 
 from .stream_drain import SseEncoder, drain, encode_final
+from .stream_modes import UnrecordedStreamMode, check_recorded
 from .stream_events import (
     FINAL_EVENTS,
     KEEPALIVE,
@@ -126,15 +136,19 @@ async def resume_events(
     *,
     poll_interval: float,
     keepalive: bool,
+    modes: Optional[List[str]] = None,
 ) -> AsyncGenerator[Any, None]:
     """The items of a reconnected stream, as ``_stream_events`` yields them.
 
-    Raises ``LookupError`` for a run the workflow engine does not know.
+    Raises ``LookupError`` for a run the workflow engine does not know, and
+    :class:`UnrecordedStreamMode` for one of ``modes`` the run did not record.
     """
     client = runner._workflow_client
     state = await asyncio.to_thread(client.get_workflow_state, instance_id=workflow_id)
     if state is None:
         raise LookupError(f"Workflow {workflow_id!r} not found")
+    if modes is not None:
+        check_recorded(modes, state, workflow_id)
     thread_id = _thread_of(state, workflow_id)
     cursor = parse_cursor(last_event_id)
     transport = runner.stream_transport
@@ -230,6 +244,10 @@ def add_reconnect_route(app: Any, runner: Any) -> None:
         )
         if state is None:
             raise HTTPException(status_code=404, detail="Workflow not found")
+        try:
+            check_recorded(modes, state, workflow_id)
+        except UnrecordedStreamMode as e:
+            raise HTTPException(status_code=422, detail=str(e))
         last_event_id = request.headers.get(
             "last-event-id"
         ) or request.query_params.get("last_event_id")

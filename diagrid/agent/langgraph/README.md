@@ -274,6 +274,16 @@ sent as `{"unserializable": "<its repr>"}`, counted in the final event's
 removed before the graph (or your `input_mapper`) sees it. On a plain request
 they are left alone.
 
+A streamed run records only what it was asked for. The chunks of `messages`,
+`updates` and `custom` are always written to the run's event log. A `values`
+chunk holds the whole state, so it is written only when the run was started
+with `values`. A `tasks` or `debug` start event holds the node's whole input;
+`tasks` and `debug` carry the same events, so both are written when the run
+was started with either. A run streamed with the default modes therefore
+writes no copy of its state per node. A run that needs the state at the end
+has it in the final event and in `GET /agent/run/{workflow_id}` whatever
+modes it was started with.
+
 `GET /agent/run/{workflow_id}` reports a run by the id in `workflow_started`:
 `status` is the workflow's runtime status, and once the run has completed the
 body also has the `output` and `steps` a plain `POST /agent/run` returns for
@@ -315,12 +325,15 @@ that does not parse, the whole run is replayed; with `v1.end` only the final
 event is sent. A run that already ended is replayed the same way, for as long
 as its log is kept (an hour by default). `stream_mode` (repeat the parameter,
 or separate modes with commas) picks the chunks as on `POST`; an unsupported
-one is a `422`, and an unknown run a `404`. If a node was retried after the
-client saw part of its output, the stream sends `node_reset` for it before the
-new attempt's chunks. If part of the log has expired, the stream sends
-`stream_purged` once and goes on with what is still there and what comes
-live (a run resumed after waiting on `interrupt()` for longer than the batch
-TTL streams everything after the resume), then the final event. A run that
+one is a `422`, and an unknown run a `404`. A mode the run did not record
+(`values`, `tasks` or `debug` when the run was not started with it) is a `422`
+too, whose message names the modes the run recorded: reconnect with those. If
+a node was retried after the client saw part of its output, the stream sends
+`node_reset` for it before the new attempt's chunks. If part of the log has
+expired, the stream sends `stream_purged` once and goes on with what is still
+there and what comes live (a run resumed after waiting on `interrupt()` for
+longer than the batch TTL streams everything after the resume), then the
+final event. A run that
 ended more than a day ago has no log left at all: its replay is
 `stream_purged` and the final event.
 
@@ -330,7 +343,8 @@ On the in-process transport nothing can be replayed: the endpoint answers with
 the run and sends the final event with its result.
 
 In Python, `runner.astream_resume(workflow_id, last_event_id=None,
-stream_mode=...)` does the same and yields what `astream` yields.
+stream_mode=...)` does the same and yields what `astream` yields; a mode the
+run did not record raises `ValueError` before anything is yielded.
 
 #### Streaming across replicas
 
@@ -429,11 +443,14 @@ needed for this.
 - Resume it with `POST /agent/run/{workflow_id}/resume` and the body
   `{"resume": <value>}` (add `"stream": true`, and `stream_mode` if you like,
   for SSE; without it the response is the run's result, as a plain `POST`
-  returns it). In Python: `runner.astream(Command(resume=value),
-  workflow_id=...)` or `runner.invoke(Command(resume=value),
-  workflow_id=...)`. The interrupted node runs again in the same run, on the
-  same thread, and `interrupt()` returns the value; a dict keyed by interrupt
-  ids answers several interrupts one by one. The stream of a resume carries
+  returns it). A resumed run keeps the stream modes it was started with: a
+  streamed resume that asks for `values`, `tasks` or `debug` the run did not
+  record is a `422` (a `ValueError` from `astream`), and the run still waits.
+  In Python: `runner.astream(Command(resume=value), workflow_id=...)` or
+  `runner.invoke(Command(resume=value), workflow_id=...)`. The interrupted
+  node runs again in the same run, on the same thread, and `interrupt()`
+  returns the value; a dict keyed by interrupt ids answers several
+  interrupts one by one. The stream of a resume carries
   what happens after it (starting with `node_reset` for the node that runs
   again) and ends with the final event, or with `workflow_interrupted` when a
   node asks again. A body without `resume`, or with `"resume": null` (as

@@ -65,3 +65,11 @@ class TestStreamingReadme(unittest.TestCase):
     def test_the_proxy_wording_is_kept(self):
         self.assertIn("#### Behind a proxy", self.text)
         self.assertNotIn("behind a load balancer", self.text.lower())
+
+    def test_the_recorded_modes_are_documented(self):
+        for needed in (
+            "A streamed run records only what it was asked for.",
+            "A mode the run did not record",
+            "A resumed run keeps the stream modes it was started with",
+        ):
+            self.assertIn(needed, self.flat, needed)

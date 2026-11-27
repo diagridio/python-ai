@@ -286,7 +286,10 @@ class LogFollower:
 
         Heads outlive batches (a day by default), and a run that ended that
         long ago has none left. A unit missing among others that are there
-        is still a write that failed, and so is a live stream's.
+        is still a write that failed, and so is a live stream's. Only a unit
+        whose output the run used (it has a winner) surely wrote a head, so
+        one of those must be among the missing: a node that failed before
+        its first chunk is not taken for an expired log.
         """
         wanted = self._wanted()
         return (
@@ -294,6 +297,7 @@ class LogFollower:
             and not self.purged
             and bool(wanted)
             and all(state.attempt is None for state in wanted.values())
+            and any(state.winner for state in wanted.values())
         )
 
     def _wanted(self) -> Dict[Unit, _UnitState]:

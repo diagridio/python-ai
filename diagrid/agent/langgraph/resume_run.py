@@ -20,7 +20,7 @@ import logging
 import time
 import uuid
 from dataclasses import replace
-from typing import Any, AsyncGenerator, AsyncIterator, Dict, Set, Tuple
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Set, Tuple
 
 from diagrid.agent.core.workflow.stream import frame_sse
 
@@ -29,6 +29,7 @@ from .interrupt_ids import partial_map_error
 from .interrupts import RESUME_EVENT, pending_interrupt, resume_taken
 from .reconnect import _thread_of, follow_final
 from .stream_drain import SseEncoder, drain, encode_final
+from .stream_modes import UnrecordedStreamMode, check_recorded
 from .stream_events import started_event, stream_failure_event, without_executed
 from .stream_source import custom_status, open_source
 from .streaming import normalize_final, normalize_stream_mode
@@ -53,17 +54,23 @@ class InvalidResume(ValueError):
 TAKE_TIMEOUT_S = 30.0
 
 
-async def _pending(runner: Any, workflow_id: str, value: Any) -> Tuple[int, str]:
+async def _pending(
+    runner: Any, workflow_id: str, value: Any, modes: Optional[List[str]] = None
+) -> Tuple[int, str]:
     """``(interrupt seq, thread id)`` of a run waiting for a resume.
 
     Raises ``LookupError`` for an unknown run, :class:`NotInterrupted` for a
     run that is not waiting, :class:`InvalidResume` for a ``value`` its
-    interrupts cannot take.
+    interrupts cannot take, :class:`UnrecordedStreamMode` for one of the
+    stream ``modes`` the run does not record (a resumed run keeps the modes
+    it was started with).
     """
     client = runner._workflow_client
     state = await asyncio.to_thread(client.get_workflow_state, instance_id=workflow_id)
     if state is None:
         raise LookupError(f"Workflow {workflow_id!r} not found")
+    if modes is not None:
+        check_recorded(modes, state, workflow_id)
     pending = pending_interrupt(
         parse_status(getattr(state, "serialized_custom_status", None))
     )
@@ -116,9 +123,10 @@ async def resume_run_events(
     *,
     poll_interval: float,
     keepalive: bool,
+    modes: Optional[List[str]] = None,
 ) -> AsyncGenerator[Any, None]:
     """Resume the run and yield its stream from there, as ``_stream_events`` does."""
-    seq, thread_id = await _pending(runner, workflow_id, value)
+    seq, thread_id = await _pending(runner, workflow_id, value, modes)
     client = runner._workflow_client
     seen: Set[Tuple[int, str]] = set()
     source = open_source(
@@ -232,15 +240,18 @@ def add_resume_route(app: Any, runner: Any) -> None:
             )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
+        streamed = body.get("stream") is True
         try:
-            await _pending(runner, workflow_id, body["resume"])
+            await _pending(
+                runner, workflow_id, body["resume"], modes if streamed else None
+            )
         except LookupError:
             raise HTTPException(status_code=404, detail="Workflow not found")
-        except InvalidResume as e:
+        except (InvalidResume, UnrecordedStreamMode) as e:
             raise HTTPException(status_code=422, detail=str(e))
         except NotInterrupted as e:
             raise HTTPException(status_code=409, detail=str(e))
-        if body.get("stream") is True:
+        if streamed:
             events = _resume_sse(runner, workflow_id, body["resume"], modes)
             try:
                 # the first event comes once the run took this resume

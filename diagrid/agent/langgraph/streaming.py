@@ -175,8 +175,12 @@ class NodeStreamer:
         sink_node: Optional[str] = None,
         path: Optional[Sequence[Any]] = None,
         branch: Optional[str] = None,
+        task_events: bool = True,
     ) -> None:
         self._path = tuple(path) if path else None
+        # False when the run did not ask for ``tasks`` or ``debug``: a task's
+        # start event carries the node's whole input, not worth writing unread.
+        self._task_events = task_events
         # The conditional edge whose function this streamer serves, if any.
         self._branch = branch
         # ``sink_node`` is the name chunks are keyed under in the sink when it
@@ -344,6 +348,8 @@ class NodeStreamer:
         self, node_input: Any, config: Optional[Dict[str, Any]] = None
     ) -> None:
         """Send the task's start event, as LangGraph does when a step starts it."""
+        if not self._task_events:
+            return
         config = config or {}
         metadata = task_metadata(
             self._static.metadata(config.get("metadata")),
@@ -356,6 +362,8 @@ class NodeStreamer:
 
     def task_finished(self, writes: List[Tuple[str, Any]]) -> None:
         """Send the task's result event: its writes, after its ``updates`` chunk."""
+        if not self._task_events:
+            return
         self._emit_task(task_result(self._event_task_id, self._node, writes))
 
     def branch_finished(self) -> None:

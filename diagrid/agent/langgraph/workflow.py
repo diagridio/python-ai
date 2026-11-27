@@ -88,6 +88,7 @@ from .runnable_call import (  # noqa: F401 (re-exported)
 )
 from .stream_attempts import record_attempts, with_attempt
 from .stream_values import state_values
+from .stream_modes import records_task_events, records_values
 from .streaming import STREAM_RUN_KEY, NodeStreamer, StaticConfig
 from .task_identity import TaskIdentity
 from .thread_state import THREAD_STATE_PATCH, load_thread, save_thread
@@ -564,8 +565,14 @@ class _Run:
 
     @property
     def output_channels(self) -> Optional[List[str]]:
-        """What an activity of a streamed run sends ``values`` chunks of."""
-        if not (self.config or {}).get(STREAM_RUN_KEY):
+        """What an activity of a streamed run sends ``values`` chunks of.
+
+        ``None`` (no chunks) when the run was not streamed, or was streamed
+        without ``values`` (see ``stream_modes``).
+        """
+        if not (self.config or {}).get(STREAM_RUN_KEY) or not records_values(
+            self.config
+        ):
             return None
         return list(self.graph_config.output_channels)
 
@@ -1432,6 +1439,7 @@ def _streamer_for(
         sink_node=sink_node,
         path=None if send_index is None else (PUSH_TRIGGER, send_index, False),
         branch=branch,
+        task_events=records_task_events(config),
     )
 
 

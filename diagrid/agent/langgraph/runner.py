@@ -63,6 +63,7 @@ from .invoke_result import command_resume, invoke_resume, wait_invoke_result
 from .reconnect import add_reconnect_route, resume_events
 from .resume_run import add_resume_route, resume_run_events
 from .stream_drain import SseEncoder, drain, encode_final, parse_output
+from .stream_modes import with_stream_modes
 from .stream_source import (
     custom_status,
     open_source,
@@ -972,7 +973,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         nothing is replayed: ``stream_unavailable`` with reason
         ``transport_not_replayable``, then the run's end. Raises
         ``LookupError`` for an unknown run and :class:`GraphRunError` for a
-        run that failed.
+        run that failed, and ``ValueError`` for a mode the run did not record
+        (``values``, ``tasks`` or ``debug`` when it was not started with it).
         """
         modes, is_list = normalize_stream_mode(stream_mode)
         async with aclosing(
@@ -982,6 +984,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 last_event_id,
                 poll_interval=poll_interval,
                 keepalive=False,
+                modes=modes,
             )
         ) as events:
             async for item in events:
@@ -1040,6 +1043,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 command_resume(input, workflow_id, "astream"),
                 poll_interval=poll_interval,
                 keepalive=False,
+                modes=modes,
             )
         else:
             events = self._stream_events(
@@ -1048,6 +1052,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                 thread_id=thread_id,
                 workflow_id=workflow_id,
                 poll_interval=poll_interval,
+                modes=modes,
             )
         # aclosing: if the caller stops early, close the inner stream now (it
         # unregisters the sink) instead of whenever the garbage collector runs.
@@ -1069,8 +1074,12 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
         poll_interval: float,
         on_result: Optional[Callable[[Dict[str, Any]], None]] = None,
         keepalive: bool = False,
+        modes: Optional[List[str]] = None,
     ) -> AsyncGenerator[Any, None]:
         """Yield ``StreamEvent`` chunks, then the terminal event dict.
+
+        ``modes`` are the stream modes asked for: the run records those (see
+        ``stream_modes``); ``None`` records every mode.
 
         The terminal event is always the last item: ``workflow_completed`` or
         ``workflow_failed`` (see :func:`normalize_final`), carrying the run's
@@ -1090,6 +1099,8 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
             config, merged, thread_id, workflow_id
         )
         run_config = {**run_config, STREAM_RUN_KEY: True}
+        if modes is not None:
+            run_config = with_stream_modes(run_config, modes)
         if not named:
             run_config[_STATELESS_KEY] = True
         seen_nodes: Set[Tuple[int, str]] = set()
@@ -1327,6 +1338,7 @@ class DaprWorkflowGraphRunner(BaseWorkflowRunner):
                     poll_interval=0.5,
                     on_result=on_result,
                     keepalive=True,
+                    modes=modes,
                 )
             ) as events:
                 async for item in events:
