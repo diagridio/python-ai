@@ -131,8 +131,14 @@ async def resume_run_events(
     )
     pump_task = None
     try:
+        started = started_event(workflow_id, thread_id)
         if source.follower is not None:
             await source.follower.ready.wait()
+            # the stream starts after what the log held: a reconnect from
+            # here gets the rest of the run, not what came before the resume.
+            # Read before the resume is sent: the follower reads on while the
+            # run goes on, ahead of what this stream has yielded.
+            started = replace(started, event_id=source.follower.event_id())
         await _send_resume(runner, workflow_id, seq, value)
 
         async def pump() -> None:
@@ -143,11 +149,6 @@ async def resume_run_events(
             )
 
         pump_task = asyncio.create_task(pump())
-        started = started_event(workflow_id, thread_id)
-        if source.follower is not None:
-            # the stream starts after what the log held: a reconnect from
-            # here gets the rest of the run, not what came before the resume
-            started = replace(started, event_id=source.follower.event_id())
         yield started
         async for item in drain(
             source,
